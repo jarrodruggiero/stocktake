@@ -1,6 +1,6 @@
 [project]
 name = "stocktake"
-version = "1.0.0"
+version = "0.64.0"
 description = "Share portfolio tracker — performance, dividends, AU tax"
 readme = "README.md"
 requires-python = ">=3.12"

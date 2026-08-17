@@ -64,7 +64,12 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     steps:
+      # `inputs.tag` is empty on a tag push and names the tag on a manual run.
+      # Without it a dispatch would check out the default branch and publish
+      # whatever happened to be there under a release tag's name.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       # QEMU so the arm64 leg can build on an amd64 runner. Slower than a
       # native builder, but it needs no infrastructure of its own — which is
@@ -86,10 +91,18 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           # v1.2.3 publishes 1.2.3, 1.2 and latest, so a compose file can
           # follow a minor line without chasing patches.
+          #
+          # `latest` is set by the flavor rather than by
+          # `enable={{is_default_branch}}`: a tag push is not on a branch, so
+          # that condition is FALSE here and would have published every release
+          # without the tag every deploy example in this repo pulls.
+          flavor: |
+            latest=true
+          # `value=` supplies the version on a manual run, where there is no
+          # tag ref for the semver patterns to read.
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}},value=${{ inputs.tag || github.ref_name }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag || github.ref_name }}
 
       - name: Build and push
         uses: docker/build-push-action@v7
@@ -102,14 +115,24 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # The image tags drop the leading `v` (metadata-action's {{version}}),
+      # so the release notes must too — telling people to pull `:v0.64.0`
+      # names a tag that was never pushed.
+      - name: The version without its leading v
+        id: version
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: echo "number=${TAG#v}" >> "$GITHUB_OUTPUT"
+
       - name: Create the GitHub Release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
           generate_release_notes: true
           body: |
             Container image:
 
-                docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+                docker pull ghcr.io/${{ github.repository }}:${{ steps.version.outputs.number }}
 
             See the README for the docker-compose and Helm quickstarts.
 

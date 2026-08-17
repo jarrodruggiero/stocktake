@@ -11,7 +11,7 @@
 # Apps/Portfolio/docker-compose.yml plus icon.svg, thumbnail.png and at least
 # one screenshot, and open a pull request. The `icon`/`screenshot_link` URLs
 # below must resolve before that will be accepted — they land with the branding
-# work, alongside the jarrodruggiero placeholders.
+# work.
 name: stocktake
 services:
   stocktake:

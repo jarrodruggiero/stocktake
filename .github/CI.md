@@ -1,5 +1,9 @@
 # CI
 
+*(This file is `CI.md`, not `README.md`, on purpose: GitHub shows
+`.github/README.md` on the repository landing page in preference to the root
+one, so a README here hides the project's own.)*
+
 Everything here runs on GitHub-hosted runners with public actions and the token
 GitHub issues to the job. There are no secrets to provision — `GITHUB_TOKEN`
 covers the image push to ghcr.io.

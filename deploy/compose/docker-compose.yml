@@ -7,7 +7,7 @@
 # makes this a two-file deployment.
 services:
   app:
-    image: ghcr.io/jarrodruggiero/stocktake:latest   # replace jarrodruggiero, or build: below
+    image: ghcr.io/jarrodruggiero/stocktake:latest   # or build: below
     # build:
     #   context: ../..
     #   dockerfile: apps/stocktake/Dockerfile
