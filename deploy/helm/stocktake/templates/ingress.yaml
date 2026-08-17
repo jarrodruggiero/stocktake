@@ -1,0 +1,35 @@
+{{- if .Values.ingress.enabled }}
+{{- if not .Values.auth.cookieSecure }}
+{{- /*
+  Refuse rather than warn. An ingress without a secure cookie means session
+  cookies cross the network in clear — and the person deploying it almost
+  certainly believes TLS is handling that.
+*/ -}}
+{{- fail "ingress.enabled requires auth.cookieSecure=true (and set auth.trustedProxies to your ingress controller's pod CIDR, or login lockout counts every visitor as the same person). If you are deliberately serving plain HTTP, reach the Service directly instead." }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "stocktake.fullname" . }}
+  labels: {{- include "stocktake.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "stocktake.fullname" . }}
+                port: {number: {{ .Values.service.port }}}
+{{- end }}

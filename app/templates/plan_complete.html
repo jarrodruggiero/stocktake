@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Record buy — Stocktake{% endblock %}
+{% block content %}
+
+<h1>Record buy <small>{{ nxt.ticker }} — due {{ nxt.due_date }}</small></h1>
+<p class="note">Enter the <strong>actual executed</strong> units and price from your
+broker confirmation{% if price %} (latest close for reference: {{ price | cash }}){% endif %}.</p>
+
+<form action="/schedule/complete" method="post" class="panel" style="max-width: 26rem;">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  <input type="hidden" name="ticker" value="{{ nxt.ticker }}">
+  <input type="hidden" name="due_date" value="{{ nxt.due_date }}">
+  <label>Trade date <input type="date" name="trade_date" value="{{ today }}" required></label>
+  <label>Units bought <input name="quantity" placeholder="actual units" autocomplete="off" required></label>
+  <label>Price per unit ($) <input name="unit_price" placeholder="{{ 'e.g. %s'|format(price | money_plain) if price else 'executed price' }}" autocomplete="off" required></label>
+  <label>Brokerage ($) <input name="brokerage" value="{{ brokerage }}"></label>
+  <div class="commitbar">
+    <button type="submit">Save trade</button>
+    <a href="/schedule">Cancel</a>
+  </div>
+</form>
+
+{% endblock %}

@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "stocktake.fullname" . }}
+  labels: {{- include "stocktake.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    {{- if eq .Values.database.type "sqlite" }}
+    # Recreate, not RollingUpdate, and not negotiable on SQLite. The volume is
+    # ReadWriteOnce so a second pod cannot attach it while the first holds it —
+    # a rolling update deadlocks on Multi-Attach. More importantly SQLite takes
+    # one writer: two pods on one file is corruption, not contention.
+    type: Recreate
+    {{- else }}
+    type: RollingUpdate
+    {{- end }}
+  selector:
+    matchLabels: {{- include "stocktake.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "stocktake.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Restart on a config change. A subPath-free ConfigMap mount does
+        # update in place, but the app reads its config once at startup — so
+        # without this a `helm upgrade` that only changes config appears to
+        # succeed and changes nothing.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: stocktake
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - {containerPort: 8000, name: http}
+          env:
+            - {name: APP_CONFIG_FILE, value: /config/config.yaml}
+            - {name: TZ, value: {{ .Values.timezone | quote }}}
+            {{- if and (eq .Values.database.type "postgres") .Values.database.postgres.existingSecret }}
+            # Never from values.yaml: those end up in `helm get values`, in CI
+            # logs, and in git.
+            - name: APP_DATABASE__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.postgres.existingSecret }}
+                  key: {{ .Values.database.postgres.existingSecretKey }}
+            {{- end }}
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            {{- if .Values.persistence.enabled }}
+            - {name: data, mountPath: /data}
+            {{- end }}
+            - {name: scratch, mountPath: /scratch}
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          readinessProbe:
+            # /readyz checks the database too, so it is the one that gates
+            # traffic; /healthz only says the process is alive.
+            httpGet: {path: /readyz, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+      volumes:
+        - name: config
+          configMap: {name: {{ include "stocktake.fullname" . }}}
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim: {claimName: {{ include "stocktake.fullname" . }}-data}
+        {{- end }}
+        # The visual mapper's rendered pages, and nothing else. An
+        # emptyDir on purpose: disposable, must never reach a backup of
+        # /data, and correct to lose on restart. The size limit is what
+        # stops a runaway filling the node's ephemeral storage and getting
+        # the pod evicted. See imports.visual_dir in app/settings.py.
+        - name: scratch
+          emptyDir: {sizeLimit: {{ .Values.scratchSizeLimit | default "512Mi" }}}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

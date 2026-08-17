@@ -1,0 +1,30 @@
+{{ include "stocktake.fullname" . }} is installing.
+
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "stocktake.fullname" . }}
+
+{{ if .Values.ingress.enabled -}}
+Then open https://{{ .Values.ingress.host }}
+{{- else -}}
+Then reach it with:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "stocktake.fullname" . }} 8000:{{ .Values.service.port }}
+
+and open http://localhost:8000
+{{- end }}
+
+The first visit goes to /setup to create your account, which becomes the admin.
+
+{{ if eq .Values.database.type "sqlite" -}}
+Storage: SQLite at /data/stocktake.db on a {{ .Values.persistence.size }} volume.
+That file is the entire application state — back it up, and test the restore.
+{{- else -}}
+Storage: Postgres at {{ .Values.database.postgres.host }}. The app creates its
+own schema at startup.
+{{- end }}
+{{ if not .Values.auth.cookieSecure }}
+NOTE: auth.cookieSecure is off, so session cookies are not marked Secure. That
+is correct for plain HTTP, but set it — with auth.trustedProxies — as soon as
+TLS is in front.
+{{- end }}
+
+Locked out?  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "stocktake.fullname" . }} -- python -m app.recover --list

@@ -1,0 +1,18 @@
+# CommSec — the Transactions export.
+#
+# Verified against a real export (2026). This one needs code, which is why
+# `kind` is not `mapped`: the file is a bank-statement layout rather than a
+# trade list. There is no buy/sell column — the direction comes from whether
+# the money moved in or out — and the trade itself is described in prose in a
+# `Details` column:
+#
+#   B 100 ALPHA @ 89.50
+#
+# `commsec_transactions` in app/brokercsv.py reads that layout. See
+# docs/contributing/recipe-broker.md for when a format needs a parser and how
+# to write one.
+name: CommSec (Transactions export)
+kind: commsec_transactions
+exchange: ASX
+currency: AUD
+date_format: "%d/%m/%Y"

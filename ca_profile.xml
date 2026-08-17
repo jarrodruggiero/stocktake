@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!--
+  Community Applications repository profile. Required for submission: it tells
+  CA who maintains these templates and where support lives.
+-->
+<Profile>
+  <Repo>jarrodruggiero's Repository</Repo>
+  <Profile>https://github.com/jarrodruggiero.png</Profile>
+  <ProfileURL>https://github.com/jarrodruggiero</ProfileURL>
+  <Overview>
+    Templates for Portfolio — a self-hosted share portfolio tracker built for
+    Australian investors, with financial-year capital gains, franking credits,
+    broker and statement imports, and a strict privacy stance: only ticker
+    symbols ever leave your server.
+  </Overview>
+</Profile>

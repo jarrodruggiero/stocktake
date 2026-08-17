@@ -1,0 +1,169 @@
+# Stocktake on Kubernetes, with nothing but kubectl.
+#
+#   kubectl create namespace stocktake
+#   kubectl apply -f stocktake.yaml
+#
+# Deliberately one file and deliberately plain: no Helm, no operator, no
+# Kustomize. Read it, change the four things marked CHANGE ME, apply it.
+#
+# There is no Secret because there is nothing secret to hold — sessions are
+# database-backed tokens and the price feed needs no credentials. If you point
+# this at Postgres instead, that is the one thing you add.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stocktake-config
+  namespace: stocktake
+data:
+  config.yaml: |
+    app_name: stocktake
+    log_level: INFO
+
+    # CHANGE ME. Containers run UTC; every date decision in the app belongs to
+    # your zone, and without this it is a day behind for most of the morning.
+    timezone: Australia/Melbourne
+
+    database:
+      type: sqlite
+      path: /data/stocktake.db
+
+    price_feed:
+      enabled: true
+      hour: 18
+      minute: 30
+      backfill_start: 2020-01-01
+
+    auth:
+      # CHANGE ME once TLS terminates in front of this (see the Ingress below).
+      cookie_secure: false
+      # CHANGE ME to your ingress controller's pod CIDR. Without it the app
+      # sees the controller as the client for everyone, and login lockout —
+      # which counts per address — becomes global rather than per-person.
+      trusted_proxies: []
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: stocktake-data
+  namespace: stocktake
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+  # CHANGE ME if your cluster has no default StorageClass.
+  # storageClassName: local-path
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stocktake
+  namespace: stocktake
+spec:
+  replicas: 1
+  strategy:
+    # Recreate, NOT RollingUpdate. The volume is ReadWriteOnce, so a new pod
+    # cannot attach it while the old one holds it — a rolling update deadlocks
+    # on Multi-Attach and the rollout hangs until it times out.
+    #
+    # It also matters for correctness: SQLite takes one writer. Two pods on one
+    # file is not a performance problem, it is corruption.
+    type: Recreate
+  selector:
+    matchLabels: {app: stocktake}
+  template:
+    metadata:
+      labels: {app: stocktake}
+    spec:
+      securityContext:
+        # The image runs as uid 1000. fsGroup makes the mounted volume
+        # group-writable by it — without this the PVC arrives owned by root and
+        # the app cannot create its database.
+        fsGroup: 1000
+      containers:
+        - name: stocktake
+          # CHANGE ME
+          image: ghcr.io/jarrodruggiero/stocktake:latest
+          ports:
+            - {containerPort: 8000, name: http}
+          env:
+            - {name: APP_CONFIG_FILE, value: /config/config.yaml}
+            - {name: TZ, value: Australia/Melbourne}   # CHANGE ME, match config
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: data, mountPath: /data}
+            - {name: scratch, mountPath: /scratch}
+          # /healthz says the process is up; /readyz also checks the database,
+          # so it is the one that must gate traffic.
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # Measured over 30 days of a real install, not guessed: working set
+          # p50 182 / p90 191 MiB, and a full price backfill peaks at 279 MiB.
+          # Most of it is pandas and numpy, which arrive with yfinance on the
+          # first feed run (seconds after start-up) and stay for the life of
+          # the process — so the ~70 MiB you see at boot is not the number to
+          # size against. 256Mi OOM-kills mid-backfill.
+          resources:
+            requests: {cpu: 50m, memory: 192Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false   # SQLite writes WAL files beside the db
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: config
+          configMap: {name: stocktake-config}
+        - name: data
+          persistentVolumeClaim: {claimName: stocktake-data}
+        # Rendered pages from the visual statement mapper, and nothing else.
+        # An emptyDir on PURPOSE: these are disposable, they must not reach a
+        # backup of /data, and losing them when the pod restarts is correct —
+        # a session lasts thirty minutes.
+        #
+        # `sizeLimit` matters more than it looks. Six pages at 200 dpi is a few
+        # MB, so 512Mi is generous; without a limit an emptyDir can fill the
+        # node's ephemeral storage and get the pod evicted, which is a worse
+        # failure than the one this volume exists to avoid. Disk, not
+        # `medium: Memory` — page bitmaps must not sit in RAM until the next
+        # restart, nor count against the container's memory limit.
+        - name: scratch
+          emptyDir: {sizeLimit: 512Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stocktake
+  namespace: stocktake
+spec:
+  selector: {app: stocktake}
+  ports:
+    - {port: 80, targetPort: http, name: http}
+---
+# Optional. Delete this if you reach the Service another way.
+#
+# If you DO expose it, set `auth.cookie_secure: true` and `auth.trusted_proxies`
+# in the ConfigMap above — otherwise session cookies travel in clear and login
+# lockout counts every visitor as the same person.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: stocktake
+  namespace: stocktake
+spec:
+  rules:
+    - host: stocktake.example.com    # CHANGE ME
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: stocktake
+                port: {number: 80}

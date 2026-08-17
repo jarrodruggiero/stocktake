@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="Stocktake">
+  <style>
+    .c { fill: #1a1d29; stroke: none; }
+    .s { fill: none; stroke: #1a1d29; }
+    .top { fill: none; stroke: #4338ca; }
+    @media (prefers-color-scheme: dark) {
+      .c { fill: #e7eaf4; }
+      .s { stroke: #e7eaf4; }
+      .top { stroke: #8b83f0; }
+    }
+  </style>
+  <rect class="s" x="2.5" y="15.5" width="5.5" height="5.5" rx="1" stroke-width="2" stroke-linejoin="round"/><rect class="s" x="9.25" y="15.5" width="5.5" height="5.5" rx="1" stroke-width="2" stroke-linejoin="round"/><rect class="s" x="9.25" y="9.0" width="5.5" height="5.5" rx="1" stroke-width="2" stroke-linejoin="round"/><rect class="s" x="16.0" y="15.5" width="5.5" height="5.5" rx="1" stroke-width="2" stroke-linejoin="round"/><rect class="s" x="16.0" y="9.0" width="5.5" height="5.5" rx="1" stroke-width="2" stroke-linejoin="round"/><rect class="top" x="16.0" y="2.5" width="5.5" height="5.5" rx="1" stroke-width="2" stroke-linejoin="round"/>
+</svg>

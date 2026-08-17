@@ -1,0 +1,12 @@
+# Sample for: vanguard-drp-advice
+# Registry: Computershare / Vanguard — combined DRP advice (multi-fund)
+# Contributed: 2026-08-03
+#
+# REDACTED — invented tickers and amounts. Only the LAYOUT is real.
+
+Distribution and Reinvestment Advice
+Payment Date: 15 March 2026
+
+Fund Price Held PerSec Tax Amount Brought Allotted Carried
+ALPHA 100.00 200 0.50000000 0.00 103.52 28.54 1 23.26
+BETAX 50.00 100 0.20000000 0.00 20.00 5.00 0 25.00

@@ -1,0 +1,15 @@
+payment_date: 2025-10-16
+record_date: 2025-10-02
+net_amount: "90.00"
+
+# 1, not 60 — the number after "allotted @" is the price, and reading units
+# from that label is the specific fault this template was written to fix.
+drp_units: "1"
+
+# Four decimals must survive. The `money` type would return 60.50 here.
+drp_price: "60.5000"
+
+drp_residual_brought: "10.00"
+drp_residual: "39.50"
+drp_total_available: "100.00"
+units_held: "200"

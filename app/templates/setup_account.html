@@ -1,0 +1,25 @@
+{% extends "setup_base.html" %}
+{% set heading = "Your account" %}
+{% set intro = "The first account is the administrator: it can add everyone else." %}
+{% block wizard %}
+
+<form method="post" action="/setup/profile" class="panel" autocomplete="on">
+  <input type="hidden" name="_csrf" value="{{ csrf }}">
+  <label>Name
+    <input name="name" required autofocus autocomplete="name">
+  </label>
+  <label>Email
+    <input type="email" name="email" required autocomplete="username">
+  </label>
+  <label>Password <span class="sub">at least 10 characters</span>
+    <input type="password" name="password" required minlength="10"
+           autocomplete="new-password">
+  </label>
+  {# Recovery is the NEXT step's subject, and the database was settled two
+     steps ago. Both were explained here as well, which put two paragraphs
+     between somebody and the button they came to press. #}
+  <div class="commitbar">
+    <button type="submit" class="primary">Create account</button>
+  </div>
+</form>
+{% endblock %}

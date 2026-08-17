@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Accounts — Stocktake{% endblock %}
+{% block content %}
+
+<h1>Admin <small>accounts</small></h1>
+<div class="subnav">
+  <a href="/admin">This portfolio</a>
+  <a href="/admin/accounts" class="on">Accounts</a>
+  <a href="/admin/settings">Settings</a>
+</div>
+<p class="note">Accounts for everyone who uses this tracker. Each starts with a portfolio of
+its own; share yours from <a href="/admin">This portfolio</a>.</p>
+
+{% if created %}
+<p class="panel ok">Account created for <strong>{{ created }}</strong>. Temporary password:
+<code class="reveal">{{ temp_password }}</code> — hand it over directly; they must change it at
+first login. It won't be shown again.</p>
+{% endif %}
+{% if reset == '2fa' %}
+<p class="panel ok">Two-factor cleared, and they've been signed out everywhere.
+They can set it up again from their account page.</p>
+{% elif reset %}
+<p class="panel ok">Password reset for <strong>{{ reset }}</strong>, and they've been signed
+out everywhere. New temporary password: <code class="reveal">{{ temp_password }}</code> —
+they must change it at next login. It won't be shown again.</p>
+{% endif %}
+{% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody>
+    {% for u in users %}
+    <tr class="{{ '' if u.is_active else 'muted' }}">
+      <td>{{ u.name }}</td>
+      <td>{{ u.email }}</td>
+      <td>{{ 'Site admin' if u.is_admin else 'Standard' }}</td>
+      <td>
+        {% if not u.is_active %}<span class="badge">disabled</span>
+        {% elif u.must_change_password %}<span class="badge">password not set</span>
+        {% else %}active{% endif %}
+        {% if u.totp_enabled_at %} <span class="badge">2FA</span>{% endif %}
+      </td>
+      <td class="rowactions">
+        {% if u.id != auth.user.id %}
+        <form method="post" action="/users/{{ u.id }}/active">
+          <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+          <button class="linkish" type="submit">{{ 'Enable' if not u.is_active else 'Disable' }}</button>
+        </form>
+        <form method="post" action="/users/{{ u.id }}/reset" class="inline">
+          <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+          <input type="text" name="password" placeholder="new temp password" minlength="10" required>
+          <button class="linkish" type="submit">Reset</button>
+        </form>
+        {# Last resort for someone who lost the phone AND the recovery codes. #}
+        {% if u.totp_enabled_at %}
+        <form method="post" action="/users/{{ u.id }}/2fa/clear"
+              onsubmit="return confirm('Clear two-factor for {{ u.email }}? They will be able to sign in with their password alone until they set it up again.');">
+          <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+          <button class="linkish" type="submit">Clear 2FA</button>
+        </form>
+        {% endif %}
+        {% else %}<span class="sub">that's you</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<section class="narrow">
+  <h2>Add someone</h2>
+  <form class="panel" method="post" action="/users/add">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <label>Name <input name="name" required></label>
+    <label>Email <input type="email" name="email" required></label>
+    <label>Temporary password <span class="sub">at least 10 characters; they replace it at first login</span>
+      <input type="text" name="password" required minlength="10">
+    </label>
+    {# A role dropdown rather than a "Can manage users" tickbox: the checkbox
+       named one permission for a role that carries several, and left the
+       ordinary case unnamed. Scoped wording — "Site admin" is app-wide, and is
+       a different thing from the "Portfolio admin" on the members page. #}
+    <label>Account role
+      <select name="is_admin">
+        <option value="">Standard — uses the portfolios they are added to</option>
+        <option value="1">Site admin — also creates accounts and changes settings</option>
+      </select>
+    </label>
+    <button type="submit">Create account</button>
+  </form>
+</section>
+
+{% endblock %}

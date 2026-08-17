@@ -1,0 +1,49 @@
+# Vanguard's combined DRP advice: one row per fund, not one payment.
+#
+# A single statement covers every fund you hold, so there is no one "net
+# amount" to read — the useful content is the table, and each row becomes its
+# own dividend. A real line looks like:
+#
+#   ALPHA 108.7983 212 0.48829897 0.00 103.52 28.54 1 23.26
+#
+# which is ticker, DRP price, units held, cash per security, tax withheld,
+# reinvestment amount (the actual distribution), balance brought forward, units
+# allotted, balance carried forward.
+#
+# The shape below replaces a hand-written regex. It says the same thing in a
+# form a template author can read and a creator UI can generate.
+name: Vanguard combined DRP advice
+
+# No `match` block on purpose. A row shape is a stronger and more durable
+# signal than a brand name: registries reword their headings between years, but
+# a table of one line per fund is unmistakable. `matches()` requires at least
+# one row to actually parse before this template claims a document.
+
+fields:
+  payment_date:
+    after:
+      - payment date
+      - date paid
+    type: date
+
+  # The date the holding is measured on, and the one to reconcile units
+  # against — a purchase between the record date and the payment date is
+  # already in your account but not in this distribution, which looks exactly
+  # like a missing allotment if you compare on the wrong date.
+  record_date:
+    after:
+      - record date
+    type: date
+
+rows:
+  shape: "TICKER NUM INT NUM NUM NUM NUM INT NUM"
+  columns:
+    - ticker
+    - drp_price
+    - units_held
+    - per_security
+    - tax_withheld
+    - amount          # the distribution for the period
+    - brought_forward
+    - allotted        # units issued; 0 means the cash carried forward
+    - carried_forward

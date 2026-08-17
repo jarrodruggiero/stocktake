@@ -1,0 +1,63 @@
+# Docs site config. The docs are plain markdown and render fine on GitHub
+# without this — MkDocs adds search and navigation, it is not a dependency.
+#
+# Local preview:  pip install mkdocs-material && mkdocs serve
+# Published by:   .github/workflows/docs.yml → GitHub Pages
+site_name: Stocktake
+site_description: A self-hosted share portfolio tracker, built for Australian investors.
+site_url: https://jarrodruggiero.github.io/stocktake/
+repo_url: https://github.com/jarrodruggiero/stocktake
+repo_name: jarrodruggiero/stocktake
+edit_uri: edit/main/docs/
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle: { icon: material/weather-night, name: Dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle: { icon: material/weather-sunny, name: Light mode }
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.highlight
+
+markdown_extensions:
+  - admonition          # the !!! warning blocks
+  - pymdownx.details
+  - pymdownx.superfences
+  - tables
+  - toc: { permalink: true }
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started/index.md
+  - Guides:
+      - Overview: guides/index.md
+      - Recovery codes: guides/recovery-codes.md
+  - Deployment:
+      - Overview: deploy/index.md
+      - NAS and home servers: deploy/nas.md
+  - Reference:
+      - Configuration: reference/configuration.md
+      - Command line: reference/cli.md
+  - Contributing:
+      - Overview: contributing/index.md
+      - Architecture: contributing/architecture.md
+      - Running the tests: contributing/testing.md
+      - House style: contributing/style.md
+      - Decisions: contributing/decisions.md
+      - "Recipe: broker imports": contributing/recipe-broker.md
+      - "Recipe: statement layouts": contributing/recipe-statement.md
+      - "Recipe: chart fields": contributing/recipe-chart-field.md
+      - "Recipe: dashboard columns": contributing/recipe-column.md
+      - "Recipe: export reports": contributing/recipe-report.md
+      - "Recipe: price providers": contributing/recipe-provider.md
+  - About:
+      - Privacy: about/privacy.md
+      - Security model: about/security.md
+      - Disclaimer: about/disclaimer.md

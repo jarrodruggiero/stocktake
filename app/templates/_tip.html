@@ -1,0 +1,16 @@
+{# A (?) control holding detail that would otherwise sit in the form.
+
+   Usage:  {% set tip_body %}<p>…</p>{% endset %}
+           {% with body = tip_body, label = "What this means" %}
+             {% include "_tip.html" %}
+           {% endwith %}
+
+   `details.menu` rather than a `title` attribute, for two reasons: a `title`
+   cannot hold markup or links, and it disappears the moment the cursor moves
+   toward it — which makes the text impossible to select, and people copy paths
+   and examples out of these. #}
+<details class="tip menu">
+  <summary aria-label="{{ label|default('More about this') }}"
+           title="{{ label|default('More about this') }}">?</summary>
+  <div class="panel tippanel">{{ body }}</div>
+</details>

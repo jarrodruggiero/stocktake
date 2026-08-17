@@ -1,0 +1,42 @@
+{% extends "setup_base.html" %}
+{% set heading = "Environment" %}
+{% set intro = "All optional. Leave a box empty and nothing is written for it." %}
+{% block wizard %}
+
+<form method="post" action="/setup/environment" class="panel">
+  <input type="hidden" name="_csrf" value="{{ csrf }}">
+
+  <label for="proxies">Trusted proxies
+    {% set proxy_tip %}
+    <p>Only needed if a reverse proxy sits in front of the app.</p>
+    <p>These are the addresses whose <code>X-Forwarded-For</code> header will be
+    believed. Anyone can send that header, so an untrusted one is ignored —
+    which is why this has to be set rather than assumed.</p>
+    <p>One address or CIDR range per line, e.g. <code>10.1.0.0/16</code>.</p>
+    {% endset %}
+    {% with body = proxy_tip, label = "About trusted proxies" %}{% include "_tip.html" %}{% endwith %}
+  </label>
+  <textarea id="proxies" name="trusted_proxies" rows="3"
+            spellcheck="false" placeholder="10.1.0.0/16">{{ proxies }}</textarea>
+
+  <label for="exturl">External URL
+    {% set url_tip %}
+    <p>The address you will actually type to reach this, if it is not the one
+    in your address bar now.</p>
+    <p><strong>The app does not handle TLS itself</strong> — your proxy does,
+    and forwards here over plain HTTP. Giving an <code>https://</code> URL marks
+    the session cookie secure, so the browser stops sending it over plain HTTP:
+    after this, reach the app through the proxy rather than directly.</p>
+    <p>Needs a restart.</p>
+    {% endset %}
+    {% with body = url_tip, label = "About the external URL" %}{% include "_tip.html" %}{% endwith %}
+  </label>
+  <input id="exturl" name="external_url" value="{{ external_url }}"
+         placeholder="https://portfolio.example.com" spellcheck="false"
+         inputmode="url">
+
+  <div class="commitbar">
+    <button type="submit" class="primary">Continue</button>
+  </div>
+</form>
+{% endblock %}

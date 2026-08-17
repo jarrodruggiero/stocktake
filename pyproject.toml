@@ -1,0 +1,142 @@
+[project]
+name = "stocktake"
+version = "1.0.0"
+description = "Share portfolio tracker — performance, dividends, AU tax"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "AGPL-3.0-or-later"
+dependencies = [
+    # The web/data scaffold. `appkit/` is a package in this repository, not a
+    # dependency to resolve, so its requirements are listed here directly.
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "pyyaml>=6.0",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+
+    "argon2-cffi>=23.1", # argon2id password hashing (multi-user auth)
+    "openpyxl>=3.1",   # .xlsx export
+    "yfinance>=0.2.50", # price/FX feed (only ticker symbols ever leave)
+    "pdfplumber>=0.11", # dividend-statement parsing (local, no cloud OCR)
+    "tzdata>=2024.1",   # zoneinfo on slim images
+    "ruamel.yaml>=0.18", # comment-preserving config.yaml edits (admin settings)
+    "pyotp>=2.9",      # TOTP second factor
+    "qrcode>=7.4",     # TOTP enrolment QR, rendered locally as inline SVG
+]
+
+[project.urls]
+Homepage = "https://github.com/jarrodruggiero/stocktake"
+Documentation = "https://jarrodruggiero.github.io/stocktake"
+Source = "https://github.com/jarrodruggiero/stocktake"
+Issues = "https://github.com/jarrodruggiero/stocktake/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app", "appkit"]
+
+# Test-only dependencies. NOT installed into the image (the Dockerfile installs
+# the runtime list directly), so this group is free to grow.
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",      # fastapi.testclient
+    "freezegun>=1.5",   # deterministic dt.date.today() — the app has 18 call sites
+    "ruff>=0.6",
+    "pytest-cov>=5.0",
+]
+
+[tool.ruff]
+target-version = "py312"
+# The codebase already sits at ~90 characters (p99); 100 gives headroom without
+# inviting the long lines that make a diff unreadable.
+line-length = 100
+
+[tool.ruff.lint]
+# Ruff's defaults (the pycodestyle errors worth failing a build over, plus
+# pyflakes) and import ordering. Deliberately NOT the whole of `E`: E501
+# line-length would flag 21 existing lines that are perfectly readable, and a
+# formatting argument is not what CI is for.
+#
+# `B` (bugbear) and `UP` (pyupgrade) were tried and deferred: between them they
+# want ~30 edits to app code — several of them behaviour-adjacent, like adding
+# `strict=` to every zip() — which does not belong in the change that turns CI
+# on. Worth enabling as its own pass, with the suite as the safety net.
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.isort]
+# Say which packages are ours rather than letting ruff infer it: `appkit` is a
+# directory at the root here, and inference that depends on layout sorts the
+# same file differently depending on where it is checked out.
+# `factories`/`fixture_portfolio` are the test suite's own top-level helpers.
+known-first-party = ["app", "appkit", "factories", "fixture_portfolio", "test_routes"]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+# The gate. Raising this is the only way it should ever move — if a change
+# drops coverage, write the test rather than lowering the number.
+#
+# TARGET IS 100. See tests/test_coverage_policy.py for where it stands, what is
+# excluded and why. Every exclusion below, and every `# pragma: no cover` in
+# the source, must carry a written justification — enforced by that test, not
+# by good intentions.
+fail_under = 92
+show_missing = true
+skip_covered = true
+
+exclude_also = [
+    # Justification: a module's CLI entry point runs a process, not a function.
+    # Exercising it would mean spawning one; the work it does is covered by
+    # calling the functions it calls.
+    'if __name__ == .__main__.:',
+    # Justification: `if TYPE_CHECKING` blocks contain imports only, and exist
+    # for the type checker rather than the interpreter.
+    'if TYPE_CHECKING:',
+    # Justification: an abstract or protocol body has nothing to execute.
+    '^\s*\.\.\.$',
+    # Justification: a deliberate "not supported" branch exists in order to
+    # raise. Its body IS the raise, so covering it tests the language rather
+    # than anything this application decides.
+    'raise NotImplementedError',
+]
+
+omit = [
+    # Justification: Alembic's downgrade() paths. The app never downgrades —
+    # the migration chain is append-only by policy,
+    # and upgrade() is covered on both backends because every test builds its
+    # schema by running the chain. Testing downgrades would be testing a path
+    # the app is documented never to take.
+    "app/migrations/versions/*.py",
+    # Justification: the Alembic environment is configuration, executed by
+    # Alembic rather than by the app, and it is exercised on both backends
+    # every time a test builds its schema — but as a script, so the lines do
+    # not attribute to this package's coverage.
+    "app/migrations/env.py",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Assertion rewriting inside the helpers, so factories/fixture failures explain
+# themselves the same way test-file asserts do.
+python_files = ["test_*.py"]
+markers = [
+    # Tests that start a fresh interpreter (the lazy-import probes in
+    # test_memory.py). A few seconds each, and they cannot be done in-process:
+    # by then something else has already imported the module under test.
+    "slow: spawns a subprocess; deselect with -m 'not slow'",
+]
+filterwarnings = [
+    # yfinance/pandas emit deprecation noise we neither cause nor can fix here.
+    "ignore::DeprecationWarning:yfinance.*",
+    "ignore::DeprecationWarning:pandas.*",
+]

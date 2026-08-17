@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Restarting — Stocktake{% endblock %}
+{% block content %}
+
+<h1>Restarting</h1>
+
+{% if saved %}<p class="panel ok">Settings saved.</p>{% endif %}
+
+{% if supervision.restarts %}
+<p class="panel">The application is shutting down.
+  {{ supervision.detail }}</p>
+<p class="note" id="waiting">Waiting for it to come back…</p>
+<p class="note">Still waiting after a minute? Check the application's logs.</p>
+{% else %}
+<p class="panel warn"><strong>The application is shutting down and will not
+start again on its own.</strong><br>{{ supervision.detail }}</p>
+{% endif %}
+
+<p><a href="/admin/settings">Back to settings</a></p>
+
+{% if supervision.restarts %}
+<script>
+  // Poll the health probe until it answers, then reload. A fetch that fails is
+  // the expected state while the process is down, not an error worth showing.
+  const waiting = document.getElementById("waiting");
+  let tries = 0;
+  const check = () => {
+    tries += 1;
+    fetch("/healthz", { cache: "no-store" })
+      .then((r) => { if (r.ok) { location.href = "/admin/settings"; } else { again(); } })
+      .catch(again);
+  };
+  const again = () => {
+    waiting.textContent = `Waiting for it to come back… (${tries})`;
+    setTimeout(check, 2000);
+  };
+  // Give it a moment to actually stop first, or the first poll answers from
+  // the process that is on its way out.
+  setTimeout(check, 3000);
+</script>
+{% endif %}
+
+{% endblock %}

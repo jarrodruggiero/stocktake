@@ -1,0 +1,117 @@
+# CasaOS / ZimaOS app-store manifest.
+#
+# An ordinary Compose file with `x-casaos` metadata blocks, which is exactly
+# what the CasaOS AppStore takes — so this file is both the store entry and a
+# working Compose file anywhere else.
+#
+# To install before it is in a store: CasaOS → App Store → the ⋮ menu →
+# "Install a customized app", then paste this in.
+#
+# To submit it: fork IceWhaleTech/CasaOS-AppStore, add
+# Apps/Portfolio/docker-compose.yml plus icon.svg, thumbnail.png and at least
+# one screenshot, and open a pull request. The `icon`/`screenshot_link` URLs
+# below must resolve before that will be accepted — they land with the branding
+# work, alongside the jarrodruggiero placeholders.
+name: stocktake
+services:
+  stocktake:
+    image: ghcr.io/jarrodruggiero/stocktake:latest
+    container_name: stocktake
+    restart: unless-stopped
+    network_mode: bridge
+    ports:
+      - target: 8000
+        published: "8000"
+        protocol: tcp
+    environment:
+      APP_CONFIG_FILE: /config/config.yaml
+      # Containers run UTC. Left wrong, every date decision — which financial
+      # year today is in, whether a trade is dated in the future — is a day out
+      # for part of each day.
+      TZ: Australia/Melbourne
+    volumes:
+      # /DATA/AppData/$AppID is the CasaOS convention, and CasaOS creates these
+      # owned such that the container can write them. Both are needed: /data
+      # holds the database, and /config is where the first-run wizard WRITES
+      # config.yaml. A read-only /config leaves the wizard unable to save.
+      - type: bind
+        source: /DATA/AppData/$AppID/data
+        target: /data
+      - type: bind
+        source: /DATA/AppData/$AppID/config
+        target: /config
+    deploy:
+      resources:
+        reservations:
+          memory: 128M
+    healthcheck:
+      # /readyz also checks the database; /healthz only says the process is up.
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/readyz')\""]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+
+    x-casaos:
+      envs:
+        - container: TZ
+          description:
+            en_US: Your timezone, e.g. Australia/Melbourne. Every date decision uses it.
+      ports:
+        - container: "8000"
+          description:
+            en_US: Web interface.
+      volumes:
+        - container: /data
+          description:
+            en_US: Your portfolio database. This is the only thing that needs backing up.
+        - container: /config
+          description:
+            en_US: Configuration. Written by the setup wizard on first run.
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: stocktake
+  author: jarrodruggiero
+  developer: jarrodruggiero
+  category: Finance
+  icon: https://raw.githubusercontent.com/jarrodruggiero/stocktake/main/docs/assets/icon.png
+  screenshot_link:
+    - https://raw.githubusercontent.com/jarrodruggiero/stocktake/main/docs/assets/screenshot-dashboard.png
+  thumbnail: https://raw.githubusercontent.com/jarrodruggiero/stocktake/main/docs/assets/icon.png
+  title:
+    en_US: Portfolio
+  tagline:
+    en_US: Self-hosted share portfolio tracker for Australian investors
+  description:
+    en_US: >-
+      Tracks holdings, valuations and performance; works out financial-year
+      capital gains with FIFO parcel matching, the CGT discount and franking
+      credits; imports broker CSV, OFX and dividend statement PDFs; and builds
+      charts you design yourself.
+
+
+      Privacy is the point. Only ticker symbols ever leave your server, and only
+      to fetch prices — never your holdings, quantities or balances. Dividend
+      statements are parsed locally, with no cloud OCR. Turn the price feed off
+      and it makes no outbound requests at all.
+
+
+      Runs on SQLite by default: one file, nothing else to install. Postgres is
+      supported if you already have one. A setup wizard handles the first run,
+      so there is no configuration file to write beforehand.
+  tips:
+    before_install:
+      en_US: >-
+        Nothing to prepare. Open the web UI after it starts and a wizard will
+        create your account and write the configuration for you.
+  index: /
+  port_map: "8000"
+  scheme: http
+  project_url: https://github.com/jarrodruggiero/stocktake
+  website: https://github.com/jarrodruggiero/stocktake
+  repo: https://github.com/jarrodruggiero/stocktake
+  support: https://github.com/jarrodruggiero/stocktake/discussions
+  docs: https://jarrodruggiero.github.io/stocktake

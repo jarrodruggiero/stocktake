@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}Holdings — Stocktake{% endblock %}
+{% block content %}
+
+{# A spoke off the Portfolio page, so it says where it came from. #}
+<a class="backlink" href="/"><button type="button" class="secondary">&larr; Portfolio</button></a>
+
+<div class="pagehead">
+  <div>
+    <h1>Manage holdings</h1>
+    <p class="note">Ticker, exchange and price symbol are shared by everyone
+    using this tracker; DRP and notes are yours alone.</p>
+  </div>
+  <div class="headactions">
+    {# Above the table, not below it: under a list that needs scrolling,
+       somebody opening this page for the first time never finds it. #}
+    <button type="button" id="addinst-open" class="primary">+ Add an instrument</button>
+  </div>
+</div>
+{% if removed %}<p class="panel ok"><strong>{{ removed }}</strong> is no longer
+tracked. Its prices stop updating; adding it again brings it back with its
+history.</p>{% endif %}
+
+{% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+{% if added %}
+<p class="panel ok">
+  {% if added_is_new %}<strong>{{ added }}</strong> added to the shared instrument
+  list and to yours. Its price history arrives with the feed run just started.
+  {% else %}<strong>{{ added }}</strong> was already in the shared list — it's on
+  your holdings now.{% endif %}
+</p>
+{% endif %}
+
+{# One form per row, declared OUTSIDE the table.
+
+   A <form> cannot wrap table cells, and the previous version worked around
+   that by putting the checkbox, the note and the button in a single
+   `colspan="3"` cell — which made the body stop lining up with its own
+   headers and made every row three controls tall. Declaring the form here and
+   pointing the inputs at it with `form="pref-N"` puts each control back in the
+   cell its header describes. Same trick the column chooser uses for its reset
+   button. #}
+{% for i in instruments %}
+<form id="pref-{{ i.id }}" method="post" action="/holdings/{{ i.id }}/pref"
+      hidden onsubmit="return savePref(this, event)">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+</form>
+{% endfor %}
+
+<div class="tablewrap">
+<table class="instruments">
+  <thead>
+    <tr><th>Ticker</th><th>Name</th><th>Class</th><th>Currency</th>
+        <th class="num">Price</th><th>Price symbol</th>
+        <th>DRP</th><th>My note</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for i in instruments %}
+    {% set pref = prefs.get(i.id) %}
+    <tr class="{{ '' if i.id in held else 'muted' }}">
+      {# `tick` gives the ticker the same chip the Portfolio table's does, so
+         the identical link does not read as a different control. `?return=`
+         is what lets the holding page's back button come back to THIS page. #}
+      <td class="tick"><a href="/holding/{{ i.ticker }}?return=/holdings">{{ i.ticker }}</a>
+          <span class="sub">{{ i.exchange }}</span></td>
+      <td>{{ i.name or '' }}</td>
+      <td>{{ i.asset_class }}</td>
+      <td>{{ i.currency }}</td>
+      {# Shown for everything, held or not: a position you exited is still one
+         you may be watching, and the dashboard deliberately hides it. #}
+      <td class="num">{{ prices.get(i.id) | money }}</td>
+      <td class="sub">{{ i.yahoo_symbol or '—' }}</td>
+      {# Saves on change — a checkbox that needs a second click to take effect
+         reads as broken, and did. The button is the no-JavaScript path. #}
+      <td><label class="check"><input type="checkbox" name="drp" value="1"
+            form="pref-{{ i.id }}"
+            {{ 'checked' if pref and pref.drp }}
+            onchange="savePref(this.form)"> <span class="sub">reinvest</span></label></td>
+      <td><input class="notecell" name="note" form="pref-{{ i.id }}"
+                 value="{{ pref.note if pref and pref.note else '' }}"
+                 placeholder="private note" onchange="savePref(this.form)"></td>
+      <td class="rowactions">
+        <button class="linkish" type="submit" form="pref-{{ i.id }}">Save</button>
+        <span class="savemark" data-for="pref-{{ i.id }}" aria-live="polite"></span>
+        {% set block = blocking.get(i.id) %}
+        {% if block and block.total %}
+        {# NOT a disabled button. A `disabled` button cannot be hovered or
+           focused in most browsers, so its explanation is unreachable exactly
+           when it is wanted. This one always opens, names what is in the way,
+           and links straight to each trade so the fix is one click rather than
+           a hunt. #}
+        <details class="menu blockedby">
+          <summary title="Why this can't be removed">{{ block.total }} recorded</summary>
+          <div class="panel blockpanel">
+            <p class="sub">Remove is unavailable while anything is recorded
+            against {{ i.ticker }}. Delete these first:</p>
+            <ul>
+              {% for tr in block.mine[:8] %}
+              <li><a href="/trade/{{ tr.id }}/edit?return=/holdings">{{ tr.date }} —
+                {{ tr.type }} {{ tr.quantity | qty }}</a></li>
+              {% endfor %}
+            </ul>
+            {% if block.mine | length > 8 %}
+            <p class="sub">…and {{ block.mine | length - 8 }} more, on
+            <a href="/holding/{{ i.ticker }}?return=/holdings">its page</a>.</p>
+            {% endif %}
+            {% set elsewhere = block.total - block.mine | length %}
+            {% if elsewhere > 0 %}
+            {# Counted, never listed: these belong to another portfolio and
+               showing them here would be a leak. #}
+            <p class="sub">{{ elsewhere }} more {% if block.mine %}are{% else %}is{% endif %}
+            recorded in another portfolio sharing this instrument.</p>
+            {% endif %}
+          </div>
+        </details>
+        {% else %}
+        <form class="inline" method="post" action="/holdings/{{ i.id }}/remove">
+          <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+          <button class="linkish danger" type="submit">Remove</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{# Open when the server rejected the form, so the error is not rendered behind
+   a closed dialog with the page looking like it did nothing. #}
+<dialog id="addinst" {% if error %}open{% endif %}>
+  <form class="panel" method="post" action="/holdings/add">
+    <h2>Add an instrument</h2>
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <div class="row">
+      <label>Ticker <input name="ticker" required placeholder="ALPHA" style="text-transform:uppercase"
+               onchange="autofill('')" onblur="autofill('')"></label>
+      <label>Exchange
+        <select name="exchange" onchange="autofill('')">
+          <option value="ASX">ASX</option>
+          <option value="NASDAQ">NASDAQ</option>
+          <option value="NYSE">NYSE</option>
+          <option value="CRYPTO">CRYPTO</option>
+        </select>
+      </label>
+      <label>Class
+        <select name="asset_class">
+          <option value="etf">ETF</option>
+          <option value="share">Share</option>
+          <option value="crypto">Crypto</option>
+        </select>
+      </label>
+      <label>Currency <input name="currency" value="AUD" size="4"></label>
+    </div>
+    <label>Name <span class="sub">optional</span>
+      <input name="name" placeholder="Vanguard Australian Shares Index ETF">
+    </label>
+    <label>Yahoo price symbol <span class="sub">blank = guessed (ASX codes become CODE.AX)</span>
+      <input name="yahoo_symbol" placeholder="ALPHA.AX">
+    </label>
+    <label class="check"><input type="checkbox" name="drp" value="1"> I reinvest distributions</label>
+    <p class="sub" id="lookup-status"></p>
+    <div class="commitbar">
+      <button type="submit">Add</button>
+      <button type="button" id="addinst-close" class="secondary">Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+{# A <dialog> with no `open` is display:none, so with scripting off the form
+   would be unreachable — a worse page than the one this replaced. This turns
+   it back into an ordinary section, and hides the button that cannot work. #}
+<noscript>
+  <style>
+    #addinst { display: block; position: static; border: 0; padding: 0; }
+    #addinst::backdrop { display: none; }
+    #addinst-open, #addinst-close { display: none; }
+  </style>
+</noscript>
+
+<script>
+  /* Ask the server what the ticker is as soon as there's something to look up,
+     and fill only the fields still empty — anything typed by hand is kept. */
+  function autofill(prefix) {
+    const q = (n) => document.querySelector(`[name="${prefix}${n}"]`);
+    const ticker = q("ticker"), exchange = q("exchange");
+    if (!ticker || !ticker.value.trim()) return;
+    const status = document.getElementById(prefix + "lookup-status");
+    if (status) status.textContent = "looking up…";
+    fetch(`/holdings/lookup?ticker=${encodeURIComponent(ticker.value)}&exchange=${encodeURIComponent(exchange ? exchange.value : "ASX")}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) { if (status) status.textContent = ""; return; }
+        const fill = (n, v) => { const el = q(n); if (el && !el.value.trim() && v) el.value = v; };
+        fill("name", d.name);
+        fill("currency", d.currency);
+        fill("yahoo", d.symbol);
+        fill("yahoo_symbol", d.symbol);
+        if (status) status.textContent = d.found
+          ? `found: ${d.name || d.symbol}${d.currency ? " (" + d.currency + ")" : ""}`
+          : `no match for ${d.symbol} — check the ticker and exchange`;
+      })
+      .catch(() => { if (status) status.textContent = ""; });
+  }
+</script>
+
+<script>
+  /* Persist a holding's DRP flag / note the moment it changes, without losing
+     your place in a long list. Returns false so the form's own submit doesn't
+     also navigate; without JavaScript the button posts normally. */
+  function savePref(form, event) {
+    if (event) event.preventDefault();
+    /* The mark lives in a table cell now, not inside the form, so it is found
+       by the form's id rather than by descending into it. */
+    const mark = document.querySelector('.savemark[data-for="' + form.id + '"]');
+    if (mark) mark.textContent = "saving…";
+    fetch(form.action, {
+      method: "POST",
+      body: new FormData(form),
+      headers: { "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]').content },
+      redirect: "follow",
+    })
+      .then((r) => { if (mark) mark.textContent = r.ok ? "saved" : "not saved"; })
+      .catch(() => { if (mark) mark.textContent = "not saved"; })
+      .finally(() => setTimeout(() => { if (mark) mark.textContent = ""; }, 2000));
+    return false;
+  }
+</script>
+
+<script>
+  /* The add dialog. showModal() rather than show(): it takes focus, traps it,
+     closes on Escape and dims what is behind — all of which the browser does
+     and none of which is worth reimplementing. */
+  (function () {
+    const dialog = document.getElementById("addinst");
+    const open = document.getElementById("addinst-open");
+    const close = document.getElementById("addinst-close");
+    if (!dialog || !open) return;
+    /* Rendered `open` by the server after a rejected submission. Re-show it
+       modally so it behaves the same either way. */
+    if (dialog.hasAttribute("open") && dialog.showModal) {
+      dialog.close();
+      dialog.showModal();
+    }
+    open.addEventListener("click", () => {
+      dialog.showModal ? dialog.showModal() : dialog.setAttribute("open", "");
+      const first = dialog.querySelector('[name="ticker"]');
+      if (first) first.focus();
+    });
+    if (close) close.addEventListener("click", () => dialog.close());
+  })();
+</script>
+
+{% endblock %}

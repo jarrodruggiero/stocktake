@@ -1,0 +1,8 @@
+payment_date: 2026-03-15
+rows:
+  - ticker: ALPHA
+    amount: "103.52"
+    allotted: "1"
+  - ticker: BETAX
+    amount: "20.00"
+    allotted: "0"

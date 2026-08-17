@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}Profile — Stocktake{% endblock %}
+{% block content %}
+
+<h1>Profile</h1>
+<p class="meta">{{ auth.user.name }} · {{ auth.user.email }}{% if auth.is_admin %} · admin{% endif %}</p>
+
+{% if auth.user.must_change_password %}
+<p class="panel error">Your password was set by an admin. Choose your own to continue.</p>
+{% endif %}
+{% if saved == 'password' %}<p class="panel ok">Password changed. Other devices have been signed out.</p>{% endif %}
+{% if saved == 'appearance' %}<p class="panel ok">Appearance saved.</p>{% endif %}
+{% if saved == '2fa-off' %}<p class="panel ok">Two-factor authentication is off, and your recovery codes have been destroyed.</p>{% endif %}
+{% if saved == 'session-revoked' %}<p class="panel ok">That session has been signed out.</p>{% endif %}
+{% if saved == 'sessions-revoked' %}<p class="panel ok">Signed out everywhere except here.</p>{% endif %}
+{% if error == 'password' %}<p class="panel error">That password isn't right.</p>
+{% elif error == 'code' %}<p class="panel error">That code isn't right.</p>
+{% elif error == 'current-session' %}<p class="panel error">That's the session you're using — use Log out instead.</p>
+{% elif error %}<p class="panel error">{{ error }}</p>{% endif %}
+
+{# Shown once, immediately after enabling. There is no way back to this list:
+   only hashes are stored, exactly as for session tokens. #}
+{% if new_codes %}
+<section class="narrow">
+  <h2>Save your recovery codes</h2>
+  <p class="panel warn"><strong>This is the only time these are shown.</strong> Store them somewhere
+  that isn't your phone.</p>
+  <pre class="panel codes">{% for c in new_codes %}{{ c }}
+{% endfor %}</pre>
+  <p class="note"><a href="/profile">Done — I've saved them</a></p>
+</section>
+{% endif %}
+{% if enrol %}
+<section class="narrow">
+  <h2>Set up two-factor authentication</h2>
+  <p class="note">Scan this with an authenticator app, then type the code it shows.</p>
+  <div class="panel qr">{{ enrol.qr | safe }}</div>
+  <p class="note">Can't scan? Enter this key by hand: <code>{{ enrol.secret }}</code></p>
+  <form class="panel" method="post" action="/profile/2fa/enable" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <input type="hidden" name="secret" value="{{ enrol.secret }}">
+    <label>Code from your app
+      <input name="code" inputmode="numeric" autocomplete="one-time-code"
+             required maxlength="10" placeholder="123456" autofocus>
+    </label>
+    <div class="commitbar">
+      <button type="submit">Turn it on</button>
+      <a href="/profile">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+<div class="accountcols">
+  <div>
+<section class="narrow">
+  <h2>Appearance</h2>
+  <form class="panel" method="post" action="/profile/appearance">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <div class="row">
+      <label>Theme
+        <select name="theme">
+          <option value="auto" {% if auth.user.theme == 'auto' %}selected{% endif %}>Match my device</option>
+          <option value="light" {% if auth.user.theme == 'light' %}selected{% endif %}>Light</option>
+          <option value="dark" {% if auth.user.theme == 'dark' %}selected{% endif %}>Dark</option>
+        </select>
+      </label>
+      <label>Menu style
+        <select name="nav_style">
+          <option value="both" {% if auth.user.nav_style == 'both' %}selected{% endif %}>Icon + label</option>
+          <option value="text" {% if auth.user.nav_style == 'text' %}selected{% endif %}>Label only</option>
+          <option value="icon" {% if auth.user.nav_style == 'icon' %}selected{% endif %}>Icon only</option>
+        </select>
+      </label>
+    </div>
+
+    {# Which entries the top bar carries. Portfolio is hideable too: the brand
+       mark already goes home, so nothing is lost — and somebody who has
+       finished importing should be able to clear that entry away. #}
+    <fieldset>
+      <legend>Menu entries</legend>
+      <p class="note">Untick to hide. The home icon always goes to your portfolio.</p>
+      {% for item in hideable_nav %}
+      <label class="check">
+        <input type="checkbox" name="nav_show" value="{{ item.key }}"
+               {% if item.key not in (auth.user.nav_hidden or []) %}checked{% endif %}>
+        {{ item.label }}
+      </label>
+      {% endfor %}
+    </fieldset>
+
+    <button type="submit">Save appearance</button>
+  </form>
+</section>
+
+<section class="narrow">
+  <h2>Theme colours</h2>
+  {# Six colours, not every token. The ones here carry MEANING — the accent,
+     the two directions money can go, the three chart series — so a poor choice
+     makes something ugly and never unusable. Surfaces, lines and ink stay with
+     the theme, which is what stops somebody setting their text to the colour of
+     their background and then asking why the app is broken. #}
+  <form class="panel" method="post" action="/profile/colors">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <p class="note">One value serves both light and dark, so the contrast shown
+    is whichever mode it reads worse in. Leave a box empty for the built-in
+    colour.</p>
+    <ul class="swatchlist">
+      {% for s in swatches %}
+      <li class="swatchrow">
+        <label class="swatchpick" for="hex-{{ s.token }}">
+          {# The wheel and the hex box are ONE control with two faces —
+             colourpicker.js keeps them in step. The text box is not a
+             convenience: it is how somebody pastes the colour they already use
+             everywhere else. #}
+          {# A button, not `<input type="color">`. The native control opens
+             whatever the platform supplies — the Windows picker on Windows,
+             the Android one on a phone — three different experiences of one
+             setting, none of them stylable. `colourwheel.js` draws ours. The
+             hex box beside it is still the field that submits, so with no
+             JavaScript this is a text input and nothing is lost. #}
+          <button type="button" class="swatchwheel" data-for="hex-{{ s.token }}"
+                  aria-label="Pick a colour for {{ s.label }}"
+                  style="background: {{ colors.get(s.token) or defaults.get(s.token, '#888888') }}"></button>
+        </label>
+        <div class="swatchmeta">
+          <strong>{{ s.label }}</strong>
+          <span class="sub">{{ s.blurb }}</span>
+          {% if color_warnings.get(s.token) %}
+          <span class="sub down">{{ color_warnings[s.token] }}</span>
+          {% endif %}
+        </div>
+        <input type="text" id="hex-{{ s.token }}" name="{{ s.token }}"
+               class="swatchhex" inputmode="text" spellcheck="false"
+               placeholder="{{ defaults.get(s.token, 'default') }}"
+               pattern="^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+               value="{{ colors.get(s.token, '') }}"
+               aria-label="{{ s.label }} colour code">
+      </li>
+      {% endfor %}
+    </ul>
+    <div class="commitbar">
+      <button type="submit">Save colours</button>
+      <button type="submit" class="secondary" name="reset" value="1"
+              formaction="/profile/colors/reset">Reset to defaults</button>
+    </div>
+  </form>
+</section>
+
+
+  </div>
+  <div>
+<section class="narrow">
+  <h2>Change password</h2>
+  <form class="panel" method="post" action="/profile/password" autocomplete="on">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <label>Current password
+      <input type="password" name="current_password" required autocomplete="current-password">
+    </label>
+    <label>New password <span class="sub">at least 10 characters</span>
+      <input type="password" name="password" required minlength="10" autocomplete="new-password">
+    </label>
+    <label>Confirm new password
+      <input type="password" name="confirm" required minlength="10" autocomplete="new-password">
+    </label>
+    <button type="submit">Change password</button>
+  </form>
+</section>
+<section class="narrow">
+  <h2>Two-factor authentication</h2>
+  {% if totp_enabled %}
+  <p class="note">On. Signing in needs a code from your authenticator app as
+  well as your password. <strong>{{ recovery_left }}</strong> recovery
+  code{{ '' if recovery_left == 1 else 's' }} left.</p>
+  {% if recovery_left == 0 %}
+  <p class="panel warn">You've used all your recovery codes. Turn two-factor off and on again to
+  issue a fresh set.</p>
+  {% endif %}
+  <form class="panel" method="post" action="/profile/2fa/disable" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <p class="note">Turning it off needs your password and a current code.</p>
+    <div class="row">
+      <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
+      <label>Code <input name="code" inputmode="numeric" required maxlength="20" placeholder="123456"></label>
+    </div>
+    <button type="submit" class="danger">Turn off two-factor</button>
+  </form>
+  {% elif not enrol %}
+  <p class="note">Off. With it on, your password alone isn't enough to sign in.</p>
+  <p><a href="/profile/2fa"><button type="button">Set up two-factor</button></a></p>
+  {% endif %}
+</section>
+<section class="narrow">
+  <h2>Where you're signed in</h2>
+  <p class="note">Sessions end after an hour idle, and after 7 days regardless. Lost a device?
+  Sign it out here.</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Device</th><th>Address</th><th>Last used</th><th>Started</th><th></th></tr></thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr>
+        <td>{{ s.device }}{% if s.current %} <span class="badge">this one</span>{% endif %}</td>
+        <td>{{ s.ip }}</td>
+        <td>{{ s.last_seen.strftime('%a %d %b %H:%M') }}</td>
+        <td>{{ s.started.strftime('%d %b') }}</td>
+        <td class="rowactions">
+          {% if not s.current %}
+          <form method="post" action="/profile/sessions/{{ s.id }}/revoke">
+            <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+            <button class="linkish" type="submit">Sign out</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if sessions | length > 1 %}
+  <form method="post" action="/profile/sessions/revoke-others"
+        onsubmit="return confirm('Sign out every other session? You will stay signed in here.');">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <button type="submit">Sign out everywhere else</button>
+  </form>
+  {% endif %}
+</section>
+<section class="narrow">
+  <h2>Portfolios you can see</h2>
+  <ul class="dca">
+    {% for m in auth.memberships %}
+    <li><strong>{{ m.name }}</strong> — {{ role_labels[m.role] }}
+      {% if m.portfolio_id == auth.active_portfolio_id %}<span class="badge">active</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  <p class="note">Manage people and API keys on the <a href="/members">Sharing</a> page.</p>
+</section>
+  </div>
+</div>
+
+<script src="/static/colourpicker.js?v={{ asset_v }}" defer></script>
+<script src="/static/colourwheel.js?v={{ asset_v }}" defer></script>
+
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Recovery codes — Stocktake{% endblock %}
+{% block content %}
+<h1>Your recovery codes</h1>
+<p class="note">A new set has been generated. <strong>Any codes you saved
+before now no longer work.</strong></p>
+
+{% include "_codes.html" %}
+
+<div class="commitbar">
+  <a class="button" href="/profile">Done</a>
+</div>
+{% endblock %}

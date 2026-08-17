@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+{% block title %}DCA Schedule — Stocktake{% endblock %}
+{% block content %}
+
+{# The page is the SCHEDULE — a calendar of dates you follow, and what is
+   coming next. The plan that generates it is a setting, so it lives behind a
+   button rather than taking up half the page: you edit a plan once and follow
+   the schedule every week. #}
+<div class="pagehead">
+  <div>
+    <h1>DCA Schedule</h1>
+    <p class="note">
+      <span class="chip chip-buy">buy</span> and
+      <span class="chip chip-dividend">dividend</span> are recorded;
+      <span class="chip chip-buy-planned">scheduled</span> comes from your plan and
+      <span class="chip chip-dividend-expected">expected</span> is projected from
+      each holding's payment history.
+    </p>
+  </div>
+  <div class="headactions">
+    <button type="button" id="openplan" class="primary">
+      {{ 'Edit plan' if plan else 'Create a plan' }}</button>
+  </div>
+</div>
+
+{# Calendar and Coming up side by side, 65/35. `align-items: stretch` plus a
+   scrolling list is what makes the right column exactly as tall as the left
+   one rather than ending wherever its content happens to stop. #}
+<div class="planpair">
+  <section class="calpanel">
+    <header class="calbar">
+      <h2>{{ month_label }}</h2>
+      <div class="calnav">
+        <a href="/schedule?year={{ prev[0] }}&month={{ prev[1] }}"
+           aria-label="Previous month"><button type="button">←</button></a>
+        <a href="/schedule"><button type="button">Today</button></a>
+        <a href="/schedule?year={{ next[0] }}&month={{ next[1] }}"
+           aria-label="Next month"><button type="button">→</button></a>
+      </div>
+    </header>
+    <table class="calendar">
+      <thead>
+        <tr><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr>
+      </thead>
+      <tbody>
+        {% for week in weeks %}
+        <tr>
+          {% for day in week %}
+          <td class="{{ 'outside' if not day.in_month }} {{ 'today' if day.is_today }}">
+            <span class="daynum">{{ day.date.day }}</span>
+            {% for e in day.events %}
+            <a class="chip chip-{{ e.kind }}" href="/holding/{{ e.ticker }}?return=/schedule"
+               title="{{ e.ticker }} — {{ e.detail }}{% if e.amount %} ({{ e.amount | money_plain }}){% endif %}">
+              {{ e.ticker }}
+            </a>
+            {% endfor %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  {# No separate "Up next" or "History" sections: the calendar already shows
+     both — history on the grid, the next buy as the first row here — and the
+     two actions they would carry, Record buy and Skip, sit on the row they
+     act on. #}
+  <section class="calpanel comingup">
+    <header class="calbar"><h2>Coming up</h2></header>
+    <div class="comingscroll">
+      {% if upcoming %}
+      <ul class="upnext">
+        {% for e in upcoming %}
+        <li class="{{ 'due' if e.kind == 'buy-planned' and e.date <= sched.today }}">
+          <div class="upmain">
+            <a href="/holding/{{ e.ticker }}?return=/schedule"><strong>{{ e.ticker }}</strong></a>
+            <span class="sub">{{ e.date }}</span>
+          </div>
+          <div class="upside">
+            <span class="chip chip-{{ e.kind }}">{{ 'scheduled' if e.kind == 'buy-planned' else 'expected' }}</span>
+            <span class="num">{{ e.amount | cash(e.currency) }}</span>
+          </div>
+          {# Only on the FIRST scheduled buy: these advance the rotation, and
+             the rotation has one next step. Offering them on every row would
+             imply you can record the third buy before the first. #}
+          {% if e.kind == 'buy-planned' and loop.first %}
+          <div class="upactions">
+            <a href="/schedule/complete"><button type="button" class="secondary">Record buy</button></a>
+            <form action="/schedule/skip" method="post" class="inline">
+              <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+              <input type="hidden" name="ticker" value="{{ e.ticker }}">
+              <input type="hidden" name="due_date" value="{{ e.date }}">
+              <button type="submit" class="secondary">Skip</button>
+            </form>
+          </div>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% elif not plan %}
+      {# The empty state that matters: with no plan there is nothing to be
+         coming up, and the way out is the button in the corner. #}
+      <p class="empty">No plan yet.<br>
+        <span class="sub">Create one and your scheduled buys appear here and on
+        the calendar.</span></p>
+      {% else %}
+      <p class="empty">Nothing coming up.<br>
+        <span class="sub">Distributions appear once the price feed has fetched
+        a holding's payment history.</span></p>
+      {% endif %}
+    </div>
+  </section>
+</div>
+
+{# The plan itself. A dialog, the same pattern as Record trade and Add an
+   instrument — `showModal()` gives focus handling, Escape and the backdrop. #}
+<dialog id="plandialog" {% if edit %}open{% endif %}>
+  <h2>{{ 'Edit plan' if plan else 'Create a plan' }}</h2>
+  {% if not plan %}
+  <p class="note">List the tickers in the order you buy them and how often. A
+  ticker can appear more than once — that is how you weight it.</p>
+  {% endif %}
+
+  <div class="planedit">
+    {# `panel` for the form-control styling — inside a dialog its border is
+         removed by `dialog .panel`, the same as the trade form. Without it
+         the textarea renders unstyled and the label text wraps around it. #}
+    <form class="panel" method="post" action="/schedule/save">
+      <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+      <label>Name
+        <input name="name" value="{{ plan.name if plan else 'Regular buys' }}" required>
+      </label>
+      <div class="row">
+        {# The unit belongs in the label, not after the box: `.panel input` is
+           display:block, so trailing text drops onto its own line and reads as
+           a stray word. #}
+        <label>Buy every <span class="sub">days</span>
+          <input type="number" name="interval_days" min="1" max="365"
+                 value="{{ plan.interval_days if plan else 28 }}" required>
+        </label>
+        <label>Typical amount
+          <input name="amount" inputmode="decimal"
+                 value="{{ plan.amount if plan and plan.amount is not none else '' }}">
+        </label>
+        <label>Brokerage
+          <input name="brokerage" inputmode="decimal"
+                 value="{{ plan.brokerage if plan else '9.50' }}">
+        </label>
+      </div>
+      <label>First buy date <span class="sub">only used before you've recorded anything</span>
+        <input type="date" name="start_date" value="{{ plan.start_date or '' }}">
+      </label>
+      {# The rotation, as a thing you arrange rather than a string you type.
+         Repeats are the whole point — a ticker appearing twice is bought twice
+         as often — so the palette adds rather than toggles, and the same
+         ticker can sit in the list any number of times.
+
+         The TEXTAREA is still the field that submits, and with scripting off
+         it is simply what you get: a comma-separated box, exactly as before.
+         `rotation.js` hides it, builds the two panels, and writes back to it on
+         every change — so there is one source of truth and no second parser. #}
+      <label for="tickers">Rotation
+        <span class="sub">in buy order; the same ticker more than once is how you weight it</span>
+      </label>
+      <textarea name="tickers" id="tickers" rows="4" required>{% if plan %}{% for e in plan.entries %}{{ e.instrument.ticker }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}{{ suggested_rotation | join(", ") }}{% endif %}</textarea>
+
+      <div class="rotation" id="rotation" hidden>
+        <div class="rotpanel">
+          <h4 id="rotavail">Available</h4>
+          {# Buttons, not just draggables: drag is the nice way and the only
+             way it must not be — this has to work by keyboard, and on a phone,
+             where HTML5 drag-and-drop does not exist at all. Clicking adds to
+             the end. #}
+          <ul class="rotsource" aria-labelledby="rotavail">
+            {% for i in instruments %}
+            <li>
+              {# No `draggable`: the native HTML5 drag cannot keep the chip
+                 under the cursor or open a gap, so rotation.js drives this
+                 with pointer events instead — which also makes it work on
+                 touch, where HTML5 drag does not exist. #}
+              <button type="button" class="rotchip add"
+                      data-ticker="{{ i.ticker }}"
+                      aria-label="Add {{ i.ticker }} to the rotation">
+                {{ i.ticker }}<span class="rotplus" aria-hidden="true">+</span>
+              </button>
+            </li>
+            {% endfor %}
+          </ul>
+          <p class="sub">Click to add, or drag one across.</p>
+        </div>
+
+        <div class="rotpanel">
+          <h4 id="rotorderlabel">Buy in this order</h4>
+          <ol class="rotorder" id="rotorder" aria-labelledby="rotorderlabel"></ol>
+          <p class="empty rotempty" hidden>Nothing in the rotation yet.<br>
+            <span class="sub">Add a ticker from the left.</span></p>
+          <p class="sub rotcount" aria-live="polite"></p>
+        </div>
+      </div>
+      {# The way back to typing, for anyone who would rather paste a list than
+         click twelve times. Two-way: editing the text rebuilds the chips. #}
+      <p class="rottoggle" hidden>
+        <button type="button" class="linkish" id="rotastext">Edit as text</button>
+      </p>
+      <div class="commitbar">
+        <button type="submit">Save plan</button>
+        <button type="button" class="secondary" data-close-dialog>Cancel</button>
+      </div>
+    </form>
+
+    {# What the plan actually produces, which is the thing worth checking
+       before saving: dates and tickers, in order. One scrolling list, because
+       a rotation of tickers with no dates does not answer "when do I next buy
+       ALPHA". #}
+    {# The preview is LIVE: every change to the rotation, the interval or the
+       start date re-asks the server what dates that would produce. It is a
+       projection of the DRAFT and saves nothing, so pulling chips around
+       cannot disturb the schedule anyone is following.
+
+       Server-rendered first from the saved plan, so it is right before any
+       script runs and right again if the fetch fails. #}
+    <div class="preview" id="preview" data-today="{{ sched.today }}">
+      <h3>Preview plan</h3>
+      <div class="previewscroll">
+        <table>
+          <thead><tr><th>Date</th><th>Ticker</th></tr></thead>
+          <tbody id="previewrows">
+            {% for p in sched.next %}
+            <tr class="{{ 'due' if p.due_date <= sched.today }}">
+              <td>{{ p.due_date }}</td>
+              <td>{{ p.ticker }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="empty previewempty" {% if sched.next %}hidden{% endif %}>
+          Add a ticker to the rotation to see the dates it produces.</p>
+      </div>
+      <p class="sub" id="previewnote">Projected from the rotation and the
+      interval. Nothing here is saved until you press Save plan.</p>
+    </div>
+  </div>
+</dialog>
+{# Without script the dialog cannot be opened by a button, so the deep link is
+   the way in — same form either way. #}
+<noscript><a href="/schedule?edit=1">Edit the plan</a></noscript>
+
+<script src="/static/tradeform.js?v={{ asset_v }}" defer></script>
+<script src="/static/planpage.js?v={{ asset_v }}" defer></script>
+<script src="/static/rotation.js?v={{ asset_v }}" defer></script>
+
+{% endblock %}

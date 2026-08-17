@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}Sharing — Stocktake{% endblock %}
+{% block content %}
+
+<h1>Admin <small>{{ auth.active.name if auth.active else '' }}</small></h1>
+<div class="subnav">
+  <a href="/admin" class="on">This portfolio</a>
+  {% if auth.is_admin %}<a href="/admin/accounts">Accounts</a>
+  <a href="/admin/settings">Settings</a>{% endif %}
+</div>
+
+<p class="note">Everyone here shares this portfolio — a trade one person records shows up for
+all of them.</p>
+
+{% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+
+{% if new_key %}
+<p class="panel ok">
+  New API key — <strong>copy it now, it isn't shown again</strong>:<br>
+  <code class="reveal">{{ new_key }}</code>
+</p>
+{% endif %}
+
+{% if auth.is_admin %}
+<section class="narrow">
+  <h2>This portfolio</h2>
+  <form class="panel" method="post" action="/portfolio/settings">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <label>Name <input name="name" value="{{ auth.active.name if auth.active else '' }}"
+                       maxlength="80" required></label>
+    <div class="row">
+      <label>Reporting currency
+        <select name="reporting_currency">
+          {% for code in currencies %}
+          <option value="{{ code }}" {% if portfolio and portfolio.reporting_currency == code %}selected{% endif %}>{{ code }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {# "Country" to the reader, `jurisdiction` on the wire — the column picks
+         the tax rules and the year labels, which follow tax residency rather
+         than an address. See Portfolio.jurisdiction. #}
+      <label>Country
+        <select name="jurisdiction">
+          {% for code, label in countries %}
+          <option value="{{ code }}" {% if portfolio and portfolio.jurisdiction == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    {# Said plainly rather than implied. A setting that silently does nothing is
+       worse than no setting, and totals are still computed in the built-in
+       reporting currency until T28b rewires the places that assume it. #}
+    <p class="note">Currency and country are recorded but not applied yet —
+    totals are still calculated in {{ reporting_ccy }}, and the financial year
+    still follows Australian dates.</p>
+    <button type="submit">Save</button>
+  </form>
+</section>
+{% endif %}
+
+<section>
+  <h2>People</h2>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr></thead>
+    <tbody>
+      {% for m, u in rows %}
+      <tr>
+        <td>{{ u.name }}{% if u.id == auth.user.id %} <span class="sub">(you)</span>{% endif %}</td>
+        <td>{{ u.email }}</td>
+        <td>
+          {% if auth.is_owner %}
+          <form method="post" action="/members/{{ m.id }}/role" class="inline">
+            <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+            <select name="role" onchange="this.form.submit()">
+              {% for r in roles %}<option value="{{ r }}" {% if m.role == r %}selected{% endif %}>{{ role_labels[r] }}</option>{% endfor %}
+            </select>
+          </form>
+          {% else %}{{ role_labels[m.role] }}{% endif %}
+        </td>
+        <td class="rowactions">
+          {% if auth.is_owner %}
+          <form method="post" action="/members/{{ m.id }}/remove">
+            <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+            <button class="linkish" type="submit">Remove</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="note">{% for r in roles %}<strong>{{ role_labels[r] }}</strong>
+  {{ role_blurbs[r] }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+</section>
+
+{% if auth.is_owner %}
+<section class="narrow">
+  <h2>Add someone</h2>
+  {% if candidates %}
+  <form class="panel" method="post" action="/members/add">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <div class="row">
+      <label>Account
+        <select name="user_id" required>
+          {% for u in candidates %}<option value="{{ u.id }}">{{ u.name }} — {{ u.email }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Role
+        <select name="role">
+          {% for r in roles %}<option value="{{ r }}"
+            {% if r == 'member' %}selected{% endif %}>{{ role_labels[r] }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    <button type="submit">Add to this portfolio</button>
+  </form>
+  {% else %}
+  <p class="sub">Everyone with an account is already a member.
+    {% if auth.is_admin %}<a href="/users">Create another account</a> first.{% else %}
+    Ask an admin to create their account first.{% endif %}</p>
+  {% endif %}
+</section>
+
+{# Two panels that are each half a screen of content — side by side on a
+   desktop, and stacked on a phone by the small-screen rules. #}
+<div class="evenpair">
+<section class="narrow">
+  <h2>API keys</h2>
+  <p class="note">Lets other apps read this portfolio, and with write scope record trades into
+  it. Send it as <code>Authorization: Bearer pfk_…</code>.</p>
+  {% if keys %}
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Name</th><th>Key</th><th>Scope</th><th>Last used</th><th></th></tr></thead>
+    <tbody>
+      {% for k in keys %}
+      <tr class="{{ '' if k.active else 'muted' }}">
+        <td>{{ k.name }}</td>
+        <td><code>{{ k.prefix }}…</code></td>
+        <td>{{ 'read + write' if k.can_write else 'read only' }}</td>
+        <td class="sub">{{ k.last_used_at.strftime('%Y-%m-%d %H:%M') if k.last_used_at else 'never' }}</td>
+        <td class="rowactions">
+          {% if k.active %}
+          <form method="post" action="/keys/{{ k.id }}/revoke">
+            <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+            <button class="linkish" type="submit">Revoke</button>
+          </form>
+          {% else %}<span class="sub">revoked</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  <form class="panel" method="post" action="/keys/new">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <div class="row">
+      <label>What's it for <input name="name" placeholder="budgeting app" required></label>
+      <label>Access
+        <select name="scopes">
+          <option value="read">Read only</option>
+          <option value="read,write">Read and write</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">Create key</button>
+  </form>
+  <details class="tableview">
+    <summary>Endpoints</summary>
+    <pre class="note">GET  /api/v1/portfolio        totals, day change
+GET  /api/v1/holdings         per-instrument units, value, gain
+GET  /api/v1/trades?since=…   trade history (&amp;ticker=ALPHA)
+GET  /api/v1/dividends?since=…
+GET  /api/v1/fy/2026          FY summary incl. CGT
+GET  /api/v1/schedule             rotation + upcoming buys
+POST /api/v1/trades           {ticker,type,date,units,unit_price,…}   (write)
+POST /api/v1/dividends        {ticker,date,cash_amount,…}             (write)</pre>
+  </details>
+</section>
+{% endif %}
+<section class="narrow" id="new">
+  <h2>Start another portfolio</h2>
+  <p class="note">A separate set of holdings you own — a family member's, or a trust.</p>
+  <form class="panel" method="post" action="/portfolio/new">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <label>Name <input name="name" placeholder="Family portfolio" required></label>
+    <button type="submit">Create portfolio</button>
+  </form>
+</section>
+</div>
+
+
+{% endblock %}

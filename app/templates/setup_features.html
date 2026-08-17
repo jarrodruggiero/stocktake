@@ -1,0 +1,30 @@
+{% extends "setup_base.html" %}
+{% set heading = "Optional features" %}
+{% set intro = "Parts of the app you can leave out. Every one of these can be turned on or off later under Admin → Settings, so nothing here is a decision you are stuck with." %}
+{% block wizard %}
+
+<form method="post" action="/setup/features" class="panel">
+  <input type="hidden" name="_csrf" value="{{ csrf }}">
+
+  {# Tickbox · name · description, one row each. The description sits in the
+     row rather than behind a tooltip: somebody meeting the app for the first
+     time is exactly the person who cannot know what "DCA Schedule" means, and
+     this is the one screen where they have to decide. #}
+  <ul class="featurelist">
+    {% for f in features %}
+    <li>
+      <label class="check">
+        <input type="checkbox" name="feature" value="{{ f.key }}"
+               {% if chosen.get(f.key, True) %}checked{% endif %}>
+        <span class="featurename">{{ f.name }}</span>
+      </label>
+      <p class="sub">{{ f.blurb }}</p>
+    </li>
+    {% endfor %}
+  </ul>
+
+  <div class="commitbar">
+    <button type="submit">Continue</button>
+  </div>
+</form>
+{% endblock %}

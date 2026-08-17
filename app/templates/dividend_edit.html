@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Edit distribution — Stocktake{% endblock %}
+{% block content %}
+
+{# The other editor reached from a holding's ledger, and it gets the same way
+   out as the trade editor. There is no `?return=` here — a distribution is
+   only ever opened from its own instrument's page. #}
+<a class="backlink" href="/holding/{{ inst.ticker }}"><button type="button"
+   class="secondary">&larr; {{ inst.ticker }}</button></a>
+
+<h1>Edit {{ inst.ticker }} distribution</h1>
+{% if drp %}
+<p class="note">Reinvested, so it is two rows that have to agree: the cash paid and the units
+it bought. Both save together or not at all.</p>
+{% else %}
+<p class="note">Cash paid out, in {{ inst.currency }}.</p>
+{% endif %}
+
+{% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+
+<form class="panel narrow" method="post" action="/dividend/{{ dividend.id }}/edit"
+      autocomplete="off">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+
+  <div class="row">
+    <label>Date
+      <input type="date" name="div_date" value="{{ dividend.date }}" required>
+    </label>
+    <label>Cash <span class="sub">{{ inst.currency }}</span>
+      <input name="cash_amount" inputmode="decimal" value="{{ dividend.cash_amount | qty }}" required>
+    </label>
+    <label>Franking credits <span class="sub">optional</span>
+      <input name="franking_credits" inputmode="decimal"
+             value="{% if dividend.franking_credits is not none %}{{ dividend.franking_credits | qty }}{% endif %}">
+    </label>
+  </div>
+
+  {% if drp %}
+  <fieldset>
+    <legend>Units reinvested</legend>
+    <div class="row">
+      <label>Units <input name="quantity" inputmode="decimal" value="{{ drp.quantity | qty }}" required></label>
+      <label>Price per unit <input name="unit_price" inputmode="decimal" value="{{ drp.unit_price | qty }}" required></label>
+    </div>
+    <p class="sub">These move with the date above — the units are dated the day
+    the distribution was paid.</p>
+  </fieldset>
+  {% endif %}
+
+  <label>Note <span class="sub">optional, private to you</span>
+    <input name="note" value="{{ dividend.note or '' }}" maxlength="400">
+  </label>
+
+  <div class="commitbar">
+    <button type="submit">Save changes</button>
+    <a href="/holding/{{ inst.ticker }}">Cancel</a>
+  </div>
+</form>
+
+<form class="panel narrow danger" method="post" action="/dividend/{{ dividend.id }}/delete"
+      onsubmit="return confirm('Delete this {{ inst.ticker }} distribution of {{ dividend.cash_amount | qty }} on {{ dividend.date }}?{% if drp %} The {{ drp.quantity | qty }} reinvested units go with it.{% endif %}');">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  <h2>Delete this distribution</h2>
+  <p class="note">
+    {% if drp %}Removes the cash and the {{ drp.quantity | qty }} units it bought,
+    together. If a later sell depends on those units the delete is refused and
+    says which sell to fix.
+    {% else %}Removes it from the ledger and from your dividend income for the year.
+    {% endif %}
+  </p>
+  <button type="submit" class="danger">Delete distribution</button>
+</form>
+
+{% endblock %}

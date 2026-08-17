@@ -1,0 +1,55 @@
+# Publishes docs/ to GitHub Pages.
+#
+# Enable once, in Settings → Pages → Source: GitHub Actions. Then point the
+# repo's About → website field at the published URL; that is the "Docs" link
+# other projects have. There is no special GitHub docs feature.
+#
+# The docs render on GitHub without this. If Pages is ever a nuisance, delete
+# this file and nothing is lost but search and navigation.
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - .github/workflows/docs.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never two deploys at once; skip superseded runs rather than queueing them.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install mkdocs-material
+      # --strict fails the build on a broken internal link, so a renamed page
+      # cannot quietly leave a dead link in the nav.
+      - run: mkdocs build --strict
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Map this statement — Stocktake{% endblock %}
+{% block content %}
+
+<h1>Map this statement <small>{{ filename }}</small></h1>
+<p class="note">Pick a field on the right, then click the value on the page.
+The pages are rendered on this machine and removed {{ idle_minutes }} minutes
+after you stop working on them.</p>
+{% if pages and pages[0].from_ocr %}
+<p class="panel warn">This PDF has no text layer, so the words were read with
+OCR. Check each value you pick reads the way it does on the page.</p>
+{% endif %}
+{% if pages and not pages[0].boxes %}
+<p class="panel error">No words could be found on this page. If it is a scan,
+OCR is either turned off or not installed here — the text designer will not help
+either. Enter the figures by hand from the imports page.</p>
+{% endif %}
+
+<div class="designer">
+  <div>
+    {# Each word is a real <button> laid over the page image at the position
+       pdfplumber reported for it. Buttons rather than a click map on the
+       image, because "click the value" is the whole interaction and it has to
+       work from a keyboard — tabbing through the words is how somebody who
+       cannot use a mouse maps a statement. #}
+    <div id="doc" role="group" aria-label="Statement pages — choose a value">
+      {% for page in pages %}
+      {# Boxes are positioned in PERCENTAGES, so the image can be shown at
+         whatever width the screen allows and every box stays on its word. #}
+      <div class="pagewrap">
+        <img src="/imports-exports/statement/visual/{{ token }}/page/{{ loop.index0 }}.png"
+             width="{{ page.width }}" height="{{ page.height }}"
+             alt="Page {{ loop.index }} of the statement">
+        {% for b in page.boxes %}
+        <button type="button" class="wordbox" data-index="{{ b.index }}"
+                aria-pressed="false" title="{{ b.text }}"
+                style="left:{{ '%.3f' % b.left }}%;top:{{ '%.3f' % b.top }}%;width:{{ '%.3f' % b.width }}%;height:{{ '%.3f' % b.height }}%"
+        ><span class="visually-hidden">{{ b.text }}</span></button>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    <p class="note" id="hint" role="status" aria-live="polite">
+      Choose a field, then click its value on the page.
+    </p>
+  </div>
+
+  <div>
+    {# Load an existing template's mapping into the editor. Any of them,
+       including the ones that ship: a correction to a shipped format is the
+       most valuable kind, and the person who found it is the one holding the
+       statement it reads wrongly. #}
+    <form method="post" action="/imports-exports/statement/visual/edit" class="pickform">
+      <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+      <input type="hidden" name="token" value="{{ token }}">
+      <label>Start from a template
+        <select name="template" onchange="this.form.submit()">
+          <option value="">— map from scratch —</option>
+          {% for tpl in templates %}
+          <option value="{{ tpl.key }}" {{ 'selected' if editing and tpl.key == editing.key }}>
+            {{ tpl.name }}{% if tpl.source == 'builtin' %} (shipped){% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <noscript><button type="submit">Load</button></noscript>
+    </form>
+    {% if editing %}
+    <p class="note">Editing <strong>{{ editing.name }}</strong>. Fields already
+    mapped are shown below — change what you need and save.
+    {% if editing.rows %}This template also reads a table, which is kept as it
+    is.{% endif %}</p>
+    {% endif %}
+
+    <h2>Fields</h2>
+    <ul class="fieldlist" id="fields">
+      {% for key, label, expect in fields %}
+      <li data-field="{{ key }}" data-expect="{{ expect }}">
+        <button type="button" class="linkish pick">{{ label }}</button>
+        <span class="sub">{{ expect }}</span>
+        <span class="state">not set</span>
+        {# Unset it. Editing a template is mostly RE-mapping, and a field that
+           could be set and never cleared made the editor a one-way door — the
+           only way back was to reload and lose everything else. Named after
+           the field, because that is all a screen reader gets. #}
+        <button type="button" class="clearfield" hidden
+                aria-label="Clear {{ label }}" title="Clear {{ label }}">&times;</button>
+        {# The way out of a value the app cannot describe: somewhere to type
+           the label, rather than asking for one with nowhere to put it. #}
+        <label class="labeledit" hidden>Words before it
+          <input class="labelinput" placeholder="e.g. net amount">
+        </label>
+        <span class="fieldnote" role="status" aria-live="polite"></span>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <form method="post" action="/imports-exports/statement/design/export" id="exportform">
+      <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+      <input type="hidden" name="mapping" id="mapping" value="{}">
+      <input type="hidden" name="text" value="{{ text }}">
+      <label>Registry name
+        <input name="name" required placeholder="Example Registry (Australia)"
+               value="{{ editing_name }}">
+      </label>
+      <label>Text that identifies this layout <span class="sub">optional, one per line</span>
+        <textarea name="marker" rows="2"
+                  placeholder="Example Registry Services">{{ editing_markers }}</textarea>
+      </label>
+      <p class="sub">Before contributing it, install it and parse your real PDF
+      from the imports page with <strong>Read it with</strong> set to this
+      template — that checks every label against the document as it arrives.</p>
+      <div class="commitbar">
+        <button type="submit" id="download" disabled>Download template</button>
+        <button type="submit" id="install" disabled class="secondary"
+                formaction="/imports-exports/statement/design/install">Install here</button>
+        <button type="submit" id="contribute" disabled class="secondary"
+                formaction="/imports-exports/statement/design/contribute">Prepare a contribution</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# The same field the text designer posts, so both send identical requests to
+   the one inference endpoint. #}
+<textarea id="doctext-source" hidden>{{ text }}</textarea>
+{# The mapping to start from, so opening a template shows where every field
+   currently points rather than a blank slate. #}
+<script type="application/json" id="startmapping">{{ editing_mapping | safe }}</script>
+
+<script src="/static/designer.js?v={{ asset_v }}"></script>
+<script src="/static/designer-visual.js?v={{ asset_v }}" defer></script>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{% if edit %}Edit trade{% else %}Record trade{% endif %} — Stocktake{% endblock %}
+{% block content %}
+
+{# Where this form lets you out. `return_to` is decided in the route and is the
+   SAME path the delete button below posts back to — two controls on one page
+   that both mean "I am finished here" must not land in different places. #}
+<a class="backlink" href="{{ return_to }}"><button type="button"
+   class="secondary">&larr; {{ back_label }}</button></a>
+
+{% if edit %}
+<h1>Edit {{ inst.ticker }} trade</h1>
+<p class="note">Correcting a mistake in what was recorded. The whole {{ inst.ticker }}
+timeline is re-checked when you save, so a change that would leave a later sell
+with nothing to sell is refused and tells you which trade to fix first.
+To move this trade to a different instrument, delete it and record it again.</p>
+{% else %}
+<h1>Record a trade</h1>
+<p class="note">For anything outside the plan. A buy that belongs to your rotation is better
+recorded on the <a href="/schedule">DCA Schedule</a>, so the schedule advances
+with it.</p>
+{% endif %}
+
+{% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+
+{% include "_trade_form.html" %}
+
+{% if edit %}
+<form class="panel narrow danger" method="post" action="/trade/{{ edit.id }}/delete"
+      onsubmit="return confirm('Delete this {{ edit.type }} of {{ edit.quantity | qty }} {{ inst.ticker }} on {{ edit.date }}? The charts, reports and exports all change to match.');">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  {# Back to wherever you came from, carried explicitly — see `trade_delete`. #}
+  <input type="hidden" name="return_to" value="{{ return_to }}">
+  <h2>Delete this trade</h2>
+  <p class="note">Removes it from the ledger. If a later sell depends on these units the
+  delete is refused, and says which sell to fix.</p>
+  <button type="submit" class="danger">Delete trade</button>
+</form>
+{% endif %}
+
+<script src="/static/tradeform.js?v={{ asset_v }}" defer></script>
+
+{% endblock %}

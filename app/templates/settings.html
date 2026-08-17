@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}Settings — Stocktake{% endblock %}
+{% block content %}
+
+<h1>Admin <small>settings</small></h1>
+<div class="subnav">
+  <a href="/admin">This portfolio</a>
+  <a href="/admin/accounts">Accounts</a>
+  <a href="/admin/settings" class="on">Settings</a>
+</div>
+
+<p class="note">Application-wide settings, held in <code>{{ config_path }}</code>. Your own
+preferences live on <a href="/profile">your profile</a>.</p>
+
+{% if saved %}
+<p class="panel ok">Settings saved.
+  {% if pending %}<strong>{{ pending | join(', ') }}</strong>
+  {{ 'takes' if pending | length == 1 else 'take' }} effect when the application
+  is next restarted; everything else applied immediately.
+  {% else %}Applied immediately.{% endif %}</p>
+{% endif %}
+{% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+
+{% if not writable.writable %}
+{# Read-only is a normal, deliberate deployment shape — explain it rather than
+   letting someone discover it by having a save fail. #}
+<p class="panel warn"><strong>Settings can be read here but not changed.</strong><br>
+{{ writable.reason }}</p>
+{% endif %}
+
+<form method="post" action="/admin/settings">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  <div class="settinglist">
+    {% for opt in options %}
+    <div class="settingrow{{ ' disabled' if not writable.writable else '' }}">
+      <div class="settinglabel">
+        <label for="f-{{ opt.name }}">{{ opt.label }}</label>
+        <p class="sub">{{ opt.blurb }}
+          {% if opt.restart %}<em>Takes effect after a restart.</em>{% endif %}</p>
+        {% if opt.name in from_environment %}
+        <p class="sub warn">Currently set by the environment variable
+          <code>{{ from_environment[opt.name] }}</code>, which overrides this file —
+          changing it here will not alter what the application uses.</p>
+        {% endif %}
+      </div>
+      <div class="settingfield">
+        {% if opt.kind == 'bool' %}
+        <input type="checkbox" id="f-{{ opt.name }}" name="{{ opt.name }}" value="on"
+               {{ 'checked' if values[opt.name] else '' }}
+               {{ 'disabled' if not writable.writable else '' }}>
+        {% elif opt.kind == 'choice' %}
+        <select id="f-{{ opt.name }}" name="{{ opt.name }}"
+                {{ 'disabled' if not writable.writable else '' }}>
+          {% for choice in opt.choices %}
+          <option value="{{ choice }}" {{ 'selected' if values[opt.name] == choice else '' }}>
+            {{ choice }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        <input id="f-{{ opt.name }}" name="{{ opt.name }}"
+               type="{{ 'number' if opt.kind == 'int' else ('date' if opt.kind == 'date' else 'text') }}"
+               value="{{ values[opt.name] }}"
+               {% if opt.minimum is not none %}min="{{ opt.minimum }}"{% endif %}
+               {% if opt.maximum is not none %}max="{{ opt.maximum }}"{% endif %}
+               {{ 'disabled' if not writable.writable else '' }}>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if writable.writable %}
+  <div class="commitbar">
+    <button type="submit">Save settings</button>
+    {# Some settings only take effect on a restart, so offer both in one step
+       rather than making someone save and then hunt for the restart. #}
+    <button type="submit" name="restart" value="1" class="linkish"
+            onclick="return confirm('Save these settings and restart the application?')">
+      Save and restart</button>
+    <span class="sub">Written to {{ config_path }}, comments and all.</span>
+  </div>
+  {% endif %}
+</form>
+
+<h2>Restart</h2>
+<p class="note">Stops the application so it starts again — for settings that only take effect
+at startup, or a price feed that has got stuck.</p>
+
+{% if supervision.restarts %}
+<p class="note">{{ supervision.detail }}</p>
+{% else %}
+<p class="panel warn"><strong>Nothing would start it again.</strong><br>
+{{ supervision.detail }}</p>
+{% endif %}
+
+<form method="post" action="/admin/settings/restart" class="panel">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  <button type="submit"
+          onclick="return confirm({{ ('Restart the application now?' if supervision.restarts else 'This will STOP the application, and nothing will start it again. Continue?') | tojson }})">
+    Restart now</button>
+  <span class="sub">Running under {{ supervision.platform }}.</span>
+</form>
+
+<h2>Fixed at startup</h2>
+<p class="note">Shown for reference. These decide where the data lives, so they are only ever
+changed in the configuration file itself.</p>
+<div class="tablewrap">
+<table>
+  <tbody>
+    <tr><th>Application name</th><td><code>{{ fixed.app_name }}</code></td></tr>
+    <tr><th>Database</th><td><code>{{ fixed.database }}</code></td></tr>
+    <tr><th>Price feed timezone</th><td><code>{{ fixed.feed_timezone }}</code>
+      <span class="sub">follows the timezone above unless set explicitly</span></td></tr>
+    <tr><th>Broker import formats</th><td>{{ fixed.brokers or 'none configured' }}
+      <span class="sub">column mappings are edited in the configuration file</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<section>
+  <h2>Console
+    {%- set console_tip %}
+    <p>Warnings and errors from the running application, newest at the bottom.</p>
+    <p>Not every log line: <strong>INFO is left out</strong>, because it is one
+    entry per web request and buries the thing you came here to read. What is
+    shown is the band in between — a price feed falling back to its secondary
+    source, a statement that parsed with fields missing, a job that skipped.</p>
+    <p>Held in memory only and cleared on restart, so the container's own logs
+    remain the record for anything older.</p>
+    {% endset %}
+    {% with body = console_tip, label = "What appears here" %}
+      {% include "_tip.html" %}
+    {% endwith %}
+  </h2>
+  {# Server-rendered first so the panel is useful without scripting; console.js
+     then tails from the highest seq it can see, appending rather than
+     replacing — the lines you were first shown stay put. #}
+  <div class="console scroller" id="console" data-seq="{{ log_lines[-1].seq if log_lines else 0 }}">
+    {% for line in log_lines %}
+    <div class="cline lvl-{{ line.level|lower }}"><span class="ctime">{{ line.when }}</span>
+      <span class="clevel">{{ line.level }}</span>
+      <span class="cname">{{ line.logger }}</span>
+      <span class="cmsg">{{ line.message }}</span></div>
+    {% else %}
+    <div class="cline sub">Nothing logged since the application started.</div>
+    {% endfor %}
+  </div>
+  <p class="sub"><label class="check"><input type="checkbox" id="consolefollow" checked>
+    Follow new lines</label></p>
+</section>
+
+<script src="/static/console.js?v={{ asset_v }}" defer></script>
+
+{% endblock %}

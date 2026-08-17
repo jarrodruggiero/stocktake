@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+{% block title %}Portfolio — Stocktake{% endblock %}
+{% block content %}
+
+
+{# The page's own header. Record trade is the ONE primary action here — every
+   other control on this page is secondary or a link to somewhere else, which
+   is what stops the top-right becoming a toolbar with no hierarchy. The
+   app-level controls (admin, account) stay in the top bar where they sit in
+   the same place on every screen. #}
+<div class="pagehead">
+  <div>
+    {# The portfolio's name. The switcher lives in the account menu, so
+       without this nothing on screen says which portfolio you are reading. #}
+    {%- set current = auth.memberships | selectattr('portfolio_id', 'equalto', auth.active_portfolio_id) | first %}
+    <h1>{{ current.name if current else 'Portfolio' }}</h1>
+    {# Financial years are another view of the same portfolio, so they live
+       here rather than behind a Reports link. Scrolls sideways once the years
+       outgrow the width — the tables below stay put. #}
+    <div class="fytabs">
+      <a href="/" class="on">Today</a>
+      {% for y in fys %}<a href="/?fy={{ y }}">{{ fy_labels[y] }}</a>{% endfor %}
+    </div>
+  </div>
+
+  <div class="headside">
+    <div class="headactions">
+      {# Order matters here: the PRIMARY button sits last so it lands hard in
+         the corner, where the eye goes. Reading order is still quietest to
+         loudest. Charts is not in the nav, so that link is the ONLY way to
+         them — pinned by a test after it went missing once. #}
+      <a href="/charts"><button type="button" class="secondary">View charts</button></a>
+      {% if not feed.running %}
+      <form method="post" action="/refresh">
+        <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+        <button type="submit" class="secondary">Refresh prices</button>
+      </form>
+      {% endif %}
+      <button type="button" id="opentrade" class="primary">Record trade</button>
+    </div>
+
+    {# Underneath the buttons and quieter than them: this is status, not an
+       action. The whole of "did the feed work" is one glyph; the detail is
+       behind it, because on a good day there is nothing to read. #}
+    {# A <div>, NOT a <p>: <details> is flow content and <p> may only hold
+       phrasing content, so the parser closes the paragraph before the
+       <details> and the tick lands on its own line above the text. Invalid
+       markup that renders wrong — found by looking at the page, not by a
+       test. #}
+    <div class="feedline">
+      <details class="feedstatus statusmenu menu">
+        <summary class="{{ 'ok' if feed.ok or (not feed.finished and not feed.running) else 'bad' }}"
+                 aria-label="Price feed status: {% if feed.running %}refreshing now{% elif not feed.finished %}has not run since startup{% elif feed.ok %}ok{% else %}failed{% endif %}">
+          {% if feed.running %}…{% elif feed.ok or not feed.finished %}✓{% else %}✗{% endif %}
+        </summary>
+        {# Two times and nothing else. They are separate runs — the daily one
+           records closes, the poll shows the unfinished session — and naming
+           both is the point: reporting only the daily run made a dashboard
+           whose prices were five minutes old read as an hour stale. Anything
+           that is not one of those two times is an exception, so it only
+           appears when there is one. #}
+        <div class="panel feedpanel">
+          <p class="feedhead">Prices last refreshed:</p>
+          <dl class="feedtimes">
+            <dt>Closing prices</dt>
+            <dd>{% if feed.running %}refreshing now…{% elif feed.finished %}{{ feed.finished.strftime('%a %d %b, %H:%M') }}{% else %}not yet{% endif %}</dd>
+            <dt>Live prices</dt>
+            {# Same format as the line above: a bare time next to a full date
+               read as a lesser kind of value, and the space was there anyway. #}
+            <dd>{% if feed.quoted %}{{ feed.quoted.strftime('%a %d %b, %H:%M') }}{% else %}not yet{% endif %}</dd>
+          </dl>
+          {% if feed.finished and not feed.ok %}
+          <p class="down">Last refresh failed — {{ feed.error }}</p>
+          {% endif %}
+          {% if feed.degraded %}
+          {# "feed ok" can be true while a primary source has been quietly dead
+             for a month, which is exactly what this is here to surface. #}
+          <ul class="sub">
+            {% for key, summary in feed.degraded.items() %}
+            <li><strong>{{ key }}</strong> — {{ summary }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+      </details>
+      {% if live_exchanges %}
+      {# The dot is a control, so it is a menu like every other panel here —
+         `statusmenu` marks it as reporting rather than something being filled
+         in, which is what stops feedwatch.js counting it as "in use". #}
+      <details class="livestatus statusmenu menu">
+        <summary class="livedot">Live <strong>{{ latest_price_date or '—' }}</strong></summary>
+        <div class="panel feedpanel">
+          <p class="feedhead">Open right now:</p>
+          <ul class="plainlist">
+            {% for ex in live_exchanges %}<li>{{ ex }}</li>{% endfor %}
+          </ul>
+        </div>
+      </details>
+      {% else %}
+      <span>Prices to <strong>{{ latest_price_date or '—' }}</strong></span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{# The degraded-source detail lives INSIDE the feed-status panel above: a
+   full-width banner for a condition that is usually nothing — a fallback
+   covered it — is noise. Still surfaced, one click away, with the rest of the
+   feed's story. #}
+
+{% if summary %}
+{# Performance, on the page you land on. The charts page is the workshop where
+   custom charts are built; this is the one chart that answers "how am I
+   going", and it is why Charts could leave the nav. #}
+<section class="summarycard">
+  <header class="summaryhead">
+    <h2>Performance</h2>
+    {# Only ranges the history can actually draw — a portfolio three years old
+       offering 10Y, 20Y and 30Y renders three identical charts and reads as
+       broken. `charts_build.summary_ranges` decides. #}
+    <div class="rangebar" id="summaryrange">
+      {% for r in summary.ranges %}
+      <button type="button" data-range="{{ r.key }}" data-from="{{ r['from'] }}"
+              {% if loop.last %}class="active"{% endif %}>{{ r.label }}</button>
+      {% endfor %}
+    </div>
+  </header>
+  <div class="plot summaryplot"><canvas id="summarychart"></canvas></div>
+</section>
+<script type="application/json" id="summarydata">{{ summary | tojson }}</script>
+{% endif %}
+
+{% if first_run %}
+{# Nothing recorded yet. Five zeros and an empty table is a page that looks
+   broken rather than new, so the first run says what to do instead — and names
+   both ways in, because importing a broker file is the faster one for anyone
+   arriving with history. #}
+<section class="firstrun panel">
+  <h2>Nothing recorded yet</h2>
+  <p>Add the shares you own and this page fills in: value, gain, income, and a
+  performance line that ignores your contributions.</p>
+  <div class="commitbar">
+    <button type="button" id="opentrade-empty" class="primary">Record a trade</button>
+    <a href="/imports-exports"><button type="button" class="secondary">Import from your broker</button></a>
+  </div>
+  <p class="sub">Already have a spreadsheet or a broker CSV? Importing is
+  quicker than typing, and duplicates are detected.</p>
+</section>
+{% else %}
+
+<section class="tiles">
+  <div class="tile"><span class="label">Total cost</span><span class="big">{{ totals.cost | cash }}</span></div>
+  <div class="tile"><span class="label">Total value</span><span class="big">{{ totals.value | cash }}</span></div>
+  {# The arrow carries direction alongside the colour, the same way the holdings
+     table has. Red and green are one colour to ~8% of men, and to
+     any printer — the tiles were the last place that was still true. #}
+  <div class="tile {{ 'up' if totals.gain >= 0 else 'down' }}">
+    <span class="label">Gain</span>
+    <span class="big"><span class="dir" aria-hidden="true">{{ '▲' if totals.gain >= 0 else '▼' }}</span>{{ totals.gain | cash }}</span>
+    <span class="sub">{{ totals.gain_pct | pct }}</span>
+  </div>
+  <div class="tile {{ 'up' if totals.day_change >= 0 else 'down' }}">
+    <span class="label">Change today</span>
+    <span class="big"><span class="dir" aria-hidden="true">{{ '▲' if totals.day_change >= 0 else '▼' }}</span>{{ totals.day_change | cash }}</span>
+    <span class="sub">{{ totals.day_pct | pct }} vs previous close</span>
+  </div>
+  <div class="tile"><span class="label">Dividends received</span><span class="big">{{ totals.dividends | cash }}</span></div>
+</section>
+{% if totals.excluded %}
+<p class="note">Totals exclude {{ totals.excluded | join(', ') }} — no price or
+exchange rate stored yet. The next refresh fills it in.</p>
+{% endif %}
+{% if totals.dividends_excluded %}
+<p class="note">Dividends received leaves out {{ totals.dividends_excluded | join(', ') }} —
+a distribution in a currency with no exchange rate for that date. The figure is
+short by those holdings, not by a rounding.</p>
+{% endif %}
+
+<section>
+  <h2>Holdings{% if one_ccy %} <span class="inccy">in {{ reporting_ccy }}</span>{% endif %}
+    {# "Manage holdings" sits on the holdings table's own header rather than in
+       the nav, and "Edit columns" says what it does — "Columns" was a noun
+       where a verb was needed. #}
+    <a href="/holdings"><button type="button" class="secondary">Manage holdings</button></a>
+    {# <details> rather than a modal: it needs no JavaScript, it is keyboard
+       operable for free, and the browser handles the open/close state. #}
+    <details class="colchooser menu">
+      <summary>Edit columns</summary>
+      {# ONE positioned panel holding both forms. They have to be separate
+         <form>s — different actions — but `.colchooser .panel` is
+         position:absolute, so two of them stack on top of each other and the
+         second hides the first entirely. Rendering the page is the only thing
+         that showed that; the markup tests were perfectly happy. #}
+      <div class="panel colpanel">
+      <form method="post" action="/profile/columns">
+        <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+        {# Carry the page's query back so that saving does not throw away the
+           sort you were reading under. The server accepts it only if it is
+           purely a query string, which is what keeps this from being an open
+           redirect. #}
+        <input type="hidden" name="back" value="{{ back }}">
+        <div class="colgroups">
+          {% for group, items in col_groups %}
+          <fieldset>
+            <legend>{{ group }}</legend>
+            {% for c in items %}
+            <label class="check" {% if c.help %}title="{{ c.help }}"{% endif %}>
+              <input type="checkbox" name="column" value="{{ c.key }}"
+                     {% if c.key in chosen_keys %}checked{% endif %}
+                     {% if c.locked %}disabled checked{% endif %}>
+              {{ c.heading(native_ccy) }}{% if c.locked %} <span class="sub">always shown</span>{% endif %}
+            </label>
+            {# A disabled checkbox is not submitted, so the locked column would
+               be lost on save. Carry it explicitly. #}
+            {% if c.locked %}<input type="hidden" name="column" value="{{ c.key }}">{% endif %}
+            {% endfor %}
+          </fieldset>
+          {% endfor %}
+        </div>
+        <div class="commitbar">
+          <button type="submit">Save columns</button>
+          <button type="submit" form="resetcols" class="secondary">Reset to defaults</button>
+        </div>
+      </form>
+
+      {# Order, as its own list rather than a property of the checkboxes above.
+         The checkboxes are grouped so seventeen of them stay scannable, and a
+         group is exactly the wrong shape for "what comes after what".
+
+         Each arrow is a submit button, so this is keyboard-operable and needs
+         no JavaScript — which drag-and-drop cannot manage on its own. Drag is
+         layered on top in columns.js for anyone who has it. #}
+      <form class="colorder" method="post" action="/profile/columns/order"
+            id="colorder">
+        <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+        <input type="hidden" name="back" value="{{ back }}">
+        <h3>Order</h3>
+        <p class="note">Left to right, as the table reads.</p>
+        <ol id="colorderlist">
+          {% for key in chosen_order %}
+          <li draggable="true" data-key="{{ key }}">
+            <input type="hidden" name="order" value="{{ key }}">
+            <span class="grip" aria-hidden="true">⠿</span>
+            {# The position, because a two-column grid of names is ambiguous
+               about whether it reads across or down. #}
+            <span class="colpos" aria-hidden="true">{{ loop.index }}</span>
+            <span class="colname">{{ cols[loop.index0].heading(native_ccy) }}</span>
+            <button type="submit" name="move" value="{{ key }}:up"
+                    {% if loop.first %}disabled{% endif %}
+                    aria-label="Move {{ cols[loop.index0].label }} left">↑</button>
+            <button type="submit" name="move" value="{{ key }}:down"
+                    {% if loop.last %}disabled{% endif %}
+                    aria-label="Move {{ cols[loop.index0].label }} right">↓</button>
+          </li>
+          {% endfor %}
+        </ol>
+        <div class="commitbar"><button type="submit" class="secondary">Save order</button></div>
+      </form>
+      </div>
+    </details>
+  </h2>
+  <form id="resetcols" method="post" action="/profile/columns/reset" hidden>
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  </form>
+  {# $ and % live in one cell (value above, percentage below): twelve nowrap
+     columns overflowed even a wide screen, and the pair always reads together. #}
+  <div class="tablewrap">
+  <table class="holdings">
+    <thead>
+      {# Header and cells both come from app/columns.py, so they cannot drift
+         apart the way two hand-written rows do.
+
+         Each header is a LINK, not a button with script behind it: sorting is
+         server-side (the values are Decimals and some are missing), so a plain
+         GET is exactly right — it works with JavaScript off, it can be
+         bookmarked, and the back button does what it looks like it does. #}
+      {# A paired header (Gain, Today) cycles through four states — amount up,
+         % up, amount down, % down — and RENDERS which one it is in. After two
+         clicks nobody can tell which of four they are on, and the tooltip
+         explaining the cycle helps discovery but not orientation.
+
+         `aria-sort` can only say ascending/descending, so the $/% half has to
+         live in the link's accessible name or a screen-reader user has two of
+         the four states collapsed into one. #}
+      <tr>{% for c in cols %}
+        {%- set paired = c.sort_pair | length > 0 %}
+        {%- set arrow = sort.pair_arrow(c.sort_pair) if paired else sort.arrow(c.key) %}
+        {%- set unit = sort.unit(c.sort_pair, c.sort_marks) if paired else '' %}
+        <th class="{{ 'num' if c.numeric }}"
+        aria-sort="{{ sort.pair_aria(c.sort_pair) if paired else sort.aria(c.key) }}"
+        {% if c.help %}title="{{ c.help }}"{% endif %}><a class="sortlink"
+        href="{{ sort.cycle(c.sort_pair) if paired else sort.href(c.key) }}"
+        {%- if unit %} aria-label="{{ c.heading(native_ccy, mark=not one_ccy) }}, sorted by {{ 'percentage' if unit == '%' else 'amount' }}"{% endif %}>{{
+        c.heading(native_ccy, mark=not one_ccy)
+        }}{% if arrow %}<span class="sortarrow" aria-hidden="true">{{ arrow }}{% if unit %}<span class="sortunit">{{ unit }}</span>{% endif %}</span>{% endif %}</a></th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      {% for h in open_positions %}
+      <tr>
+        {%- for c in cols %}{% set v = c.value(h) %}
+        {%- if c.render == 'ticker' %}
+        <td><a href="/holding/{{ h.instrument.ticker }}">{{ h.instrument.ticker }}</a>
+            {% if h.instrument.currency != 'AUD' %}<span class="ccy">{{ h.instrument.currency }}</span>{% endif %}</td>
+        {%- elif c.render == 'gain' %}
+        {%- set pct = h.gain_pct if c.key == 'gain_reporting' else h.day_pct %}
+        {# Direction is carried by the arrow as well as the colour: red/green
+           alone is unreadable for ~8% of men and invisible in print. #}
+        <td class="num {{ 'up' if v is not none and v >= 0 else 'down' if v is not none }}">
+          {%- if v is not none %}<span class="dir" aria-hidden="true">{{ '▲' if v >= 0 else '▼' }}</span> {% endif -%}
+          {{ v | money }}<span class="sub">{{ pct | pct }}</span></td>
+        {%- elif c.render == 'qty' %}
+        <td class="num">{{ v | qty }}</td>
+        {%- elif c.render == 'pct' %}
+        <td class="num">{{ v | pct }}</td>
+        {%- elif c.render == 'text' %}
+        <td>{{ v }}</td>
+        {%- else %}
+        <td class="num">{{ v | money }}</td>
+        {%- endif %}
+        {%- endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {# Held something once, holding nothing now. Different from the first run:
+     the tiles and the year tabs still have a story to tell. #}
+  {% if not open_positions %}
+  <p class="empty">No open positions.<br>
+    <span class="sub">Closed positions still count toward realised gains on the
+    financial-year pages.</span></p>
+  {% endif %}
+</section>
+{% endif %}
+
+<script src="/static/columns.js?v={{ asset_v }}" defer></script>
+{# Record trade, as a dialog on the page you were already reading — the same
+   pattern the holdings page uses to add an instrument.
+
+   `/trade/new` stays a real route and this includes the SAME form, so the URL
+   still works, a validation failure still has somewhere to land, and neither
+   copy can drift from the other. Nothing here is a second implementation. #}
+<dialog id="tradedialog">
+  <h2>Record a trade</h2>
+  {% with in_dialog = True, edit = None, ticker = '', form = {} %}
+  {% include "_trade_form.html" %}
+  {% endwith %}
+</dialog>
+{# With scripting off the button cannot open a dialog, so the route is the way
+   in — and it is the same form either way. #}
+<noscript><a href="/trade/new">Record a trade</a></noscript>
+
+<script src="/static/tradeform.js?v={{ asset_v }}" defer></script>
+{% if summary %}
+<script src="/static/vendor/chart.umd.js?v={{ asset_v }}"></script>
+<script src="/static/summary.js?v={{ asset_v }}" defer></script>
+{% endif %}
+<script src="/static/dashboard.js?v={{ asset_v }}" defer></script>
+
+{% endblock %}

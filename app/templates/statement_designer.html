@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Design a statement template — Stocktake{% endblock %}
+{% block content %}
+
+<h1>Design a template for this statement</h1>
+<p class="note">Pick a field on the right, then click its value in the statement below.
+Nothing is uploaded anywhere, and the template you end up with records
+<em>where to look</em> — never what it found.</p>
+
+<div class="designer">
+  <div>
+    {# Every word is a real <button>: this has to work from the keyboard.
+       "Click the value" is the entire interaction, so a pointer-only version
+       would be unusable for anyone who cannot use a mouse. #}
+    <div class="doctext" id="doc" role="group" aria-label="Statement text — choose a value">
+      {%- for line, words in tokens | groupby("line") %}
+{% for t in words %}<button type="button" class="tok" data-index="{{ t.index }}"
+  aria-pressed="false">{{ t.text }}</button>{% if not loop.last %} {% endif %}{% endfor %}
+      {%- endfor %}
+    </div>
+    <p class="note" id="hint" role="status" aria-live="polite">
+      Choose a field, then click its value above.
+    </p>
+  </div>
+
+  <div>
+    <h2>Fields</h2>
+    <ul class="fieldlist" id="fields">
+      {% for key, label, expect in fields %}
+      <li data-field="{{ key }}" data-expect="{{ expect }}">
+        <button type="button" class="linkish pick">{{ label }}</button>
+        <span class="sub">{{ expect }}</span>
+        {# State is never colour alone — the tick and this text carry it too. #}
+        <span class="state">not set</span>
+        <button type="button" class="clearfield" hidden
+                aria-label="Clear {{ label }}" title="Clear {{ label }}">&times;</button>
+        <label class="labeledit" hidden>Words before it
+          <input class="labelinput" placeholder="e.g. net amount">
+        </label>
+        <span class="fieldnote" role="status" aria-live="polite"></span>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <form method="post" action="/imports-exports/statement/design/export" id="exportform">
+      <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+      <input type="hidden" name="mapping" id="mapping" value="{}">
+      <label>Registry name
+        <input name="name" required placeholder="Example Registry (Australia)">
+      </label>
+      <label>Text that identifies this layout <span class="sub">optional, one per line</span>
+        <textarea name="marker" rows="2" placeholder="Example Registry Services"></textarea>
+      </label>
+      <div class="commitbar">
+        <button type="submit" id="download" disabled>Download template</button>
+        {# Install and contribute both post the same fields as the download,
+           so all three buttons are the same form and cannot disagree about
+           what was designed. `formaction` is how one form has three. #}
+        <button type="submit" id="install" disabled class="secondary"
+                formaction="/imports-exports/statement/design/install">Install here</button>
+        <button type="submit" id="contribute" disabled class="secondary"
+                formaction="/imports-exports/statement/design/contribute">Prepare a contribution</button>
+        {%- set contrib_tip %}
+        <p><strong>Install here</strong> saves the template on this machine, so
+        your next upload uses it.</p>
+        <p><strong>Prepare a contribution</strong> gives you the three files a
+        pull request needs: the template, a sample with the identifying details
+        taken out, and what CI should read from it — so the next person with
+        this registry does not have to map it again.</p>
+        <p><strong>Check the sample before you send it.</strong> Names and
+        addresses are the ones no pattern can find.</p>
+        {% endset %}
+        {% with body = contrib_tip, label = "What these two buttons do" %}
+          {% include "_tip.html" %}
+        {% endwith %}
+      </div>
+    </form>
+  </div>
+</div>
+
+<form method="post" action="/imports-exports/statement/design" hidden>
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  <textarea name="text" id="doctext-source" hidden>{{ text }}</textarea>
+</form>
+
+<script src="/static/designer.js?v={{ asset_v }}"></script>
+<script src="/static/designer-text.js?v={{ asset_v }}" defer></script>
+
+{% endblock %}

@@ -1,0 +1,49 @@
+# Stocktake — SQLite on a named volume. The whole application.
+#
+#   docker compose up -d      then open http://localhost:8000
+#
+# No database service, no cache, no queue: sessions live in the app's own
+# database and there is nothing else to run. That is deliberate, and it is what
+# makes this a two-file deployment.
+services:
+  app:
+    image: ghcr.io/jarrodruggiero/stocktake:latest   # replace jarrodruggiero, or build: below
+    # build:
+    #   context: ../..
+    #   dockerfile: apps/stocktake/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      APP_CONFIG_FILE: /config/config.yaml
+      # Containers run UTC. Without this every date decision — which financial
+      # year "today" is in, whether a trade is in the future — is a day out for
+      # most of an Australian morning.
+      TZ: Australia/Melbourne
+    volumes:
+      # A writable /config, because the first-run wizard WRITES config.yaml
+      # here. Mounting the repo's annotated config.yaml read-only (what this
+      # used to do) means the wizard cannot save and every install falls back
+      # to "here is the YAML, save it yourself".
+      #
+      # To manage the file yourself instead, replace this line with
+      #   - ./config.yaml:/config/config.yaml:ro
+      # and the wizard will skip the settings it cannot persist.
+      - stocktake-config:/config
+      # A NAMED volume, not a bind mount. Named volumes inherit the image's
+      # ownership so the non-root user (uid 1000) can write; a bind mount
+      # arrives owned by whoever owns the host directory, and the app cannot
+      # create its database. If you must bind-mount, run
+      # `chown -R 1000:1000 ./data` on the host first.
+      - stocktake-data:/data
+    healthcheck:
+      # /readyz also checks the database; /healthz only says the process is up.
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/readyz')\""]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+
+volumes:
+  stocktake-data:
+  stocktake-config:

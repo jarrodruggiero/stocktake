@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}{{ r.label }} — Stocktake{% endblock %}
+
+{# One sortable header, so the three tables below cannot drift apart in how
+   they behave. Each is a plain link: sorting is server-side, because these are
+   Decimals and some are missing, and a link works with JavaScript off and can
+   be bookmarked. #}
+{% macro sorth(sorts, table, key, label, numeric=True) %}
+<th {% if numeric %}class="num" {% endif %}aria-sort="{{ sorts[table].aria(key) }}"><a
+  class="sortlink" href="{{ sorts[table].href(key) }}">{{ label
+  }}{% if sorts[table].arrow(key) %}<span class="sortarrow" aria-hidden="true">{{ sorts[table].arrow(key) }}</span>{% endif %}</a></th>
+{%- endmacro %}
+
+{% block content %}
+
+{# Where a holding link on this page sends its back button. Encoded, because it
+   is a path being carried INSIDE a query string — unencoded, the `?fy=` would
+   terminate the `?return=` value and the button would land on Today. #}
+{% set back = ('/?fy=' ~ fy) | urlencode %}
+
+<div class="fytabs">
+  <a href="/">Today</a>
+  {% for y in fys %}<a href="/?fy={{ y }}" {% if y == fy %}class="on"{% endif %}>{{ fy_labels[y] }}</a>{% endfor %}
+</div>
+
+<h1>{{ r.label }} <small>{{ r.start }} → {{ r.end }}{% if r.is_current %} · in progress, as at {{ r.asof }}{% endif %}</small></h1>
+
+<section class="tiles">
+  <div class="tile"><span class="label">Value at {{ r.asof }}</span><span class="big">{{ r.total_value | cash }}</span></div>
+  <div class="tile"><span class="label">Invested to date</span><span class="big">{{ r.total_invested | cash }}</span></div>
+  <div class="tile"><span class="label">Invested this year</span><span class="big">{{ r.activity.invested | cash }}</span></div>
+  <div class="tile"><span class="label">Dividend income</span><span class="big">{{ r.income_cash | cash }}</span></div>
+  {# Direction as a glyph as well as a colour — see the dashboard tiles. #}
+  <div class="tile {{ 'up' if r.cgt.net_capital_gain >= 0 else 'down' }}">
+    <span class="label">Net capital gain</span><span class="big"><span class="dir" aria-hidden="true">{{ '▲' if r.cgt.net_capital_gain >= 0 else '▼' }}</span>{{ r.cgt.net_capital_gain | cash }}</span>
+    {% if r.cgt.net_capital_loss %}<span class="sub">loss carried: {{ r.cgt.net_capital_loss | money_plain }}</span>{% endif %}</div>
+</section>
+
+<section>
+  <h2>Holdings at {{ r.asof }}</h2>
+  <div class="tablewrap">
+  <table class="holdings">
+    <thead><tr>
+      {{ sorth(sorts, 'snapshot', 'ticker', 'Ticker', numeric=False) }}
+      {{ sorth(sorts, 'snapshot', 'units', 'Units') }}
+      {{ sorth(sorts, 'snapshot', 'price', 'Price (' ~ (native_ccy or 'native') ~ ')') }}
+      {{ sorth(sorts, 'snapshot', 'invested_cum', 'Invested (' ~ reporting_ccy ~ ')') }}
+      {{ sorth(sorts, 'snapshot', 'value_aud', 'Value (' ~ reporting_ccy ~ ')') }}
+      {# One header for one cell. The percentage sits INSIDE the gain cell, so
+         a separate 'Gain %' header would describe a column that is not there —
+         sorting by the percentage arrives with the four-state Gain header. #}
+      {{ sorth(sorts, 'snapshot', 'gain_aud', 'Gain (' ~ reporting_ccy ~ ')') }}
+    </tr></thead>
+    <tbody>
+      {% for row in r.snapshot %}
+      <tr>
+        <td class="tick"><a href="/holding/{{ row.instrument.ticker }}?return={{ back }}">{{ row.instrument.ticker }}</a></td>
+        <td class="num">{{ row.units | qty }}</td>
+        <td class="num">{{ row.price | money }}{% if row.price_date %}<span class="sub">{{ row.price_date }}</span>{% endif %}</td>
+        <td class="num">{{ row.invested_cum | money }}</td>
+        <td class="num">{{ row.value_aud | money }}</td>
+        {# Value and percentage in ONE cell, the same treatment the dashboard's
+           gain column uses: a seventh column would be narrower for no gain, and
+           the pair always reads together. The arrow carries direction as well
+           as the colour — red/green alone is unreadable for ~8% of men and
+           invisible in print. #}
+        <td class="num {{ 'up' if row.gain_aud is not none and row.gain_aud >= 0 else 'down' if row.gain_aud is not none }}">
+          {%- if row.gain_aud is not none %}<span class="dir" aria-hidden="true">{{ '▲' if row.gain_aud >= 0 else '▼' }}</span> {% endif -%}
+          {# "N/A" when a percentage cannot exist (nothing was invested), an em
+             dash when it merely is not known yet (no price stored). An em dash
+             for both would say "no information" about a case where the
+             information is that there is none to have. #}
+          {{ row.gain_aud | money }}<span class="sub">{% if row.percentage_applies
+            %}{{ row.gain_pct | pct }}{% else %}N/A{% endif %}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<div class="pair">
+  <div>
+    <h2>Dividend income</h2>
+    {# **Franking and the grossed-up figure are deliberately not here.**
+       Franking credits are a tax matter. This app records what a statement
+       supplies and hands it over through the API; it does not go looking for
+       the number, so it should not print a column of them.
+
+       Two consequences worth stating: an "n/a" badge and a note about the
+       annual tax statement would exist only to explain a blank franking cell,
+       so they go with it. Grossed up goes too — it is `cash + franking` and
+       nothing else, so without franking it is either a second copy of the Cash
+       column or a tax figure this app does not claim to compute.
+
+       Nothing was dropped from the DATA: `dividend.franking_credits` is still
+       recorded, still editable, still exported, and still on the API's FY
+       response as `franking_credits` / `grossed_up`. #}
+    {% if r.income %}
+    <div class="tablewrap">
+    <table>
+      <thead><tr>
+        {{ sorth(sorts, 'income', 'ticker', 'Ticker', numeric=False) }}
+        {{ sorth(sorts, 'income', 'cash', 'Cash (' ~ reporting_ccy ~ ')') }}
+      </tr></thead>
+      <tbody>
+        {% for row in r.income %}
+        <tr>
+          <td class="tick"><a href="/holding/{{ row.instrument.ticker }}?return={{ back }}">{{ row.instrument.ticker }}</a></td>
+          <td class="num">{{ row.cash | money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}<p class="sub">No dividends this year.</p>{% endif %}
+  </div>
+
+  <div>
+    <h2>Activity</h2>
+    <div class="tablewrap">
+    <table>
+      <tbody>
+        <tr><td>Buys</td><td class="num">{{ r.activity.buys }}</td></tr>
+        <tr><td>Sells</td><td class="num">{{ r.activity.sells }}</td></tr>
+        <tr><td>Invested</td><td class="num">{{ r.activity.invested | money }}</td></tr>
+        <tr><td>Sale proceeds</td><td class="num">{{ r.activity.proceeds | money }}</td></tr>
+        <tr><td>Brokerage</td><td class="num">{{ r.activity.brokerage | money }}</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<section>
+  <h2>Positions closed this year</h2>
+  {# The rules changed on 1 July 2027. This version implements the earlier
+     ones and says so rather than applying a repealed discount to a figure
+     somebody is about to put in a tax return. #}
+  {% if r.cgt.regime_warning %}
+  <p class="panel warn">{{ r.cgt.regime_warning }}</p>
+  {% endif %}
+  {% if r.cgt.disposals %}
+  <p class="note">Each sale matched FIFO to the parcels it consumed. The discount halves a
+  gain on a parcel held over twelve months, and losses are applied before it —
+  the order the ATO uses.</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr>
+      {{ sorth(sorts, 'disposals', 'date', 'Sold', numeric=False) }}
+      {{ sorth(sorts, 'disposals', 'ticker', 'Ticker', numeric=False) }}
+      {{ sorth(sorts, 'disposals', 'quantity', 'Units') }}
+      {{ sorth(sorts, 'disposals', 'cost_base', 'Cost base (' ~ reporting_ccy ~ ')') }}
+      {{ sorth(sorts, 'disposals', 'proceeds', 'Proceeds (' ~ reporting_ccy ~ ')') }}
+      {{ sorth(sorts, 'disposals', 'gain', 'Gain (' ~ reporting_ccy ~ ')') }}
+      {# Parcels is a list per row, so there is nothing to order by. #}
+      <th>Parcels</th>
+    </tr></thead>
+    <tbody>
+      {% for d in r.cgt.disposals %}
+      <tr>
+        <td>{{ d.date }}</td>
+        <td class="tick"><a href="/holding/{{ d.instrument.ticker }}?return={{ back }}">{{ d.instrument.ticker }}</a></td>
+        <td class="num">{{ d.quantity | qty }}</td>
+        <td class="num">{{ d.cost_base | money }}</td>
+        <td class="num">{{ d.proceeds | money }}</td>
+        <td class="num {{ 'up' if d.gain >= 0 else 'down' }}">{{ d.gain | money }}</td>
+        <td class="sub">{% for p in d.parcels %}{{ p.acquired }}{% if p.discountable %} ✓{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <div class="tablewrap" style="margin-top:1rem">
+  <table>
+    <tbody>
+      <tr><td>Gains on parcels held &gt; 12 months</td><td class="num">{{ r.cgt.gains_discountable | money }}</td></tr>
+      <tr><td>Other gains</td><td class="num">{{ r.cgt.gains_other | money }}</td></tr>
+      <tr><td>Capital losses</td><td class="num">−{{ r.cgt.losses | money }}</td></tr>
+      <tr><td>50% discount</td><td class="num">−{{ r.cgt.discount | money }}</td></tr>
+      <tr><th>Net capital gain</th><th class="num">{{ r.cgt.net_capital_gain | money }}</th></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">Export the full working from <a href="/imports-exports#exports">Imports &amp; exports</a>.</p>
+  {% else %}
+  <p class="sub">Nothing was sold in {{ r.label }}.</p>
+  {% endif %}
+</section>
+
+{% endblock %}

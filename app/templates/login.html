@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Log in — Stocktake{% endblock %}
+{% block content %}
+<div class="authcard">
+  {# The mark and the wordmark, not the name typed out again. This is the one
+     screen where the brand is the only thing on it, and the drawing already
+     exists — `_brand.html` is generated from app/branding.py and is the single
+     copy of the geometry, so the login page cannot drift from the top bar.
+
+     Still an <h1>: the page needs a heading, and a drawing is not one. The
+     name goes to a screen reader through `.visually-hidden`, which is why the
+     SVGs stay `aria-hidden` rather than growing their own labels. #}
+  <h1 class="authbrand">
+    {% include "_brand.html" %}
+    <span class="visually-hidden">{{ app_name }}</span>
+  </h1>
+  {% if timed_out %}<p class="panel warn">Signed out after inactivity.</p>{% endif %}
+  {% if insecure %}<p class="panel error">{{ insecure }}</p>{% endif %}
+  {% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+  <form class="panel" method="post" action="/login" autocomplete="on">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <label>Email
+      <input type="email" name="email" required autofocus autocomplete="username">
+    </label>
+    <label>Password
+      <input type="password" name="password" required autocomplete="current-password">
+    </label>
+    <button type="submit">Log in</button>
+  </form>
+  <p class="note"><a href="/login/recover">Forgotten your password?</a> Use one of your recovery codes.</p>
+</div>
+{% endblock %}

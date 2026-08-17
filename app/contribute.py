@@ -1,0 +1,211 @@
+"""Turning a designed template into a pull request somebody can merge.
+
+`tests/test_format_samples.py` needs **three** files — the template, a redacted
+sample of the extracted text, and what that sample should produce — because
+nobody maintaining this project holds an account at most registries, so a format
+cannot be checked by the person merging it. Those three let CI check it forever
+on hardware that has never seen the real statement. The designer emits one; this
+makes all three.
+
+**Redaction does not pretend.** One that misses a line is worse than none,
+because somebody trusting it publishes their address. So: mask what has a
+mechanical shape (long digit runs, TFNs, emails, phone numbers, money), say
+plainly what cannot be masked — a name and a street address are just words, and
+no pattern separates "MR JOHN SMITH" from "ACME REGISTRY PTY LIMITED" — and show
+the result in an editable box before anything leaves the machine. Nothing here
+uploads.
+
+**Amounts are shifted, not zeroed.** Zeroing makes every expected value
+`0.00`, so the file whose job is proving the template read the right fields
+cannot tell `net_amount` from `franking_credits`. Each
+figure keeps its shape — digit count, grouping, decimals — with different digits
+derived from the original, so the same amount appearing twice stays the same
+amount. The real figures are shown on screen beside the redacted ones, which is
+what the contributor actually needed; publishing them was never the way to get
+it.
+
+**Expected values come from the redacted text, never the original**, so a field
+that redaction ate shows up wrong before the pull request rather than after.
+"""
+
+from __future__ import annotations
+
+import io
+import re
+import zipfile
+from dataclasses import dataclass, field
+
+from . import docformats
+
+MASK_DIGIT = "0"
+
+# Any figure with two decimal places, not just comma-grouped thousands:
+# requiring a comma would miss `1042.75`.
+MONEY = r"(?<![\d.,])\d[\d,]*\.\d{2}\b"
+
+
+@dataclass
+class Note:
+    kind: str      # digits | tfn | email | phone | money | unhandled
+    detail: str
+
+
+@dataclass
+class Redacted:
+    text: str
+    notes: list[Note] = field(default_factory=list)
+
+
+def _mask_digits(match: re.Match) -> str:
+    return re.sub(r"\d", MASK_DIGIT, match.group(0))
+
+
+def _shift_money(match: re.Match) -> str:
+    """A DIFFERENT figure of the same shape, derived from the original.
+
+    Zeroing is the obvious approach and it is wrong: every figure becomes
+    `0000.00`, so every expected value becomes `0.00`, and the file meant to
+    prove the template read the right fields cannot tell `net_amount` from
+    `franking_credits`. A verification artefact that verifies nothing is worse
+    than none, because it looks like coverage.
+
+    Derived from the value rather than random, so the same amount appearing
+    twice in a statement stays the same amount in the sample — a document whose
+    internal arithmetic no longer adds up is a confusing thing to hand a
+    reviewer.
+    """
+    raw = match.group(0)
+    whole, _, decimals = raw.partition(".")
+    digits = re.sub(r"[^\d]", "", whole)
+    # Shift each digit deterministically. Same length, same grouping, same
+    # number of decimal places, different number.
+    shifted = "".join(str((int(d) + 3 + i) % 10) for i, d in enumerate(digits))
+    if shifted[0] == "0" and len(shifted) > 1:
+        shifted = "1" + shifted[1:]
+    out = []
+    at = 0
+    for char in whole:
+        if char.isdigit():
+            out.append(shifted[at])
+            at += 1
+        else:
+            out.append(char)
+    tail = "".join(str((int(d) + 7) % 10) for d in decimals)
+    return "".join(out) + ("." + tail if decimals else "")
+
+
+# Order matters: the more specific patterns run first, so a TFN is not eaten by
+# the generic digit-run rule and reported as the wrong thing.
+_PATTERNS: list[tuple[str, str, str]] = [
+    ("tfn", r"(?i)(?<=tax file number)[:\s]*\d{3}[\s-]?\d{3}[\s-]?\d{3}",
+     "tax file numbers"),
+    ("email", r"[\w.+-]+@[\w-]+\.[\w.-]+", "email addresses"),
+    ("phone", r"(?i)(?<=phone)[:\s]*[\d\s()+-]{8,}", "telephone numbers"),
+    # Six digits or more, optionally with a letter prefix: holder numbers, HINs,
+    # SRNs, account numbers. The shapes differ by registry; being a long run of
+    # digits does not.
+    ("digits", r"\b[A-Z]?\d[\d\s-]{5,}\d\b", "long digit runs (holder or account numbers)"),
+]
+
+
+def redact(text: str) -> tuple[Redacted, list[Note]]:
+    """Mask what can be recognised, and report what cannot.
+
+    Idempotent: masked values are already runs of `0` and re-running produces
+    the same text, because people edit the result and run it again.
+    """
+    notes: list[Note] = []
+    out = text
+
+    for kind, pattern, detail in _PATTERNS:
+        found = re.findall(pattern, out)
+        if not found:
+            continue
+        notes.append(Note(kind, f"{len(found)} {detail}"))
+        if kind == "email":
+            out = re.sub(pattern, lambda m: "redacted@example.com", out)
+        else:
+            out = re.sub(pattern, _mask_digits, out)
+
+    # Money last, so a holder number already masked to zeros above is not
+    # picked up here and turned back into something that looks like a figure.
+    real = re.findall(MONEY, out)
+    if real:
+        notes.append(Note("money", f"{len(real)} amounts (shape kept, digits changed)"))
+        out = re.sub(MONEY, _shift_money, out)
+
+    # Words have no mechanical shape, so a name is not something this can find.
+    # Stated once, plainly, as a thing to check — not as a warning.
+    notes.append(Note("review", "Names and addresses — check the sample below."))
+
+    return Redacted(text=out, notes=notes), notes
+
+
+SAMPLE_HEADER = """# Sample for: {slug}
+# Contributed: generated by the statement template designer
+#
+# REDACTED. Every amount, date, holder number and name below should be
+# invented. This file exists so CI can prove the template still reads the
+# LAYOUT — the values are irrelevant and must never be real.
+"""
+
+
+def expected_yaml(template_text: str, sample_text: str) -> str:
+    """What the template reads out of the sample, as the `.expected.yaml` file.
+
+    Run against the **redacted** sample on purpose: a field the template can no
+    longer find after redaction shows up here as a comment rather than silently
+    as a missing key, which is the signal that the masking went too far.
+    """
+    try:
+        template = docformats.parse_statement_template("draft", template_text)
+    except docformats.TemplateError as exc:
+        return f"# This template could not be read: {exc}\n"
+
+    values = template.extract(sample_text)
+    lines = [
+        "# What this template must read out of the sample beside it. CI asserts",
+        "# this exactly — see tests/test_format_samples.py.",
+    ]
+    for name in template.fields:
+        got = values.get(name)
+        if got is None:
+            lines.append(f"# {name}: could not be read from the redacted sample —")
+            lines.append("#   either the redaction removed it, or the labels need work.")
+            continue
+        # Money and units stay strings so trailing zeros survive: "104.70" must
+        # not become 104.7 in a file that asserts an exact match.
+        rendered = str(got)
+        if template.fields[name].type in ("money", "number"):
+            lines.append(f'{name}: "{rendered}"')
+        else:
+            lines.append(f"{name}: {rendered}")
+    return "\n".join(lines) + "\n"
+
+
+def _safe_slug(slug: str) -> str:
+    """A single path segment, whatever arrives.
+
+    The name comes from a form field and becomes a path inside a zip file, so
+    getting this wrong is a path traversal on whoever extracts it.
+    """
+    cleaned = re.sub(r"[^a-z0-9]+", "-", (slug or "").lower()).strip("-")
+    return cleaned or "my-registry"
+
+
+def bundle(slug: str, template_text: str, sample_text: str) -> bytes:
+    """The three files, zipped under the paths they live at in the repository.
+
+    `docs/contributing/recipe-statement.md` documents that layout; matching it
+    exactly is the difference between a contribution and a chore.
+    """
+    slug = _safe_slug(slug)
+    sample = SAMPLE_HEADER.format(slug=slug) + "\n" + sample_text.rstrip() + "\n"
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(f"formats/statements/{slug}.yaml", template_text)
+        archive.writestr(f"formats/samples/{slug}.txt", sample)
+        archive.writestr(f"formats/samples/{slug}.expected.yaml",
+                         expected_yaml(template_text, sample))
+    return buffer.getvalue()

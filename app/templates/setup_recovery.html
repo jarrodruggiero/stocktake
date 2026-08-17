@@ -1,0 +1,11 @@
+{% extends "setup_base.html" %}
+{% set heading = "Your recovery codes" %}
+{% set intro = "This is how you get back in. Save them before you go on — they are not shown again." %}
+{% block wizard %}
+
+{% include "_codes.html" %}
+
+<div class="commitbar">
+  <a class="button" href="/setup/portfolio">I've saved them — continue</a>
+</div>
+{% endblock %}

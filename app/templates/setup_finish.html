@@ -1,0 +1,53 @@
+{% extends "setup_base.html" %}
+{% set heading = "Ready" %}
+{% block wizard %}
+
+{% if config_writable.writable %}
+{# Collapsed. It is a confirmation, not a decision — most people press Finish,
+   and the ones who want to check the file can open it. A <details> gives the
+   disclosure triangle (right when closed, down when open) for free, and it is
+   the same control the rest of the app uses. #}
+<details class="panel summary">
+  <summary>Configuration summary <span class="sub">written to
+    <code>{{ config_path }}</code></span></summary>
+  <p class="note">Everything not listed keeps its default.</p>
+  <pre class="yaml"><code>{{ yaml }}</code></pre>
+</details>
+{% else %}
+{# Not collapsed when it cannot be saved: here the YAML is something somebody
+   has to ACT on, not a confirmation of something already done. #}
+<section class="panel warn">
+  <p><strong>Everything you chose is applied to the running application, but
+  will be lost on the next restart.</strong> {{ config_writable.reason }}</p>
+  <p>Put this into wherever that file is defined:</p>
+  <pre class="yaml"><code>{{ yaml }}</code></pre>
+</section>
+{% endif %}
+
+{% if restart_for %}
+<p class="note"><strong>Restart required</strong> for:
+  {{ restart_for | join(', ') }}.</p>
+{% endif %}
+
+{# The nudge that replaces the two-factor STEP. A step is a prompt and an
+   account-page toggle is not, so removing it costs something — this is the
+   cheap way to keep most of it without another screen to click through. #}
+<p class="note">Two-factor authentication and passkeys are on your
+<strong>account page</strong> whenever you want them.</p>
+
+<form method="post" action="/setup/finish" class="panel">
+  <input type="hidden" name="_csrf" value="{{ csrf }}">
+  {% if restart_for and supervision.restarts %}
+  <label class="check">
+    <input type="checkbox" name="restart" value="on" checked>
+    <span>Restart now, and take me there when it comes back</span>
+  </label>
+  {% if external_url %}
+  <p class="note">You'll be redirected to <code>{{ external_url }}</code>.</p>
+  {% endif %}
+  {% endif %}
+  <div class="commitbar">
+    <button type="submit" class="primary">Finish setup</button>
+  </div>
+</form>
+{% endblock %}

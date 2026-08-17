@@ -1,0 +1,37 @@
+{{- /*
+  config.yaml, assembled from values. `extraConfig` is merged last so any
+  setting the app grows can be used without waiting for this chart to learn it.
+
+  The app rejects unknown keys outright (a typo should be loud, not ignored),
+  which also means the config file and the app version are a matched pair —
+  upgrade them together.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stocktake.fullname" . }}
+  labels: {{- include "stocktake.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- $cfg := dict
+      "app_name" "stocktake"
+      "log_level" "INFO"
+      "timezone" .Values.timezone
+      "database" (ternary
+         (dict "type" "sqlite" "path" "/data/stocktake.db")
+         (dict "type" "postgres"
+               "host" .Values.database.postgres.host
+               "port" (.Values.database.postgres.port | int)
+               "name" .Values.database.postgres.name
+               "user" .Values.database.postgres.user)
+         (eq .Values.database.type "sqlite"))
+      "price_feed" (dict
+         "enabled" .Values.priceFeed.enabled
+         "hour" (.Values.priceFeed.hour | int)
+         "minute" (.Values.priceFeed.minute | int)
+         "backfill_start" .Values.priceFeed.backfillStart)
+      "auth" (dict
+         "cookie_secure" .Values.auth.cookieSecure
+         "trusted_proxies" .Values.auth.trustedProxies)
+    -}}
+    {{- toYaml (mergeOverwrite $cfg .Values.extraConfig) | nindent 4 }}

@@ -1,0 +1,133 @@
+# Lint and test on every push and pull request.
+#
+# Written for the PUBLIC repository layout, where this app is the whole repo:
+# `app/`, `appkit/` and `tests/` sit at the root. Nothing here depends on
+# self-hosted runners, a private registry, or any home infrastructure — it runs
+# entirely on GitHub-hosted runners and public actions.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to a PR cancels the run still going for the previous one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install the project and its dev tools
+        run: uv sync --dev
+
+      - name: Ruff
+        run: uv run ruff check app appkit tests
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # pyproject says `requires-python = ">=3.12"`, so every version that
+        # claim covers is tested — all three were verified green before this
+        # matrix was written. Narrow the claim if one ever has to be dropped;
+        # do not quietly stop testing it.
+        python: ["3.12", "3.13", "3.14"]
+        # The app ships on SQLite and claims to run on Postgres. An untested
+        # claim is worth nothing, so both are exercised.
+        backend: [sqlite]
+        include:
+          # Postgres on the shipped interpreter only: the backend and the
+          # interpreter are independent axes, and the full cross product would
+          # be six jobs to tell us what four already do.
+          - python: "3.12"
+            backend: postgres
+
+    services:
+      # Started for both matrix legs; the SQLite leg simply ignores it, which
+      # is cheaper than duplicating the whole job to avoid one container.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: portfolio_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python }}
+
+      - name: Install the project and its dev tools
+        run: uv sync --dev
+
+      - name: Test (python ${{ matrix.python }}, ${{ matrix.backend }})
+        env:
+          PORTFOLIO_TEST_DB: ${{ matrix.backend }}
+          PGHOST: localhost
+          PGPORT: 5432
+          PGDATABASE: portfolio_test
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        # -p no:randomly and friends are deliberately absent: the suite is
+        # order-independent by construction (each test gets its own database).
+        # Coverage is enforced on this leg only — see pyproject's
+        # [tool.coverage.report]. Measuring the same lines on all four matrix
+        # legs would cost time and tell us nothing new.
+        run: |
+          if [ "${{ matrix.python }}-${{ matrix.backend }}" = "3.12-sqlite" ]; then
+            uv run pytest tests -q --cov
+          else
+            uv run pytest tests -q
+          fi
+
+  image:
+    # Build the image on every change so a broken Dockerfile is caught here
+    # rather than at release time. Nothing is pushed — that is release.yml.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build (amd64 only — a PR does not need the full matrix)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: stocktake:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run the suite inside the image
+        # Proves the shipped layers and the tests agree, which is the whole
+        # point of the Dockerfile's `test` stage.
+        run: |
+          docker build --target test -t stocktake:ci-test .
+          docker run --rm stocktake:ci-test

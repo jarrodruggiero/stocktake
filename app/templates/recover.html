@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Use a recovery code — Stocktake{% endblock %}
+{% block content %}
+<div class="authcard">
+  <h1>Forgotten password</h1>
+  <p class="note">Enter one of the recovery codes you saved when your account
+  was created. Each works once.</p>
+  {% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+  <form class="panel" method="post" action="/login/recover" autocomplete="on">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <label>Email
+      <input type="email" name="email" required autofocus autocomplete="username">
+    </label>
+    <label>Recovery code
+      <input name="code" required autocomplete="off" spellcheck="false"
+             placeholder="XXXXX-XXXXX-XXXXX">
+    </label>
+    <button type="submit">Continue</button>
+  </form>
+  <p class="note">You'll choose a new password next. With two-factor on you still need your
+  authenticator — a recovery code replaces one factor, not both.</p>
+  <p class="note">No codes left either? An administrator can reset the account
+  from the server with <code>python -m app.recover</code>.</p>
+  <p class="note"><a href="/login">Back to signing in</a></p>
+</div>
+{% endblock %}

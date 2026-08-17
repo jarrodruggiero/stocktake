@@ -1,0 +1,41 @@
+{% extends "setup_base.html" %}
+{% set heading = "Your first portfolio" %}
+{% block wizard %}
+
+<form method="post" action="/setup/portfolio" class="panel">
+  <input type="hidden" name="_csrf" value="{{ csrf }}">
+
+  <label>Portfolio name
+    <input name="name" value="{{ name }}" required autofocus maxlength="80">
+  </label>
+  <p class="note">You can have more than one later — a family member's, or a
+  separate strategy. This is just the first.</p>
+
+  <label class="check">
+    <input type="checkbox" name="price_feed" value="on" {% if price_feed %}checked{% endif %}>
+    <span>Automatically refresh market data</span>
+  </label>
+  <p class="note">Once a day the app asks Yahoo Finance for closing prices and exchange rates.
+  <strong>It sends ticker symbols and nothing else</strong> — no holdings, no
+  quantities, no account.</p>
+
+  <label for="tzinput">Location and timezone</label>
+  <p class="note">Decides what "today" means — the current financial year, and when the daily
+  refresh runs.</p>
+  <div class="row">
+    <input id="tzinput" name="timezone" list="zones" value="{{ timezone }}"
+           required autocomplete="off" spellcheck="false">
+    <button type="button" id="tzdetect" class="secondary">Use my browser's</button>
+  </div>
+  <datalist id="zones">
+    {% for zone in zones %}<option value="{{ zone }}"></option>{% endfor %}
+  </datalist>
+  <p class="note" id="tzfound" hidden></p>
+
+  <div class="commitbar">
+    <button type="submit">Continue</button>
+  </div>
+</form>
+
+<script src="/static/setup.js?v={{ asset_v }}" defer></script>
+{% endblock %}

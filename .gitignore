@@ -1,0 +1,24 @@
+# MkDocs build output — the docs are the markdown in docs/, not this.
+site/
+
+# Local venv used for version testing (the shared one lives at the repo root).
+.venv/
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.ruff_cache/
+
+# Never commit a real portfolio. Fixtures are synthetic and live in tests/.
+*.db
+*.db-wal
+*.db-shm
+*.xlsx
+
+# Rendered pages from tools/screenshot.py — output, not source.
+shots/
+
+# tools/codeshape.py's snapshot — a local before/after marker, not a fact
+# about the project.
+tools/codeshape.json

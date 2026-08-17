@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% block title %}Imports &amp; Exports — Stocktake{% endblock %}
+{% block content %}
+
+{# Three headings, and the Templates section became a button: templates are a
+   thing you MANAGE occasionally, not a third of the page you read every time
+   you import a file. One dialog holds all three verbs — install, download,
+   remove — including getting a template back out. #}
+<div class="pagehead">
+  <div><h1>Imports &amp; Exports</h1></div>
+  <div class="headactions">
+    <button type="button" id="opentemplates" class="secondary">Manage templates</button>
+  </div>
+</div>
+{% if request.query_params.get('done') == 'csv' %}
+<p class="flash">CSV committed — {{ request.query_params.get('inserted') }} trade(s) inserted,
+{{ request.query_params.get('skipped') }} duplicate(s) skipped.</p>
+{% endif %}
+
+<h2 class="sectionhead">Imports</h2>
+{# Equal halves, not `.columns` (1fr 2fr): the two panels are the same kind of
+   thing and neither is the more important. #}
+<section class="evenpair">
+  <div class="panel">
+    <h3>Broker file</h3>
+    {# No per-broker export recipes here. They were three sentences of
+       instructions for two brokers out of dozens, and they aged the moment
+       either changed a menu. The format list below is the thing that actually
+       tells you what is supported. #}
+    <form action="/imports-exports/csv" method="post" enctype="multipart/form-data">
+      <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+      <label>Format
+        {%- set ofx_tip %}
+        <p><strong>OFX works with any broker.</strong> Sometimes called Money,
+        Quicken or MS Money format.</p>
+        <p>It names its own securities, so unlike a CSV it needs no per-broker
+        setup — if your broker offers it, it is the easier path.</p>
+        {% endset %}
+        {% with body = ofx_tip, label = "About OFX" %}{% include "_tip.html" %}{% endwith %}
+        <select name="broker">
+          <option value="ofx">OFX — any broker</option>
+          {% for b in brokers %}<option value="{{ b }}">{{ b }} (CSV)</option>{% endfor %}
+        </select>
+      </label>
+      <label>File <input type="file" name="file"
+             accept=".csv,.ofx,.qfx,text/csv,application/x-ofx" required></label>
+      <button type="submit">Preview</button>
+    </form>
+
+    {# The second file input in this panel was the confusing part: two "choose
+       a file" controls, one above the other, doing different things. The
+       mapper asks for its file in a dialog instead, so the panel has exactly
+       one upload on it. #}
+    <div class="altaction">
+      <button type="button" class="secondary" id="openbrokermap">Map a new broker CSV</button>
+      {%- set broker_tip %}
+      <p>For a broker that is not in the list above.</p>
+      <p>Upload one of its CSV exports and say which column is which — the app
+      shows you the trades it would read and writes the format file for you.</p>
+      {% endset %}
+      {% with body = broker_tip, label = "What mapping a broker CSV does" %}
+        {% include "_tip.html" %}
+      {% endwith %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Dividend statement (PDF)</h3>
+    <form action="/imports-exports/statement" method="post" enctype="multipart/form-data">
+      <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+      <label>PDF file <input type="file" name="file" accept=".pdf,application/pdf" required></label>
+      {# ABOVE the button, and worded so its job is obvious from the control
+         rather than from a note beside it. It sat below Parse to begin with and
+         read as belonging to the mapper underneath — people click what looks
+         obvious, they do not read the explanation. #}
+      <label>Read it with
+        <select name="template">
+          <option value="">Whichever template fits (recommended)</option>
+          {% for tpl in statement_templates %}
+          <option value="{{ tpl.key }}">{{ tpl.name }}{% if tpl.source == 'builtin' %} (shipped){% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">Parse</button>
+    </form>
+
+    <div class="altaction">
+      <button type="button" class="secondary" id="openstatementmap">Map a statement visually</button>
+      {%- set visual_tip %}
+      <p>For a statement whose layout none of the templates recognise.</p>
+      <p>The pages are rendered on screen and you click the value for each
+      field — which is the difference between confidence and guessing on
+      anything that came through OCR.</p>
+      <p>Correcting one of the shipped layouts? Upload a statement it reads and
+      pick the template to start from on the next screen.</p>
+      {% endset %}
+      {% with body = visual_tip, label = "What mapping a statement does" %}
+        {% include "_tip.html" %}
+      {% endwith %}
+    </div>
+  </div>
+</section>
+
+{# The two mappers ask for their file here rather than inline, so neither panel
+   carries two file inputs. Same pattern as Record trade and Edit plan. #}
+<dialog id="brokermapdialog">
+  <h2>Map a new broker CSV</h2>
+  <p class="note">Upload one of its CSV exports and say which column is which.
+  The app writes the format file for you.</p>
+  <form class="panel" action="/imports-exports/broker/design" method="post"
+        enctype="multipart/form-data">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <label>CSV file <input type="file" name="file" accept=".csv,text/csv" required></label>
+    <div class="commitbar">
+      <button type="submit">Continue</button>
+      <button type="button" class="secondary" data-close-dialog>Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="statementmapdialog">
+  <h2>Map a statement visually</h2>
+  <p class="note">The pages are rendered on screen and you click the value for
+  each field.</p>
+  <form class="panel" action="/imports-exports/statement/visual" method="post"
+        enctype="multipart/form-data">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <label>PDF file <input type="file" name="file" accept=".pdf,application/pdf" required></label>
+    <div class="commitbar">
+      <button type="submit">Continue</button>
+      <button type="button" class="secondary" data-close-dialog>Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<h2 class="sectionhead">Exports</h2>
+<section class="evenpair" id="exports">
+  <form class="panel" method="get" action="/export/download">
+    <h3>Download a report</h3>
+    {# Rendered always and hidden by script, not injected by it: with
+       JavaScript off this is simply visible, which is the safe way round for a
+       warning. The server refuses this combination with a 400 either way — the
+       notice exists so nobody discovers that by clicking Download. #}
+    <p class="panel warn" id="csv-single-sheet" hidden>
+      <strong>A CSV file holds one sheet.</strong> “Everything” is nine
+      reports, so it needs <strong>Excel</strong> — one workbook, one sheet per
+      report. Choose Excel, or pick a single report to get a CSV of it.
+    </p>
+    <label>Report
+      <select name="report">
+        <option value="all">Everything (one Excel workbook)</option>
+        {% for key, title in reports.items() %}
+        <option value="{{ key }}">{{ title }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="row">
+      <label>Financial year <span class="sub">dividends and realised gains only</span>
+        <select name="fy">
+          <option value="">All years</option>
+          {% for y in fys %}<option value="{{ y }}">FY{{ (y-1)|string|truncate(4,true,'') }}/{{ y|string|truncate(4,true,'') }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Instrument <span class="sub">trades only</span>
+        <select name="ticker">
+          <option value="">All instruments</option>
+          {% for i in instruments %}<option value="{{ i.ticker }}">{{ i.ticker }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Format
+        <select name="fmt">
+          <option value="xlsx">Excel (.xlsx)</option>
+          <option value="csv">CSV</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">Download</button>
+  </form>
+
+  <div class="panel">
+    <h3>What's in each</h3>
+    <div class="tablewrap">
+    <table class="reference">
+      <thead><tr><th>Report</th><th>Contents</th></tr></thead>
+    <tbody>
+      <tr><td><strong>All trades</strong></td>
+          <td>Every buy, sell and DRP allocation — the raw ledger, in AUD and native currency.</td></tr>
+      <tr><td><strong>Current holdings</strong></td>
+          <td>Open positions: units, average price, cost, market value, gain and dividends.</td></tr>
+      <tr><td><strong>Dividends and franking</strong></td>
+          <td>Each payment with its franking credits and the grossed-up figure, tagged by financial year.</td></tr>
+      <tr><td><strong>Realised capital gains</strong></td>
+          <td>Sales matched FIFO to the parcels they consumed: cost base, proceeds, gross gain,
+              the 50% discount where the parcel was held over a year, and the gain after it.</td></tr>
+      <tr><td><strong>Unrealised capital gains</strong></td>
+          <td>The same view for parcels you still hold — what selling today would realise.</td></tr>
+      <tr><td><strong>Performance by financial year</strong></td>
+          <td>Invested, value and gain at each 30 June, plus the change within each year.</td></tr>
+      <tr><td><strong>Closed positions</strong></td>
+          <td>One row per instrument fully exited, with capital gain before and after the discount
+              and total return including dividends.</td></tr>
+    </tbody>
+  </table>
+    </div>
+  </div>
+</section>
+
+{# Manage templates: install, download, remove — one home for all three.
+
+   The section this replaces could only install and remove, so a template could
+   arrive and be deleted but never leave, which broke the loop the contribution
+   flow opens. Download is the missing verb. #}
+<dialog id="templatedialog" {% if installed_error or installed_ok or request.query_params.get('templates') %}open{% endif %}>
+  <h2>Manage templates</h2>
+  <p class="note">A template teaches the app one registry's statement layout or
+  one broker's CSV columns.</p>
+
+  {% if installed_error %}<p class="panel error">{{ installed_error }}</p>{% endif %}
+  {% if installed_ok %}<p class="panel ok">{{ installed_ok }}</p>{% endif %}
+
+  {% if auth.user.is_admin %}
+  <form class="panel" method="post" action="/imports-exports/formats"
+        enctype="multipart/form-data">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <div class="row">
+      <label>Template file <input type="file" name="file" accept=".yaml,.yml" required></label>
+      <label>Kind
+        <select name="kind">
+          <option value="statement">Dividend statement</option>
+          <option value="broker">Broker CSV</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">Install</button>
+  </form>
+  {% else %}
+  <p class="note">Installing a template changes how everyone's imports are
+  read, so it is an admin action.</p>
+  {% endif %}
+
+  {% set any_installed = installed.values() | map('length') | sum %}
+  {% if any_installed %}
+  {% for kind, slugs in installed.items() %}
+  {% if slugs %}
+  <h3>{{ 'Dividend statement' if kind == 'statement' else 'Broker CSV' }}</h3>
+  <ul class="installed">
+    {% for slug in slugs %}
+    <li>
+      <code>{{ slug }}.yaml</code>
+      <span class="tplactions">
+        {# Downloading is not admin-only: it reads a file already on this
+           machine that holds column names and labels, never anyone's figures.
+           Install and remove change how EVERYONE's imports are read. #}
+        <a href="/imports-exports/formats/{{ kind }}/{{ slug }}.yaml">Download</a>
+        {% if auth.user.is_admin %}
+        <form class="inline" method="post"
+              action="/imports-exports/formats/{{ kind }}/{{ slug }}/delete">
+          <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+          <button class="linkish" type="submit">Remove</button>
+        </form>
+        {% endif %}
+      </span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% endfor %}
+  {% else %}
+  <p class="empty">Nothing installed.<br>
+    <span class="sub">The shipped layouts are always available; these are the
+    extras you or somebody else built.</span></p>
+  {% endif %}
+
+  <div class="commitbar">
+    <button type="button" class="secondary" data-close-dialog>Close</button>
+  </div>
+</dialog>
+{# Without script the button cannot open a dialog, so the section is still
+   reachable — `?templates=1` renders it open. #}
+<noscript><a href="/imports-exports?templates=1">Manage templates</a></noscript>
+
+<script src="/static/tradeform.js?v={{ asset_v }}" defer></script>
+<script src="/static/exports.js?v={{ asset_v }}" defer></script>
+<script src="/static/importspage.js?v={{ asset_v }}" defer></script>
+{% endblock %}

@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Map a broker CSV — Stocktake{% endblock %}
+{% block content %}
+
+<h1>Map a broker CSV <small>{{ read.headers | length }} columns</small></h1>
+
+{% if read.problem %}
+<p class="panel error">{{ read.problem }}</p>
+{% else %}
+
+<p class="note">Say which column is which — the app has guessed from the headings, so check
+each against the sample rows, then preview. The file is never uploaded
+anywhere; it is held in this form until you leave the page.</p>
+
+<form method="post" action="/imports-exports/broker/design" class="panel" id="mapform">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  {# The file's text travels with the form rather than being staged on disk. A
+     broker export is a list of everything you own and when you bought it. #}
+  <textarea name="text" hidden>{{ text }}</textarea>
+
+  <div class="row">
+    <label>Broker name <input name="name" value="{{ name }}" required></label>
+    <label>Exchange <input name="exchange" value="{{ exchange }}" size="6"></label>
+    <label>Currency <input name="currency" value="{{ currency }}" size="4"></label>
+    <label>Date format
+      <select name="date_format" {{ 'disabled' if using_custom }}>
+        {% for f in date_formats %}
+        <option value="{{ f }}" {{ 'selected' if f == date_format }}>{{ f }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+
+  {# Inference reads the sample values, and a sample can be genuinely
+     undecidable. The answer to that is somewhere to type the real one, not a
+     cleverer guess. #}
+  <label class="check"><input type="checkbox" name="custom_date" value="on"
+         id="customdate" {{ 'checked' if using_custom }}>
+    Customise the date format</label>
+  <div id="customdatebox" {{ '' if using_custom else 'hidden' }}>
+    <label>Format string
+      <input name="date_format_custom" value="{{ date_format_custom or date_format }}"
+             placeholder="%d/%m/%Y">
+    </label>
+    <p class="sub">Python <code>strftime</code> codes.
+      <code>%d</code> day · <code>%m</code> month · <code>%Y</code> four-digit year ·
+      <code>%y</code> two-digit year · <code>%b</code> Jan · <code>%B</code> January.
+      So <code>05 Jan 2026</code> is <code>%d %b %Y</code>.</p>
+  </div>
+
+  {# `01/02/2026` is the 1st of February and the 2nd of January, and nothing in
+     the file says which. Eleven rows in twelve import fine under the wrong
+     reading, so this is worth saying rather than deciding quietly. #}
+  {% if ambiguous %}
+  <p class="panel warn"><strong>These dates could be read either way.</strong>
+  Every sample works as both day-first and month-first, so the app has assumed
+  day-first (Australian). If your broker is American, choose
+  <code>%m/%d/%Y</code> above — under the wrong one, most rows still import and
+  the dates are quietly wrong.</p>
+  {% endif %}
+
+  <table class="mapper">
+    <thead><tr><th>Field</th><th>Column in your file</th><th>Sample values</th></tr></thead>
+    <tbody>
+      {% for f in fields %}
+      <tr>
+        <td><label for="col-{{ f }}">{{ f }}</label>
+          {% if f in required %}<span class="sub">required</span>
+          {% else %}<span class="sub">optional</span>{% endif %}</td>
+        <td>
+          {# NAMED, so the form works with no JavaScript. brokermap.js only
+             refreshes the sample values beside it. #}
+          <select id="col-{{ f }}" name="col_{{ f }}" data-field="{{ f }}" class="colpick">
+            <option value="">— none —</option>
+            {% for h in read.headers %}
+            <option value="{{ h }}" {{ 'selected' if chosen.get(f) == h }}>{{ h }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td class="sub samples" data-field="{{ f }}">
+          {%- for r in read.rows %}{{ r.get(chosen.get(f) or '', '') }}{% if not loop.last %} · {% endif %}{% endfor -%}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="commitbar">
+    <button type="submit">Preview these trades</button>
+  </div>
+</form>
+
+<section>
+  <h2>Your file</h2>
+  <div class="tablewrap">
+  <table>
+    <thead><tr>{% for h in read.headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for r in read.rows %}
+      <tr>{% for h in read.headers %}<td class="sub">{{ r.get(h, '') }}</td>{% endfor %}</tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+{% if result is not none %}
+<section>
+  <h2>What that mapping produces</h2>
+  {% if result.errors %}
+  <p class="panel error">{% for e in result.errors %}{{ e }}<br>{% endfor %}</p>
+  {% else %}
+  <p class="panel ok">{{ result.candidates | length }} trade(s) read from the sample.
+  If these look right, the format below is ready.</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Date</th><th>Ticker</th><th>Type</th><th class="num">Units</th>
+      <th class="num">Price</th><th class="num">Brokerage</th></tr></thead>
+    <tbody>
+      {% for c in result.candidates %}
+      <tr><td>{{ c.date }}</td><td>{{ c.ticker }}</td><td>{{ c.type }}</td>
+        <td class="num">{{ c.quantity }}</td><td class="num">{{ c.unit_price }}</td>
+        <td class="num">{{ c.brokerage }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  {% if result.skipped %}
+  <p class="note">{{ result.skipped | length }} row(s) skipped (not a buy or a sell):
+    {{ result.skipped[:3] | join('; ') }}{% if result.skipped | length > 3 %} …{% endif %}</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>The format file
+    {%- set contrib_tip %}
+    <p><strong>Install on this machine</strong> saves the format here, so your
+    next import of this broker's CSV uses it.</p>
+    <p><strong>Download</strong> gives you the file to attach to a pull
+    request, so nobody else with this broker has to map it again.</p>
+    <p>The file describes WHICH COLUMN IS WHICH — it carries no trades and
+    nothing from the CSV you uploaded.</p>
+    {% endset %}
+    {% with body = contrib_tip, label = "What to do with this file" %}
+      {% include "_tip.html" %}
+    {% endwith %}
+  </h2>
+  <pre class="note scroller">{{ yaml }}</pre>
+  <div class="row">
+    <form method="post" action="/imports-exports/formats" enctype="multipart/form-data" class="inline">
+      <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+      <input type="hidden" name="kind" value="broker">
+      <input type="hidden" name="body" value="{{ yaml }}">
+      <input type="hidden" name="filename" value="{{ name }}">
+      <button type="submit" {{ 'disabled' if result.errors }}>Install on this machine</button>
+    </form>
+    <form method="post" action="/imports-exports/broker/design/export" class="inline">
+      <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+      <input type="hidden" name="body" value="{{ yaml }}">
+      <input type="hidden" name="filename" value="{{ name }}">
+      <button type="submit" class="secondary">Download the file</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+
+{% endif %}
+
+<script src="/static/brokermap.js?v={{ asset_v }}" defer></script>
+{% endblock %}

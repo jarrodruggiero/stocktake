@@ -1,0 +1,36 @@
+# Sample for: mufg-drp-advice
+# Registry: MUFG Corporate Markets (AU) — distribution advice with reinvestment
+# Contributed: 2026-08-04
+#
+# REDACTED. Every amount, date, holder number, name and address below is
+# invented. This file exists so CI can prove the template still reads the
+# LAYOUT — the values are irrelevant and must never be real.
+
+All Registry communications to:
+C/- MUFG Corporate Markets (AU) Limited
+A division of MUFG Pension & Market Services
+Locked Bag A00, Sydney South, NSW, 1235
+Telephone: +61 1300 000 000
+ASX Code: EXMPL
+Website: au.investorcentre.mpms.mufg.com
+
+Distribution Advice
+Payment date: 16 July 2026
+Record date: 2 July 2026
+Reference no.: X*******0000
+TFN/ABN RECEIVED AND RECORDED
+
+Dear Unitholder,
+EXAMPLE AUSTRALIAN EQUITIES ETF
+Distribution statement for the period ended 30 June 2026
+
+Class Description Rate per Unit Participating Units Gross Amount
+Ordinary Units 11.222333 cents 100 $11.22
+Net Amount: $11.22
+Residual balance brought forward from your Plan account: $1.00
+Total amount available for reinvestment: $12.22
+This amount has been applied to 2 units at $5.110000 per unit: $10.22
+Residual balance carried forward in your Plan account: $2.00
+Number of ordinary units held prior to allotment: 100
+Ordinary units allotted this distribution: 2
+Total holding of ordinary units after the allotment: 102

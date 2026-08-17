@@ -1,0 +1,25 @@
+# Sample for: generic-au
+# Registry: Computershare (Australia) — distribution advice
+# Contributed: 2026-08-03
+#
+# REDACTED. Every amount, date, holder number and name below is invented. This
+# file exists so CI can prove the template still reads the LAYOUT — the values
+# are irrelevant and must never be real.
+
+COMPUTERSHARE INVESTOR SERVICES PTY LIMITED
+GPO BOX 0000 MELBOURNE VICTORIA 3001
+
+Distribution Advice
+
+Holder number:              X0000000000
+Security:                   ALPHA - ALPHA AUSTRALIAN SHARES FUND
+
+Payment date:               15 March 2026
+Units held:                 4,213
+Franked amount:             $980.00
+Franking credits:           $420.00
+Net amount paid:            $1,042.75
+
+Distribution reinvestment
+Units allotted:             12
+Allotment price:            $86.89

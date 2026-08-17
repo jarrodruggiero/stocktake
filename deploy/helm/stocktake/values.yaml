@@ -1,0 +1,95 @@
+# Defaults deploy a working app with SQLite on a PersistentVolume. That is the
+# right choice for almost everyone: one file, no external service, backed up by
+# copying it.
+
+image:
+  repository: ghcr.io/jarrodruggiero/stocktake
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+# Every date decision — which financial year today is in, whether a trade is in
+# the future — is made in this zone. Containers run UTC, so leaving this wrong
+# puts the app a day behind for most of an Australian morning.
+timezone: Australia/Melbourne
+
+database:
+  # sqlite | postgres
+  #
+  # SQLite unless you need otherwise. Choose postgres when you want more than
+  # one replica, expect a background writer concurrent with user writes, or
+  # already run Postgres and would rather keep everything in it.
+  #
+  # There is no bundled Postgres subchart on purpose: a database that appears
+  # and disappears with `helm uninstall` is a way to lose your data. Point this
+  # at one you run and back up.
+  type: sqlite
+  postgres:
+    host: ""
+    port: 5432
+    name: stocktake
+    user: stocktake
+    # The password is read from a Secret you create, never from values.yaml —
+    # values end up in `helm get values`, in CI logs and in git.
+    #   kubectl create secret generic stocktake-db --from-literal=password=...
+    existingSecret: ""
+    existingSecretKey: password
+
+persistence:
+  enabled: true      # required for sqlite; still useful with postgres for uploads
+  size: 2Gi
+  storageClass: ""   # "" uses the cluster default
+  accessMode: ReadWriteOnce
+
+priceFeed:
+  enabled: true
+  hour: 18           # after market close, in `timezone`
+  minute: 30
+  backfillStart: "2020-01-01"
+
+auth:
+  # Turn on once TLS terminates in front. Until then the session cookie has to
+  # travel over plain HTTP, and setting this would stop anyone signing in.
+  cookieSecure: false
+  # Your ingress controller's pod CIDR. Empty means "believe nobody", which is
+  # the safe default: with it unset the app treats the proxy as the client for
+  # everyone, so login lockout becomes global instead of per-address; set it
+  # too wide and a caller can forge their own address to dodge lockout.
+  trustedProxies: []
+
+# Anything here is merged into config.yaml, so any setting the app supports can
+# be set without this chart needing to know about it.
+extraConfig: {}
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: stocktake.example.com
+  tls: []
+
+resources:
+  # Measured, not guessed: over 30 days of a real install the working set ran
+  # p50 182 / p90 191 MiB. Most of it is pandas and numpy, which arrive with
+  # yfinance on the first price-feed run — a few seconds after start-up — and
+  # stay for the life of the process. A pod serving pages is ~70 MiB; you will
+  # not see that number again once the feed has run once.
+  requests: {cpu: 50m, memory: 192Mi}
+  # A full price backfill builds pandas frames on top of that: peak usage
+  # reached 279 MiB. 256Mi is not enough — it OOM-kills mid-backfill.
+  limits: {cpu: 500m, memory: 512Mi}
+
+# uid 1000 is fixed in the image, and fsGroup is what makes the mounted volume
+# writable by it.
+podSecurityContext:
+  fsGroup: 1000
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities: {drop: [ALL]}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

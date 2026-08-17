@@ -1,0 +1,7 @@
+# What generic-au.yaml must read out of generic-au.txt. CI asserts this exactly.
+payment_date: 2026-03-15
+net_amount: "1042.75"
+franked_amount: "980.00"
+franking_credits: "420.00"
+drp_units: 12
+drp_price: "86.89"

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Statement preview — Stocktake{% endblock %}
+{% block content %}
+
+<h1>Dividend statement <small>{{ filename }}</small></h1>
+
+{# A statement read from pixels rather than from a text layer. Said loudly and
+   before the form, because OCR misreads digits and every field below is money —
+   this is the one case where "check every field" is not boilerplate. #}
+{% if p.used_ocr %}
+<p class="panel warn"><strong>Read with OCR</strong> — this PDF had no text layer. Check every
+figure against the document before saving.</p>
+{% endif %}
+{% if p.problem %}
+<p class="panel error">{{ p.problem }}</p>
+{% endif %}
+<p class="note">Check every field against the PDF — parsing is best-effort and
+this form is the source of truth. Leave DRP fields empty for a cash dividend.</p>
+
+<form action="/imports-exports/statement/commit" method="post" class="panel statement">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  <label>Instrument
+    <select name="ticker" required>
+      <option value="" {{ 'selected' if not p.ticker }} disabled>— select —</option>
+      {% for t in tickers %}
+      <option value="{{ t }}" {{ 'selected' if t == p.ticker }}>{{ t }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Payment date <input type="date" name="payment_date"
+      value="{{ p.payment_date or '' }}" required></label>
+  <label>Net amount ($) <input name="net_amount" value="{{ p.net_amount or '' }}" required></label>
+  <label>Franked amount ($) <input name="franked_amount" value="{{ p.franked_amount or '' }}"></label>
+  <label>Franking credits ($) <input name="franking_credits" value="{{ p.franking_credits or '' }}"></label>
+  <fieldset>
+    <legend>DRP reinvestment (if units were allotted)</legend>
+    <label>Units allotted <input name="drp_units" value="{{ p.drp_units or '' }}"></label>
+    <label>Allotment price ($) <input name="drp_price" value="{{ p.drp_price or '' }}"></label>
+  </fieldset>
+  <div class="commitbar">
+    <button type="submit">Save dividend</button>
+    <a href="/imports-exports">Cancel</a>
+  </div>
+</form>
+
+{# What the app actually saw. A blank field is otherwise indistinguishable
+   from a layout nobody has written a template for — this is the difference
+   between "it didn't work" and knowing which label to add. #}
+<details class="inspect">
+  <summary>What was read from this file</summary>
+  <p class="note">
+    Layout: <strong>{{ p.template_name or 'none recognised' }}</strong>
+    {%- if p.template_key %} <span class="sub">({{ p.template_key }}.yaml)</span>{% endif %}
+  </p>
+  <p class="note">Anything blank above is a label this layout words differently. Find the
+  value below, note the words just before it, and add them to the template's
+  <code>after:</code> list — see <em>Recipe: statement layouts</em> in the
+  contributing docs.</p>
+  <pre class="note scroller">{{ p.full_text or p.text_sample }}</pre>
+  {# The way out of a bad parse that does not involve writing YAML by hand. #}
+  <form method="post" action="/imports-exports/statement/design">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <input type="hidden" name="text" value="{{ p.full_text or p.text_sample }}">
+    <button type="submit">Design a template for this layout</button>
+  </form>
+</details>
+
+{% endblock %}

@@ -1,0 +1,106 @@
+# Computershare — company dividend statement with a Dividend Reinvestment Plan.
+#
+# The share (not fund) version of the same registry's layout: a franked
+# dividend on ordinary shares, with the DRP arithmetic printed on the reverse:
+#
+#   Dividend amount $36.55
+#   Residual amount carried forward from 3 July 2024 $0.00
+#   Dividend amount participating in the DRP $36.55
+#   Total amount for reinvestment $36.55
+#   0 ordinary share/s allotted @ $39.44 per share $0.00
+#   Residual amount to be carried forward to the next dividend $36.55
+#
+# **Read the two residual lines carefully — they are nearly the same sentence.**
+# "carried forward FROM <date>" is what arrived from the previous dividend;
+# "to be carried forward TO the next dividend" is what leaves. Anchoring on
+# "carried forward" alone would read one of them twice, and the error would be
+# invisible: both are plausible dollar amounts.
+#
+# Two things `generic-au` gets wrong here, which is why this template exists:
+#
+#  * **the franking credit.** Generic returns the **New Zealand** imputation
+#    credit from the tax paragraph — a real number on the page, and the wrong
+#    one. This template returns nothing there instead; see the note below.
+#  * **the net amount**, which this layout calls "Dividend amount" — a wording
+#    generic does not carry, so it returns nothing at all.
+name: Computershare dividend statement (DRP)
+
+match:
+  any_of:
+    - residual amount to be carried forward
+    - dividend amount participating in the drp
+
+fields:
+  payment_date:
+    after:
+      - payment date
+    type: date
+
+  # The date the holding is measured on, and the one to reconcile units
+  # against — a purchase between the record date and the payment date is
+  # already in your account but not in this distribution, which looks exactly
+  # like a missing allotment if you compare on the wrong date.
+  record_date:
+    after:
+      - record date
+    type: date
+
+  net_amount:
+    after:
+      - dividend amount participating in the drp
+      - dividend amount
+    type: money
+
+  # **No franking fields, and that is a deliberate refusal.**
+  #
+  # The franked amount and the franking credit exist on this statement, but
+  # only as figures in a positional summary row whose headings are printed
+  # across two lines — "Franked" above "Amount", "Franking" above "Credit". In
+  # extracted text those words never appear together, so there is no label to
+  # anchor on and no honest way for this format to read them.
+  #
+  # Leaving them out is the point. `generic-au` DOES return a franking credit
+  # here: it falls through to its "imputation credit" label and picks up the
+  # **New Zealand** imputation credit from the tax paragraph, a different and
+  # much smaller number. A blank the person fills in beats a plausible wrong
+  # figure they never question — and this is a tax field.
+  #
+  # For a fully franked dividend the credit is derivable (franked x 30/70 at a
+  # 30% company rate), but that is arithmetic, and a template is data.
+
+  # `number` for the same reason as the ETF template: prices here are printed
+  # to two decimals today, but the money type would truncate any that are not.
+  drp_price:
+    after:
+      - ordinary share/s allotted @
+      - share/s allotted @
+      - allotted @
+    type: number
+
+  # **No `drp_units` field, deliberately.** On this layout the count comes
+  # BEFORE its label — "0 ordinary share/s allotted @ ..." — and a template can
+  # only anchor on words that precede a value. Rather than invent a fragile
+  # pattern, the money applied is read instead: units = applied ÷ price, which
+  # ties to the dollars on the page and is the same check the reconciliation
+  # would do anyway. If it ever disagrees with a whole number, that is a
+  # parsing fault announcing itself, which a units field would not do.
+  drp_amount_applied:
+    after:
+      - per share
+    type: money
+
+  drp_residual_brought:
+    after:
+      - residual amount carried forward from
+    type: money
+
+  drp_residual:
+    after:
+      - residual amount to be carried forward to the next dividend
+      - to be carried forward to the next dividend
+    type: money
+
+  drp_total_available:
+    after:
+      - total amount for reinvestment
+    type: money

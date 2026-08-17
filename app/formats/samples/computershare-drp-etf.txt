@@ -1,0 +1,45 @@
+# Sample for: computershare-drp-etf
+# Registry: Computershare — single-fund ETF distribution advice with a DRP block
+# Contributed: 2026-08-11
+#
+# REDACTED — invented fund, holding and amounts. Only the LAYOUT is real.
+#
+# The arithmetic is self-consistent on purpose, because that is what the
+# reconciliation checks: 10.00 brought forward + 90.00 distributed = 100.00
+# available, less 1 unit at 60.5000, leaves 39.50 carried forward.
+#
+# Two traps this sample exists to pin, both of which produced wrong numbers
+# rather than blanks before this template was written:
+#
+#   * "securities allotted @ $60.5000" — reading units from that label gives
+#     60, not 1. The count is anchored on "applied to" instead.
+#   * the four-decimal price, which the `money` type would truncate to 60.50.
+
+All correspondence to:
+Computershare Investor Services Pty Limited
+GPO Box 2975 Melbourne
+Victoria 3001 Australia
+www.computershare.com
+ASX Code ALFA
+TFN/ABN Status Quoted
+Record Date 2 October 2025
+Payment Date 16 October 2025
+Example Australian Shares Index ETF
+Distribution Payment for the Period Ending 30 September 2025
+Distribution Reinvestment Plan Advice
+Class Description Rate Per Security Securities Held Gross Amount
+ETF $0.45000000 200 $90.00
+Withholding tax: $0.00
+NET PAYMENT: $90.00
+Note: You should retain this statement to assist you in preparing your tax return.
+Distribution Reinvestment Plan (DRP) Details
+Cash surplus brought forward from last distribution: $10.00
+Net amount of current distribution: $90.00
+Total amount available for reinvestment: $100.00
+Amount applied to 1 ETF securities allotted @ $60.5000 each: $60.50
+Cash surplus carried forward to next distribution: $39.50
+Your securityholding participating in the Plan as at Record Date: 200
+Number of ETF securites allotted to you under the Plan: 1
+(these ETF securities will appear on your next statement)
+Your total securityholding as at Payment Date: 201
+(excluding trades since Record Date)

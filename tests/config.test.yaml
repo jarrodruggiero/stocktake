@@ -1,0 +1,47 @@
+# Test configuration. Entirely synthetic — no real tickers, amounts or dates.
+# `database.path` is overridden per-test by APP_DATABASE__PATH.
+app_name: portfolio
+log_level: WARNING
+
+# Fixed zone so date-boundary tests are deterministic wherever they run.
+timezone: Australia/Melbourne
+
+database:
+  type: sqlite
+  path: ./test.db
+
+# Off in tests: the feed's lifespan task would reach Yahoo over the network.
+price_feed:
+  enabled: false
+  hour: 18
+  minute: 30
+  backfill_start: 2019-01-01
+
+auth:
+  session_ttl_days: 30
+  cookie_secure: false
+  rate_limit:
+    max_attempts: 3
+    window_minutes: 15
+    lockout_minutes: 15
+
+imports:
+  allow_new_instruments: false
+  brokers:
+    testbroker:
+      kind: mapped
+      exchange: ASX
+      currency: AUD
+      date_format: "%d/%m/%Y"
+      columns:
+        date: Trade Date
+        action: Buy/Sell
+        ticker: Code
+        units: Units
+        price: Price
+        brokerage: Brokerage
+    testcommsec:
+      kind: commsec_transactions
+      exchange: ASX
+      currency: AUD
+      date_format: "%d/%m/%Y"

@@ -1,0 +1,46 @@
+# Sample for: computershare-drp-shares
+# Registry: Computershare — company dividend statement with a DRP
+# Contributed: 2026-08-11
+#
+# REDACTED — invented company, holding and amounts. Only the LAYOUT is real.
+#
+# Self-consistent: 12.00 carried in + 40.00 dividend = 52.00 available, less
+# 1 share at 35.00, leaves 17.00 carried out.
+#
+# The layout detail that matters is the two residual sentences. One says
+# "carried forward FROM <date>" (what arrived) and the other "to be carried
+# forward TO the next dividend" (what leaves). They are nearly the same words
+# and both are plausible dollar amounts, so reading one of them twice would be
+# invisible — which is why both are pinned here.
+#
+# Note also that "Franking Credit" appears only as a column heading split
+# across two printed lines, so those words never occur together in extracted
+# text. The credit is read from the summary row instead; the generic template
+# falls through to the New Zealand imputation credit further down and returns
+# the wrong number.
+
+Contact our Share Registry
+www.investorcentre.com/au
+2026 Final Dividend Statement
+Summary of key information
+TFN/ABN status Not Quoted
+ASX code EXCO
+Record Date 13 November 2025
+Payment Date 16 December 2025
+Final Dividend for the year ended 30 September 2025
+The details below represent your participation in Example Company's Dividend Reinvestment Plan (DRP) on shares
+registered in your name at the record date.
+The dividend is 50 cents per ordinary share, franked to 100% at the relevant Australian Corporate Tax Rate of 30%.
+Ordinary Price per Unfranked Franked Franking Shares Dividend summary
+Shares Share Amount Amount Credit Allotted
+80 $35.00 $0.00 $40.00 $17.14 1 80 shares x 50 cents = $40.00
+Tax information
+New Zealand tax law requires us to notify shareholders that New Zealand
+imputation credits of NZ$6.00 have been attached to this dividend.
+Dividend amount $40.00
+Dividend Reinvestment Plan (DRP)
+Residual amount carried forward from 2 July 2025 $12.00
+Dividend amount participating in the DRP $40.00
+Total amount for reinvestment $52.00
+1 ordinary share/s allotted @ $35.00 per share $35.00
+Residual amount to be carried forward to the next dividend $17.00

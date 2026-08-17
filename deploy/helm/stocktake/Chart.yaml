@@ -1,0 +1,11 @@
+apiVersion: v2
+name: stocktake
+description: A self-hosted share portfolio tracker, built for Australian investors
+type: application
+version: 0.1.0
+# The application version this chart deploys. Track it with each release.
+appVersion: "0.63.0"
+home: https://github.com/jarrodruggiero/stocktake
+sources:
+  - https://github.com/jarrodruggiero/stocktake
+keywords: [portfolio, investing, shares, asx, self-hosted]

@@ -1,0 +1,117 @@
+# Publish a multi-arch image to GitHub Container Registry when a version tag
+# is pushed, and open a GitHub Release for it.
+#
+# Public-repo workflow: GitHub-hosted runners, ghcr.io, and the token GitHub
+# issues to the job itself. No registry credentials to manage, and nothing
+# that reaches into private infrastructure.
+#
+# Tagging is manual and deliberate — a release is a decision, not a side effect
+# of a push:
+#     git tag v1.0.0 && git push origin v1.0.0
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build (e.g. v1.0.0)"
+        required: true
+
+permissions:
+  contents: write   # create the Release
+  packages: write   # push to ghcr.io
+
+jobs:
+  # Never publish an image whose tests do not pass, even though CI has usually
+  # run on the same commit already — a tag can point anywhere.
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: portfolio_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    strategy:
+      matrix:
+        backend: [sqlite, postgres]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --dev
+      - run: uv run ruff check app appkit tests
+      - env:
+          PORTFOLIO_TEST_DB: ${{ matrix.backend }}
+          PGHOST: localhost
+          PGPORT: 5432
+          PGDATABASE: portfolio_test
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: uv run pytest tests -q
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # QEMU so the arm64 leg can build on an amd64 runner. Slower than a
+      # native builder, but it needs no infrastructure of its own — which is
+      # the trade this workflow is meant to make.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          # v1.2.3 publishes 1.2.3, 1.2 and latest, so a compose file can
+          # follow a minor line without chasing patches.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body: |
+            Container image:
+
+                docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+
+            See the README for the docker-compose and Helm quickstarts.
+
+            **This is not financial or tax advice.** Verify any figure you rely
+            on, and check your tax position with your accountant.

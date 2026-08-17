@@ -1,0 +1,59 @@
+{% extends "setup_base.html" %}
+{% set heading = "Set up Stocktake" %}
+{% block wizard %}
+
+{# No "What this is". Somebody reading this page already read a README or an
+   app-store listing to get here — repeating the pitch is a paragraph between
+   them and a working install. The README's job is to sell it; this page's job
+   is to set it up. #}
+
+{# An error box ABOVE the checklist, not a red row inside it: a database that
+   is configured and unreachable is the one thing on this page that stops
+   everything, and it needs reading before the list explaining itself. #}
+{% if db_probe and not db_probe.ok %}
+<p class="panel error"><strong>The configured database can't be reached.</strong><br>
+{{ db_probe.detail }}</p>
+{% endif %}
+{% if config_writable and not config_writable.writable %}
+<p class="panel warn">The configuration file isn't writable, so settings
+changed here won't be saved. Edit <code>{{ config_path }}</code> directly, or
+make it writable and start again.</p>
+{% endif %}
+
+<section class="panel">
+  <h2>Setup checklist</h2>
+  <dl class="detected">
+    <dt>Database</dt>
+    <dd>
+      {% if not db_source.configured %}
+        <span class="todo">?</span> Not configured — you'll set one up next.
+      {% elif db_probe and db_probe.ok %}
+        {# Tested, not assumed. "Configured" only says a connection string
+           exists; whether it WORKS is the useful answer, and finding out here
+           beats finding out three steps later with an account half-created. #}
+        <span class="ok">✓</span> Configured and tested successfully
+        <span class="sub">{{ db_description }}</span>
+      {% else %}
+        <span class="bad">✗</span> Configured, but unable to connect
+        <span class="sub">{{ db_description }}</span>
+      {% endif %}
+    </dd>
+
+    <dt>Configuration file</dt>
+    <dd>
+      {% if config_writable.writable %}
+        <span class="ok">✓</span> Found and writable
+        <span class="sub"><code>{{ config_path }}</code></span>
+      {% else %}
+        <span class="bad">✗</span> Found, but not writable
+        <span class="sub"><code>{{ config_path }}</code></span>
+      {% endif %}
+    </dd>
+  </dl>
+</section>
+
+<form method="post" action="/setup" class="commitbar">
+  <input type="hidden" name="_csrf" value="{{ csrf }}">
+  <button type="submit" class="primary">Get started</button>
+</form>
+{% endblock %}

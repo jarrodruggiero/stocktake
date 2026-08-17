@@ -1,0 +1,110 @@
+# Computershare — single-fund ETF distribution advice with a DRP block.
+#
+# The layout Vanguard's Australian ETFs used before the combined multi-fund
+# advice took over (see vanguard-drp-advice.yaml for that one). One fund per
+# document, and the DRP figures are a block of labelled sentences at the foot:
+#
+#   Distribution Reinvestment Plan (DRP) Details
+#   Cash surplus brought forward from last distribution: $4.74
+#   Net amount of current distribution: $13.07
+#   Total amount available for reinvestment: $17.81
+#   Amount applied to 0 ETF securities allotted @ $74.2070 each: $0.00
+#   Cash surplus carried forward to next distribution: $17.81
+#
+# **This template exists because the generic one reads it wrongly, not merely
+# incompletely.** Given the line above, `generic-au` returns `drp_units: 74` —
+# it matches its own "securities allotted" label and then takes the first
+# digits after it, which belong to the *price*. The true answer is 0. A wrong
+# number is worse than a blank one, so this layout needs a template that
+# anchors on the words that actually precede each value.
+name: Computershare ETF distribution advice (DRP)
+
+# The surplus wording is the reliable marker: the heading above the block is
+# reworded between years ("Distribution Reinvestment Plan Advice" vs
+# "... Details") but the sentences inside it are not.
+match:
+  any_of:
+    - cash surplus brought forward
+    - cash surplus carried forward
+
+fields:
+  # "Payment Date 16 October 2020" near the head. The document also ends with
+  # "Your total securityholding as at Payment Date: 23" — the first match wins
+  # and the header comes first, which is why this needs no narrower label.
+  payment_date:
+    after:
+      - payment date
+    type: date
+
+  # The date the holding is measured on, and the one to reconcile units
+  # against — a purchase between the record date and the payment date is
+  # already in your account but not in this distribution, which looks exactly
+  # like a missing allotment if you compare on the wrong date.
+  record_date:
+    after:
+      - record date
+    type: date
+
+  # The DRP block's own figure first: it is the amount that actually enters
+  # the reinvestment arithmetic. "NET PAYMENT" is the same number on this
+  # layout, kept as the fallback for years that omit the block's line.
+  net_amount:
+    after:
+      - net amount of current distribution
+      - net payment
+    type: money
+
+  # Units allotted. Anchored on "applied to", where the count immediately
+  # follows the label — NOT on "securities allotted", which is followed by the
+  # price on this layout and is the trap described above.
+  #
+  # The second label is the closing line, "Number of ETF securites allotted to
+  # you under the Plan: 0". Computershare misspells "securities" there and has
+  # done for years, so both spellings are listed; matching only the correct one
+  # would work today and break silently if they ever fix it.
+  drp_units:
+    after:
+      - amount applied to
+      - securites allotted to you under the plan
+      - securities allotted to you under the plan
+    type: integer
+
+  # `number`, not `money`: allotment prices carry four decimals ($74.2070) and
+  # the money pattern requires exactly two, so it would silently truncate this
+  # to 74.20 — a 0.35% error in every DRP cost base.
+  drp_price:
+    after:
+      - allotted @
+      - securities allotted @
+    type: number
+
+  # The residual. This is the balance a registry keeps because it can only
+  # allot whole units, and it is the reason this template was written — see
+  # Two separate figures, and they must not be confused: one is what
+  # arrived from last time, the other is what leaves for next time.
+  drp_residual_brought:
+    after:
+      - brought forward from last distribution
+      - cash surplus brought forward
+    type: money
+
+  drp_residual:
+    after:
+      - carried forward to next distribution
+      - cash surplus carried forward
+    type: money
+
+  # Cross-checks rather than imports. `drp_total_available` must equal
+  # brought + net, and `units_held` is the holding the distribution was paid
+  # on — both give the reconciliation something to disagree with, which is the
+  # only way a parsing error announces itself.
+  drp_total_available:
+    after:
+      - total amount available for reinvestment
+    type: money
+
+  units_held:
+    after:
+      - participating in the plan as at record date
+      - securityholding participating in the plan
+    type: integer

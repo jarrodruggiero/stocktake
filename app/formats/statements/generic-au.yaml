@@ -1,0 +1,76 @@
+# The default Australian dividend/distribution statement reader.
+#
+# No `match` block, so this is tried for anything no specific template claims.
+# The labels below are the union of what Computershare, Link/MUFG and several
+# issuer-direct advices use, which is why one generic template gets most of the
+# way — registries word these lines similarly even when they lay them out
+# differently, and this format reads labels rather than positions.
+#
+# The labels a hand-written parser would carry, as data.
+# They are here verbatim in meaning; the statement tests did not change, which
+# is what proves the template format is expressive enough to have replaced them.
+#
+# Label order is a statement of preference: the first one found wins, so put
+# the most reliable wording for a layout first.
+name: Australian registry statement (generic)
+
+fields:
+  payment_date:
+    after:
+      - payment date
+      - date paid
+      - date of payment
+      - paid on
+    type: date
+
+  net_amount:
+    after:
+      - net amount
+      - net payment
+      - net dividend
+      - net distribution
+      - amount paid
+      - payment amount
+      - total payment
+      - net proceeds
+    type: money
+
+  franked_amount:
+    after:
+      - franked amount
+      - franked dividend
+      - franked component
+    type: money
+
+  franking_credits:
+    after:
+      - franking credit
+      - franking credits
+      - imputation credit
+      - imputation credits
+    type: money
+
+  drp_units:
+    # "allotted"/"issued" rather than a bare "units": a statement says how many
+    # units you HOLD as well as how many were allotted, and the holding is the
+    # bigger, more prominent number. Anchoring on the verb picks the right one.
+    after:
+      - units allotted
+      - units allocated
+      - units issued
+      - shares allotted
+      - shares allocated
+      - shares issued
+      - securities allotted
+      - securities issued
+      - drp units
+      - reinvestment units
+    type: integer
+
+  drp_price:
+    after:
+      - allotment price
+      - allocation price
+      - issue price
+      - reinvestment price
+    type: money

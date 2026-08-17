@@ -1,0 +1,6 @@
+# What mufg-drp-advice.yaml must read out of mufg-drp-advice.txt.
+# CI asserts this exactly.
+payment_date: 2026-07-16
+net_amount: "11.22"
+drp_units: 2
+drp_price: "5.110000"

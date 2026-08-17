@@ -1,0 +1,1755 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOKENS
+
+   Two rules govern this block and breaking either is how "it works for me"
+   happens:
+
+   1. **Every surface token is declared three times** — `:root` for light,
+      `body[data-theme="dark"]` for the explicit choice, and a
+      `prefers-color-scheme` block for `data-theme="auto"`. The dark values are
+      identical in the last two; edit them together, always.
+   2. **Accents are per mode.** The light step is unreadable on the dark ground
+      and vice versa, so an accent is never reused across modes.
+
+   The visual direction is "deep glass" (chosen 2026-08-08 from ten): a washed
+   ground, translucent panels over it, one gradient on the single primary
+   action per page. `--panel-solid` is the opaque colour a glass panel
+   composites to — charts and the reduced-transparency fallback need a real
+   colour, and it is also the surface the palette was contrast-checked against.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── type scale ────────────────────────────────────────────────────────
+     Six steps, and nothing off-scale — without one, a portfolio total and a
+     table cell read at the same weight. */
+  --fs-label: 0.6875rem;  /* 11px — uppercase column and tile labels */
+  --fs-small: 0.8125rem;  /* 13px — .sub, .note, captions */
+  --fs-body: 0.9375rem;   /* 15px — body copy, table cells, controls */
+  --fs-h2: 1rem;          /* 16px — section and card headings */
+  --fs-h1: 1.8125rem;     /* 29px — page title */
+  --fs-hero: 1.8125rem;   /* 29px — tile totals; deliberately h1-sized */
+
+  /* ── spacing scale ─────────────────────────────────────────────────────
+     Six steps, used everywhere, rather than a margin per rule. */
+  --sp-1: 0.25rem;   /* 4px  */
+  --sp-2: 0.5rem;    /* 8px  */
+  --sp-3: 0.875rem;  /* 14px */
+  --sp-4: 1.375rem;  /* 22px */
+  --sp-5: 1.875rem;  /* 30px */
+  --sp-6: 2.625rem;  /* 42px */
+
+  /* ── shape ─────────────────────────────────────────────────────────────── */
+  --radius: 16px;
+  --radius-sm: 10px;
+  --radius-xs: 7px;
+
+  /* ── light surfaces ────────────────────────────────────────────────────── */
+  --bg: #eef0f7;
+  --panel: rgb(255 255 255 / 0.74);
+  --panel-solid: #f7f8fc;
+  --sunken: #e7eaf4;
+  /* The app frame. Chrome separates from content by moving AWAY from it,
+     which is a different direction in each mode: lifted and brighter on a
+     light page, sunk and darker on a dark one. A darker band across the top
+     of a light page just reads as a grey slab. Still translucent, so the
+     glass direction survives in both.
+     --chrome-active is the active nav item, which must then contrast away
+     from the chrome — so it inverts too. */
+  --chrome: rgb(255 255 255 / 0.92);
+  --chrome-active: var(--sunken);
+  --text: #1a1d29;
+  --muted: #6b7186;
+  --line: rgb(24 24 60 / 0.10);
+  --up: #1a7f37;
+  --down: #c62828;
+  --shadow-sm: 0 1px 2px rgb(24 20 60 / 0.06);
+  --shadow: 0 10px 30px rgb(24 20 60 / 0.10);
+  --on-accent: #ffffff;
+
+  /* The brand indigo, leading a gradient that runs toward violet. Chosen by
+     measurement, not taste: green and red are already spent on gain and loss,
+     and under deuteranopia every warm hue collapses toward the same
+     olive-yellow as the loss red (an ochre candidate measured ΔE 13 from it).
+     Blue-violet is the only region that stays separate — this sits ΔE 135
+     from the loss red at 7.45:1 on the card. Dark mode lifts it to #8b83f0,
+     because one value cannot clear both surfaces. */
+  --accent: #4338ca;
+  --accent-grad: linear-gradient(135deg, #4f46e5, #7c3aed);
+
+  /* Derived, so an accent change carries: a tint for "you are here" states and
+     the wash behind the whole page. One definition each, not eight. */
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --wash: radial-gradient(1200px 460px at 18% -12%,
+          color-mix(in srgb, var(--accent) 20%, transparent) 0%, transparent 68%);
+
+  /* chart tokens.
+     **The two modes are ONE palette at two lightnesses.** Light is violet /
+     green / amber (hues 305, 160, 60 in OKLCH) and the dark set below is those
+     exact hues raised to L 0.66 for the dark ground.
+
+     That constraint is the point. An earlier dark set was produced by letting
+     a search move the hues wherever colour-vision separation was best; it
+     landed on magenta / blue / burnt-orange, which passed every check and
+     looked, in a word, wrong — because it was a different
+     palette from the one the light mode had trained him to expect. Separation
+     is a floor, not a design.
+
+     Dark measures 4.96:1 against the panel (floor is 3:1 for a graphical
+     object) and ΔE 14.6 between the closest pair under simulated deuteranopia,
+     protanopia and tritanopia (target 12). Both modes are checked whenever
+     either changes — see the ten-directions pass. */
+  --viz-1: #8959ba;
+  --viz-2: #1a7f37;
+  --viz-3: #aa5f04;
+  --viz-pos: #8959ba;
+  --viz-neg: #c62828;
+  --viz-grid: #e4e6f0;
+  --viz-axis: #c2c5d8;
+  --viz-ink: #6b7186;
+}
+
+/* ── dark surfaces ──────────────────────────────────────────────────────────
+   Declared twice, identically. The `auto` copy is not optional: without it a
+   device set to dark shows the light palette on every page. */
+@media (prefers-color-scheme: dark) {
+  body[data-theme="auto"] {
+    --bg: #0d1018;
+    --panel: rgb(28 33 50 / 0.72);
+    --panel-solid: #1b2030;
+    --sunken: #141826;
+    --chrome: rgb(20 24 38 / 0.88);
+    --chrome-active: var(--panel-solid);
+    --text: #e9ecf6;
+    --muted: #98a0bb;
+    --line: rgb(255 255 255 / 0.09);
+    --up: #2ea043;
+    --down: #ef4444;
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow: 0 16px 44px rgb(0 0 0 / 0.5);
+    --accent: #8b83f0;
+    --accent-grad: linear-gradient(135deg, #8b83f0, #b78af5);
+    --viz-1: #a37ecd; --viz-2: #2ea043; --viz-3: #c77f3e;
+    --viz-pos: #a37ecd; --viz-neg: #ef4444;
+    --viz-grid: #242a3c; --viz-axis: #3a4159; --viz-ink: #98a0bb;
+  }
+}
+body[data-theme="dark"] {
+  --bg: #0d1018;
+  --panel: rgb(28 33 50 / 0.72);
+  --panel-solid: #1b2030;
+  --sunken: #141826;
+  --chrome: rgb(20 24 38 / 0.88);
+  --chrome-active: var(--panel-solid);
+  --text: #e9ecf6;
+  --muted: #98a0bb;
+  --line: rgb(255 255 255 / 0.09);
+  --up: #2ea043;
+  --down: #ef4444;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow: 0 16px 44px rgb(0 0 0 / 0.5);
+  --accent: #8b83f0;
+  --accent-grad: linear-gradient(135deg, #8b83f0, #b78af5);
+  --viz-1: #a37ecd; --viz-2: #2ea043; --viz-3: #c77f3e;
+  --viz-pos: #a37ecd; --viz-neg: #ef4444;
+  --viz-grid: #242a3c; --viz-axis: #3a4159; --viz-ink: #98a0bb;
+}
+
+/* Accents, per mode. Each keeps its own hue in the lead and runs to an
+   analogous neighbour, so "teal" still reads teal rather than every account
+   getting the same violet. */
+body[data-accent="teal"]   { --accent: #0f766e; --accent-grad: linear-gradient(135deg, #0f9488, #2f7fd1); }
+body[data-accent="violet"] { --accent: #6d28d9; --accent-grad: linear-gradient(135deg, #6d3fd1, #b34fd6); }
+body[data-accent="amber"]  { --accent: #b45309; --accent-grad: linear-gradient(135deg, #c2680a, #d1483f); }
+body[data-theme="dark"][data-accent="teal"]   { --accent: #2dd4bf; --accent-grad: linear-gradient(135deg, #2dd4bf, #5aa9f0); }
+body[data-theme="dark"][data-accent="violet"] { --accent: #a78bfa; --accent-grad: linear-gradient(135deg, #9b7cf6, #d07be0); }
+body[data-theme="dark"][data-accent="amber"]  { --accent: #fbbf24; --accent-grad: linear-gradient(135deg, #f5b02a, #f2766a); }
+@media (prefers-color-scheme: dark) {
+  body[data-theme="auto"][data-accent="teal"]   { --accent: #2dd4bf; --accent-grad: linear-gradient(135deg, #2dd4bf, #5aa9f0); }
+  body[data-theme="auto"][data-accent="violet"] { --accent: #a78bfa; --accent-grad: linear-gradient(135deg, #9b7cf6, #d07be0); }
+  body[data-theme="auto"][data-accent="amber"]  { --accent: #fbbf24; --accent-grad: linear-gradient(135deg, #f5b02a, #f2766a); }
+}
+
+/* Glass is a preference, not a requirement. Anyone who has asked their system
+   to cut transparency gets solid panels and no blur — which is direction 5
+   from the ten, the same shape without the translucency. Blur is also the one
+   expensive effect on the page, so this is a performance escape hatch too. */
+@media (prefers-reduced-transparency: reduce) {
+  :root { --panel: var(--panel-solid); --wash: none; }
+  body[data-theme="dark"], body[data-theme="auto"] { --panel: var(--panel-solid); --wash: none; }
+}
+
+
+/* ── Why the panels are translucent but NOT blurred ────────────────────────
+   `backdrop-filter` on a glass surface promotes the element to its own
+   compositing layer, and text in a composited layer loses subpixel
+   antialiasing — on Windows that means no ClearType and the nav labels read as
+   slightly blurry. It does not show on a Mac, where antialiasing is greyscale
+   anyway, which is what makes it easy to ship by accident.
+
+   The look survives losing it, because what sat behind these panels was a soft
+   radial gradient — and a blurred gradient and an unblurred gradient are the
+   same picture. So the translucency stays (a plain alpha background forces no
+   layer and costs no text quality) and the blur goes.
+
+   The two places that keep it are the two that blur real page CONTENT rather
+   than a wash: the idle overlay and the dialog backdrop. Blurring is the point
+   there, and neither has text sitting on top of it.
+   ------------------------------------------------------------------------- */
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  background-image: var(--wash);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  color: var(--text);
+  font: var(--fs-body)/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+/* The bar is glass over the wash, and it stays put — a translucent bar that
+   scrolls away takes the page's one fixed landmark with it. */
+.topbar { background: var(--chrome); border-bottom: 1px solid var(--line);
+  padding: var(--sp-2) var(--sp-4);
+  position: sticky; top: 0; z-index: 50; }
+.brand { font-weight: 700; color: var(--text); text-decoration: none; font-size: var(--fs-h2); }
+/* Wide enough for the holdings table (12 columns of tabular numbers) to fit
+   without a horizontal scrollbar on a normal laptop screen. */
+main { max-width: 1400px; margin: 0 auto; padding: var(--sp-4); }
+h1 { font-size: var(--fs-h1); line-height: 1.15; letter-spacing: -0.018em;
+  font-weight: 640; margin: var(--sp-1) 0; text-wrap: balance; }
+h1 small { color: var(--muted); font-weight: 400; font-size: var(--fs-small); }
+h2 { font-size: var(--fs-h2); font-weight: 620; letter-spacing: -0.008em;
+  margin: var(--sp-5) 0 var(--sp-2); }
+a { color: var(--accent); }
+.meta { color: var(--muted); margin: 0 0 var(--sp-2); }
+.note { color: var(--muted); font-size: var(--fs-small); }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--sp-3); margin-top: var(--sp-3); }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: var(--sp-3) var(--sp-4); display: flex; flex-direction: column; gap: 0.15rem;
+  box-shadow: var(--shadow-sm); }
+.tile .label { color: var(--muted); font-size: var(--fs-label); text-transform: uppercase; letter-spacing: 0.05em; }
+.tile .big { font-size: var(--fs-hero); font-weight: 660; letter-spacing: -0.02em;
+  line-height: 1.15; font-variant-numeric: tabular-nums; }
+/* Direction on a tile was carried by colour alone — the holdings table got its
+   arrow and the tiles did not. Same fix, same reason: red and green are
+   the same value to ~8% of men and to any printer. */
+.tile .dir { font-size: 0.66em; margin-right: 0.22em; vertical-align: 0.09em; }
+/* `.sub` is used inside labels and headings all over the app, not only in
+   tiles and table cells — where it was scoped, it silently rendered as
+   ordinary text, so "optional" and "blank = guessed" read as part of the
+   field name. One selector, many pages. */
+.sub { color: var(--muted); font-size: var(--fs-small); }
+.tile.up .big { color: var(--up); } .tile.down .big { color: var(--down); }
+
+.tablewrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+table { border-collapse: collapse; width: 100%; }
+th, td { padding: var(--sp-2) var(--sp-3); text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+tbody tr:last-child td { border-bottom: none; }
+thead th { background: var(--sunken); }
+th { color: var(--muted); font-size: var(--fs-label); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+/* Row hover, scoped to real data tables. Unscoped it also caught the calendar,
+   where a "row" is a week — hovering one day lit up all seven. */
+.tablewrap tbody tr { transition: background-color 0.12s ease; }
+.tablewrap tbody tr:hover { background: var(--accent-soft); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.up { color: var(--up); } td.down { color: var(--down); }
+.notecell { white-space: normal; max-width: 26rem; color: var(--muted); font-size: var(--fs-small); }
+
+.ccy { font-size: 0.7rem; border: 1px solid var(--line); border-radius: 4px; padding: 0 0.25rem; margin-left: 0.3rem; color: var(--muted); }
+.badge { background: var(--accent); color: #fff; border-radius: 4px; font-size: 0.7rem; padding: 0.05rem 0.35rem; }
+.event { font-size: 0.75rem; border-radius: 4px; padding: 0.1rem 0.4rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.event-buy { background: rgba(37, 99, 235, 0.12); color: var(--accent); }
+.event-sell { background: rgba(176, 42, 55, 0.12); color: var(--down); }
+.event-drp, .event-dividend { background: rgba(21, 115, 71, 0.12); color: var(--up); }
+
+.columns { display: grid; grid-template-columns: 1fr 2fr; gap: 1.2rem; align-items: start; }
+@media (max-width: 800px) { .columns { grid-template-columns: 1fr; } }
+.dca { list-style: none; padding: 0; margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.dca li { padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--line); }
+.dca li:last-child { border-bottom: none; }
+.dca li.due { border-left: 3px solid var(--accent); }
+
+/* imports pages */
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: var(--sp-4); box-shadow: var(--shadow-sm); }
+.panel.error { border-color: var(--down); }
+.panel label { display: block; margin: var(--sp-2) 0; }
+.panel input, .panel select { display: block; margin-top: var(--sp-1); padding: 0.45rem 0.6rem; width: 100%; max-width: 22rem;
+  background: var(--sunken); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-xs); }
+.panel fieldset { border: 1px solid var(--line); border-radius: var(--radius-sm); margin-top: var(--sp-3); }
+/* The bare element stays the filled, emphatic one: templates rely on a plain
+   <button> being the submit that matters ("Save plan", "Save columns"), and
+   `.secondary` is what steps down from it. Flipping that default would quietly
+   demote every form on the site. */
+button { background: var(--accent-grad); color: var(--on-accent); border: 1px solid transparent;
+  border-radius: var(--radius-xs); padding: 0.45rem 0.95rem;
+  font-size: var(--fs-body); font-weight: 550; cursor: pointer; margin-top: var(--sp-2);
+  box-shadow: var(--shadow-sm);
+  transition: filter 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease,
+              border-color 0.14s ease, color 0.14s ease; }
+button:hover { filter: brightness(1.07); }
+button:active { transform: translateY(1px); }
+button[disabled] { filter: grayscale(0.7) opacity(0.6); cursor: default; }
+/* Focus has to be visible on glass, where a faint ring disappears into the
+   panel behind it. */
+button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.commitbar { margin: var(--sp-3) 0; display: flex; gap: var(--sp-3); align-items: center; }
+.flash { background: rgba(21, 115, 71, 0.12); color: var(--up); border-radius: 8px; padding: 0.6rem 0.9rem; }
+.badge-new { background: var(--up); }
+.badge-duplicate { background: var(--muted); }
+.badge-unknown-instrument { background: var(--down); }
+tr.muted td { opacity: 0.55; }
+pre.note { overflow-x: auto; background: var(--sunken); border-radius: 8px; padding: 0.8rem; }
+
+/* The chart tokens live in the token block at the top of this file with every
+   other colour. They were declared a second time here, AFTER the first — so
+   the copy up there was dead and this one was the real palette. Both were
+   labelled "validated"; only one could have been. It is the light-mode green
+   and amber from this block that measured 2.82:1 and 2.17:1 against a white
+   card, against a 3:1 floor. One declaration now, so the label means
+   something. */
+.chartgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--sp-4); margin-top: var(--sp-3); }
+.chartcard { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: var(--sp-4); box-shadow: var(--shadow-sm); }
+.chartcard.wide { grid-column: 1 / -1; }
+.chartcard h2 { margin: 0 0 var(--sp-1); font-size: var(--fs-h2); }
+.chartcard .sub { display: block; margin-bottom: 0.6rem; }
+.plot { position: relative; height: 260px; }
+.chartcard.wide .plot { height: 340px; }
+.rangebar { display: flex; gap: 0.4rem; margin: 1rem 0 0; }
+.rangebar button { background: var(--panel); color: var(--text); border: 1px solid var(--line); margin: 0; padding: 0.25rem 0.7rem; font-size: 0.8rem; }
+.rangebar button.active { border-color: var(--accent); color: var(--accent); }
+details.tableview { margin-top: 0.6rem; }
+details.tableview summary { color: var(--muted); font-size: 0.8rem; cursor: pointer; }
+details.tableview table { font-size: 0.8rem; }
+button.linkish { background: none; border: none; color: var(--accent); padding: 0; margin: 0; font-size: inherit; cursor: pointer; text-decoration: underline; }
+.rangebar a { text-decoration: none; }
+h2 small a { font-weight: 400; font-size: 0.8rem; }
+
+/* "Glass brick": dollar figures blur out. Once a manual Hide $ toggle, now
+   driven solely by the idle warning — blurring is no longer something you ask
+   for, it is what happens when you have stopped being there. */
+.m { transition: filter 0.15s ease; }
+body.hide-values .m {
+  filter: blur(7px) saturate(0.6);
+  user-select: none; /* no reveal via copy-paste */
+}
+/* notes can embed dollar figures (sale prices, DRP carry balances) */
+body.hide-values .notecell { filter: blur(7px); user-select: none; }
+
+/* The idle warning itself. Sits above the blurred page rather than blurring
+   with it, so the one thing still readable is the way out. */
+.idleoverlay {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  backdrop-filter: blur(2px);
+}
+.idleoverlay[hidden] { display: none; }
+.idlecard {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  padding: 1.5rem 1.8rem; max-width: 26rem; text-align: center;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.35);
+}
+.idlecard h2 { margin-top: 0; }
+.idlecard .commitbar { justify-content: center; margin-bottom: 0; }
+#idlewarn-countdown { font-variant-numeric: tabular-nums; }
+
+/* feed status strip + manual refresh (dashboard) */
+.feedbar { display: flex; align-items: center; gap: 0.8rem; margin: 0 0 1rem; }
+.feedbar form { margin: 0; }
+.feedbar button { background: var(--panel); color: var(--text); border: 1px solid var(--line); margin: 0; padding: 0.25rem 0.7rem; font-size: 0.8rem; }
+.feedbar button:hover { border-color: var(--accent); color: var(--accent); }
+
+/* holdings table: $ over % in one cell, so the row stays inside the page */
+.holdings td.num .sub { display: block; font-size: 0.75rem; line-height: 1.2; }
+.holdings td.num.up .sub { color: var(--up); opacity: 0.85; }
+.holdings td.num.down .sub { color: var(--down); opacity: 0.85; }
+.holdings th, .holdings td { padding: 0.45rem 0.6rem; }
+
+/* topbar: nav left, account controls right */
+.topbar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.topbar .spacer { flex: 1; }
+.topbar nav { display: flex; gap: 0.9rem; margin-left: 0.6rem; }
+.topbar nav a { color: var(--muted); text-decoration: none; }
+.topbar nav a:hover { color: var(--text); }
+.who { color: var(--muted); font-size: 0.85rem; text-decoration: none; }
+.who:hover { color: var(--text); }
+
+/* App-level controls at the right of the bar: the admin cog and the account
+   menu. Both are icon-sized and sit in the same place on every page — that
+   fixed position is the point, so anything portfolio-specific stays off them. */
+.iconbtn, .usermenu > summary {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border-radius: 6px; cursor: pointer;
+  color: var(--muted); text-decoration: none; flex: none;
+}
+.iconbtn svg, .usermenu > summary svg {
+  width: 19px; height: 19px; fill: none; stroke: currentColor;
+  stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round;
+}
+.iconbtn:hover, .usermenu > summary:hover { background: var(--sunken); color: var(--text); }
+.iconbtn[aria-current="page"] { color: var(--accent); background: var(--chrome-active); }
+
+/* The account menu. `list-style: none` plus the ::-webkit- rule removes the
+   disclosure triangle in every engine — without both, Safari keeps drawing one
+   next to the avatar. */
+.usermenu { position: relative; }
+.usermenu > summary { list-style: none; }
+.usermenu > summary::-webkit-details-marker { display: none; }
+.usermenu > summary::marker { content: ""; }
+.usermenupanel {
+  position: absolute; right: 0; top: calc(100% + 0.35rem); z-index: 40;
+  min-width: 15rem; display: flex; flex-direction: column; gap: 0.6rem;
+  text-align: left;
+}
+.usermenupanel .whoami { margin: 0; font-weight: 600; line-height: 1.25; }
+.usermenupanel .whoami .sub { display: block; font-weight: 400; }
+.usermenupanel form { margin: 0; }
+.usermenupanel > a { color: var(--text); text-decoration: none; }
+.usermenupanel > a:hover { color: var(--accent); }
+.usermenupanel .pfswitch { max-width: none; width: 100%; }
+
+form.inline { display: inline; margin: 0; }
+form.inline button { margin-top: 0; }
+
+/* auth pages */
+.authcard { max-width: 22rem; margin: 3rem auto; }
+.authcard h1 { text-align: center; margin-bottom: 1rem; }
+/* The login card's lockup — the SAME two SVGs the top bar carries, at the size
+   they were drawn for. The partial ships one set of markup and the context
+   sizes it, rather than branding.py growing a second "big" variant that could
+   be redrawn and forgotten. */
+.authbrand { display: flex; align-items: center; justify-content: center;
+  gap: 0.75rem; margin-bottom: 1.4rem; }
+.authbrand .brandmark { width: 46px; height: 46px; }
+.authbrand .brandword { height: 32px; }
+.panel.ok { border-color: var(--up); }
+/* Not an error: a read-only config file is a normal deployment shape, so
+   it reads as information rather than something broken. */
+.panel.warn { border-color: var(--accent); }
+.sub.warn { color: var(--accent); }
+.panel code.reveal { font-size: 1rem; background: var(--sunken); padding: 0.1rem 0.4rem; border-radius: 4px; }
+.narrow { max-width: 34rem; }
+/* `align-items: end` so the INPUTS line up, not the labels. A label carrying a
+   `.sub` hint wraps to two lines while its neighbours do not, which left the
+   three controls on the export form sitting at three different heights. */
+.panel .row { display: flex; gap: var(--sp-3); flex-wrap: wrap; align-items: end; }
+.panel .row label { flex: 1; min-width: 8rem; }
+/* `[hidden]` must win over any display rule below, or an element the markup
+   says is hidden shows up anyway — which is exactly what `.panel textarea`
+   did to the broker mapper's form field carrying the uploaded CSV. Caught by
+   rendering the page; no test would have. */
+[hidden] { display: none !important; }
+
+.panel textarea { display: block; margin-top: 0.25rem; padding: 0.4rem 0.5rem; width: 100%;
+  background: var(--sunken); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+  font: inherit; }
+.panel label.check { display: flex; align-items: center; gap: 0.4rem; }
+.panel label.check input { display: inline; width: auto; margin: 0; }
+.rowactions form { display: inline-flex; align-items: center; gap: 0.3rem; margin-right: 0.6rem; }
+.rowactions input { padding: 0.2rem 0.4rem; font-size: 0.8rem; background: var(--sunken);
+  color: var(--text); border: 1px solid var(--line); border-radius: 4px; }
+.prefform { display: flex; align-items: center; gap: 0.6rem; }
+.prefform input.notecell { flex: 1; min-width: 8rem; padding: 0.2rem 0.4rem; background: var(--sunken);
+  color: var(--text); border: 1px solid var(--line); border-radius: 4px; font-size: 0.8rem; }
+ol.rotation { columns: 3; margin: 0; padding-left: 1.4rem; }
+ol.rotation li { padding: 0.1rem 0; }
+
+/* calendar */
+.calhead { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+.calhead .rangebar { margin: 0; }
+.calhead .rangebar a { text-decoration: none; }
+.calwrap { overflow-x: auto; }
+table.calendar { table-layout: fixed; margin-top: 1rem; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px; min-width: 44rem; }
+table.calendar th { text-align: center; padding: 0.4rem; }
+table.calendar td { vertical-align: top; height: 5.5rem; white-space: normal;
+  border-right: 1px solid var(--line); padding: 0.3rem; }
+table.calendar td:last-child { border-right: none; }
+table.calendar td.outside { background: var(--sunken); }
+table.calendar td.today { outline: 2px solid var(--accent); outline-offset: -2px; }
+table.calendar .daynum { display: block; color: var(--muted); font-size: 0.75rem; margin-bottom: 0.2rem; }
+.chip { display: inline-block; font-size: 0.7rem; border-radius: 4px; padding: 0.05rem 0.35rem;
+  margin: 0 0.15rem 0.15rem 0; text-decoration: none; white-space: nowrap; }
+.chip-buy { background: rgba(37, 99, 235, 0.16); color: var(--accent); }
+.chip-sell { background: rgba(176, 42, 55, 0.16); color: var(--down); }
+.chip-dividend { background: rgba(21, 115, 71, 0.16); color: var(--up); }
+/* dashed = projected, not recorded */
+.chip-buy-planned { border: 1px dashed var(--accent); color: var(--accent); }
+.chip-dividend-expected { border: 1px dashed var(--up); color: var(--up); }
+
+.pfswitch { background: var(--panel); color: var(--text); border: 1px solid var(--line);
+  border-radius: 6px; padding: 0.2rem 0.4rem; font-size: 0.8rem; max-width: 12rem; }
+code.reveal { word-break: break-all; }
+
+/* --- navigation: icon + label, with a per-account display mode ----------- */
+.brand { display: inline-flex; align-items: center; }
+.brandmark { width: 26px; height: 26px; fill: none; stroke: var(--text);
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.brandmark .top { stroke: var(--accent); }
+/* Filled letterforms plus a few stroked ones (s, k, the t's foot), so the
+   wordmark needs both paints pointed at the same colour. */
+.brandword { height: 20px; width: auto; fill: currentColor; color: var(--text); }
+.brand { display: inline-flex; align-items: center; gap: 0.5rem; }
+.topbar nav a { display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.25rem 0.4rem; border-radius: 6px; }
+.topbar nav a svg { width: 17px; height: 17px; fill: none; stroke: currentColor;
+  stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.topbar nav a:hover { background: var(--sunken); color: var(--text); }
+.topbar nav a.on { color: var(--accent); background: var(--chrome-active); }
+/* the three modes, chosen on the account page */
+.nav-text svg { display: none; }
+.nav-icon span { display: none; }
+.nav-icon a { padding: 0.25rem 0.45rem; }
+@media (max-width: 1100px) {
+  /* labels are the first thing to go when the bar runs out of room */
+  .nav-both span { display: none; }
+}
+
+/* --- a page's own header: title left, its actions right ------------------ */
+/* The actions belong to the PAGE, not the app, which is why they are here and
+   not in the top bar. Wraps on a narrow screen so the buttons drop under the
+   title rather than squeezing it. */
+.pagehead { display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+.pagehead h1 { margin: 0 0 0.4rem; }
+/* The tab strip has to be allowed to be NARROWER than its contents, or
+   `overflow-x: auto` never gets the chance to scroll and the page grows
+   sideways instead. `min-width: 0` alone was not enough: the wrapper sized
+   itself from the strip and the strip sized itself from the wrapper, so
+   neither had an upper bound and both settled at the full 845px of tabs.
+   `max-width: 100%` breaks that circle by giving each a definite ceiling —
+   the parent's width — and the scroll container then does its job.
+
+   Only shows up once there are enough financial years to overflow; a fixture
+   with three tabs renders fine at any width. */
+.pagehead > div { min-width: 0; max-width: 100%; }
+.fytabs { min-width: 0; max-width: 100%; }
+.headside { display: flex; flex-direction: column; align-items: flex-end; gap: 0.35rem; }
+.headactions { display: flex; align-items: center; gap: 0.5rem; }
+.headactions form { margin: 0; }
+.headactions button { margin-top: 0; }
+
+/* One primary action per page. Everything else on the page is quieter than
+   this, which is the whole point — a row of equal buttons has no hierarchy. */
+button.primary { background: var(--accent-grad); border-color: transparent; color: var(--on-accent); }
+
+/* Status, not an action: smaller and quieter than the buttons above it. */
+.feedline { display: flex; align-items: center; gap: 0.4rem; margin: 0;
+  color: var(--muted); font-size: 0.8rem; }
+.feedstatus, .livestatus { position: relative; }
+.feedstatus > summary { list-style: none; cursor: pointer; display: inline-flex;
+  align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem;
+  border-radius: 50%; font-size: 0.8rem; line-height: 1; }
+.feedstatus > summary::-webkit-details-marker { display: none; }
+.feedstatus > summary::marker { content: ""; }
+/* Shape as well as colour: a green dot and a red dot differ only in hue, which
+   is unreadable for ~8% of men and invisible in print. The glyph carries it. */
+.feedstatus > summary.ok { color: var(--up); }
+.feedstatus > summary.bad { color: var(--down); }
+.feedstatus > summary:hover { background: var(--sunken); }
+/* 20rem, not the 15rem the shorter content seemed to invite: `box-sizing:
+   border-box` means --sp-4 padding takes 2.75rem off both sides, and
+   "Closing prices" beside "Wed 12 Aug, 15:24" needs about 15rem of that. At
+   15rem the date wrapped mid-string onto its own line. */
+.feedpanel { position: absolute; right: 0; top: calc(100% + 0.3rem); z-index: 40;
+  width: 20rem; text-align: left; font-size: 0.85rem; }
+.feedpanel p { margin: 0 0 0.4rem; }
+.feedpanel ul { margin: 0.2rem 0 0; padding-left: 1.1rem; }
+.feedhead { color: var(--muted); }
+/* Label left, time right, on one row each. `grid` rather than a float so the
+   times align with each other however long the labels get in translation. */
+.feedtimes { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.75rem;
+  margin: 0; }
+.feedtimes dt { color: var(--muted); }
+/* A date and time is one value — wrapping it after the comma reads as two. */
+.feedtimes dd { margin: 0; text-align: right; white-space: nowrap;
+  font-variant-numeric: tabular-nums; }
+.feedpanel .down { margin-top: 0.5rem; }
+/* The open-exchange list: names, not bullets — it is four characters each. */
+.plainlist { list-style: none; margin: 0.1rem 0 0.4rem; padding: 0;
+  font-variant-numeric: tabular-nums; }
+
+/* "Manage holdings →" and friends: a way onward that sits on the section it
+   belongs to, rather than a nav entry competing with the pages. */
+.headlink { font-size: 0.8rem; font-weight: 400; text-decoration: none;
+  margin-left: 0.5rem; }
+.headlink:hover { text-decoration: underline; }
+
+/* The way back from a spoke page. Above the title, because that is where a
+   back control is looked for and because putting it beside the title makes it
+   compete with the title. */
+/* A real button, not a link: it is an action people expect to press, and it
+   sat as underlined text among a page of buttons. */
+.backlink { display: inline-block; text-decoration: none; margin-bottom: 0.4rem; }
+.backlink button { margin: 0; font-size: 0.8rem; padding: 0.3rem 0.7rem; }
+
+/* --- side-by-side panels that stack on narrow screens ------------------- */
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; align-items: start; }
+@media (max-width: 900px) { .pair { grid-template-columns: 1fr; } }
+.pair > section, .pair > div { min-width: 0; }  /* let tables scroll, not overflow */
+
+/* --- chart layout editor ------------------------------------------------ */
+.layoutlist { list-style: none; padding: 0; margin: 0 0 1rem; }
+.layoutlist li { display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 0.7rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 0.4rem; }
+.layoutlist li.off { opacity: 0.55; }
+.layoutlist .grow { flex: 1; min-width: 0; }
+.layoutlist button { margin: 0; padding: 0.15rem 0.5rem; font-size: 0.8rem;
+  background: var(--sunken); color: var(--text); border: 1px solid var(--line); }
+.layoutlist .sub { display: block; }
+.subnav { display: flex; gap: 0.6rem; margin: 0.6rem 0 1rem; flex-wrap: wrap; }
+.subnav a { padding: 0.25rem 0.7rem; border: 1px solid var(--line); border-radius: 6px;
+  text-decoration: none; font-size: 0.85rem; }
+.subnav a.on { border-color: var(--accent); color: var(--accent); }
+
+/* financial-year tabs on the portfolio page — scroll sideways rather than
+   forcing the tables below to widen */
+.fytabs { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 0.3rem; margin: 0.6rem 0 1rem; }
+.fytabs a { flex: none; padding: 0.3rem 0.8rem; border: 1px solid var(--line); border-radius: 6px;
+  text-decoration: none; font-size: 0.85rem; color: var(--muted); background: var(--panel); }
+.fytabs a:hover { color: var(--text); }
+.fytabs a.on { border-color: var(--accent); color: var(--accent); }
+
+/* --- chart builder ------------------------------------------------------ */
+/* Four columns: what it is → what shape and what's on it → what to leave out
+   → what it looks like. The preview takes the remaining width because it is
+   the only column whose content benefits from more of it. */
+.builder { display: grid; grid-template-columns: 15rem 15rem 13rem minmax(0, 1fr);
+  gap: var(--sp-3); align-items: start; margin-top: var(--sp-3); }
+.bcol { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+@media (max-width: 1400px) {
+  /* The preview drops to its own full-width row before the controls start
+     wrapping — a chart squeezed into 20rem tells you nothing. */
+  .builder { grid-template-columns: 1fr 1fr 1fr; }
+  .previewpane { grid-column: 1 / -1; }
+}
+@media (max-width: 900px) { .builder { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 700px) { .builder { grid-template-columns: 1fr; } }
+/* Controls in a shelf stack rather than sitting inline, so a select and its
+   label do not fight for one line in a 13rem column. */
+.builder label.stack { display: block; margin: var(--sp-2) 0 0; font-size: var(--fs-small); color: var(--muted); }
+/* Form controls in a SHELF, not a panel. `.panel input/select` carried the
+   dark styling, so a select in a shelf fell back to the browser default and
+   rendered as a white box on a dark page — the one thing on the builder that
+   looked broken. Same treatment, stated for both containers. */
+.shelf select, .shelf input {
+  display: block; width: 100%; margin-top: 0.2rem; padding: 0.4rem 0.5rem;
+  background: var(--sunken); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius-xs);
+  font: inherit; font-size: var(--fs-body);
+}
+/* The hint belongs under the heading, not beside it: in a 15rem column an
+   inline hint wraps into the title and the two read as one sentence. */
+.builder h3 .sub { display: block; margin-top: 0.15rem; font-weight: 400; }
+.fieldwell, .shelf { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--sp-3); }
+.shelf { margin: 0; }
+.builder h3 { font-size: 0.85rem; margin: 0.4rem 0; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--muted); }
+.builder h3 .sub { text-transform: none; letter-spacing: 0; }
+.fieldlist, .drop { list-style: none; padding: 0; margin: 0; min-height: 2.2rem; }
+.drop { border: 1px dashed var(--line); border-radius: 8px; padding: 0.35rem; }
+.shelf.over .drop { border-color: var(--accent); background: var(--sunken); }
+.dropthere { color: var(--muted); font-size: 0.8rem; padding: 0.2rem 0.4rem; }
+/* a field chip: dimensions and measures are told apart by colour, the way a
+   spreadsheet distinguishes labels from numbers */
+.chip-field { display: flex; align-items: center; gap: 0.4rem; cursor: grab;
+  background: var(--sunken); border: 1px solid var(--line); border-left-width: 3px;
+  border-radius: 6px; padding: 0.25rem 0.5rem; margin: 0.25rem 0; font-size: 0.85rem; }
+.chip-field.dimension { border-left-color: var(--viz-2); }
+.chip-field.measure { border-left-color: var(--viz-1); }
+.chip-field.dragging { opacity: 0.45; }
+.chip-field button { background: none; border: none; color: var(--muted); cursor: pointer;
+  margin: 0; padding: 0 0.1rem; font-size: 0.8rem; }
+.chip-field button:hover { color: var(--down); }
+.previewpane .chartcard { margin-bottom: var(--sp-3); }
+/* Just a commit bar now that the name moved to the first column. */
+#saveform { padding: var(--sp-2) var(--sp-3); }
+#saveform .commitbar { margin: 0; }
+.previewpane .plot { height: 320px; }
+.savemark { color: var(--muted); font-size: 0.75rem; min-width: 3.5rem; }
+
+/* --- chart grid: snap-to-place, drag by the handle ---------------------- */
+.chartgrid { grid-auto-rows: min-content; }
+.cardhead { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.2rem; }
+.cardhead h2 { margin: 0; flex: 1; min-width: 0; }
+.draghandle { cursor: grab; color: var(--muted); font-size: 1.1rem; line-height: 1;
+  user-select: none; padding: 0 0.15rem; }
+.draghandle:active { cursor: grabbing; }
+.editlink { font-size: 0.8rem; text-decoration: none; }
+/* Lifted rather than faded away: the card is the thing being carried, so it
+   should read as picked up. The others animate to their new cells in
+   chartgrid.js — that FLIP is what stopped them snapping. */
+.chartcard.dragging { opacity: 0.55; transform: scale(1.015); box-shadow: var(--shadow); }
+/* while arranging, show where the cells are so the snapping is legible */
+.chartgrid.arranging .chartcard { outline: 1px dashed var(--line); outline-offset: 3px; }
+.chartgrid .chartcard { transition: box-shadow 0.18s ease, transform 0.18s ease; }
+.charttable:not(:empty) { margin-top: 0.6rem; }
+.charttable table { font-size: 0.8rem; }
+/* long table-charts scroll inside the card rather than stretching the grid */
+.charttable.scroller .tablewrap { max-height: 22rem; overflow-y: auto; }
+.charttable.scroller thead th { position: sticky; top: 0; background: var(--sunken); }
+.filtergroup { margin-bottom: 0.6rem; }
+.filtergroup .check { font-size: 0.82rem; margin: 0.1rem 0; }
+.filtergroup > .sub { display: block; margin-bottom: 0.15rem; }
+/* a holding attribute offered inside a time-series chart: split shelf only */
+.chip-field.splitonly { border-left-style: dotted; }
+
+/* Admin settings: label + help on the left, the control on the right. Disabled
+   rows stay readable — the values still matter when the file is read-only. */
+.settinglist { display: flex; flex-direction: column; gap: .1rem; margin: 1rem 0; }
+.settingrow { display: grid; grid-template-columns: 1fr minmax(9rem, 14rem);
+  gap: 1rem; align-items: start; padding: .75rem 0;
+  border-bottom: 1px solid var(--line); }
+.settingrow:last-child { border-bottom: 0; }
+.settinglabel label { font-weight: 600; }
+.settinglabel .sub { margin: .2rem 0 0; }
+.settinglabel .sub em { font-style: normal; opacity: .85; }
+.settingfield { justify-self: end; width: 100%; }
+.settingfield input[type="text"], .settingfield input[type="number"],
+.settingfield input[type="date"], .settingfield select { width: 100%; }
+.settingfield input[type="checkbox"] { width: auto; }
+.settingrow.disabled .settingfield { opacity: .55; }
+.settingrow.disabled input, .settingrow.disabled select { cursor: not-allowed; }
+@media (max-width: 40rem) {
+  .settingrow { grid-template-columns: 1fr; }
+  .settingfield { justify-self: start; }
+}
+
+/* --------------------------------------------------------------------------
+   Motion
+   --------------------------------------------------------------------------
+   Anything that moves must be able to not move. `prefers-reduced-motion` is an
+   accessibility setting people turn on because animation makes them ill —
+   vestibular disorders, migraine — so this is not a preference to weigh
+   against a nicer transition.
+
+   Written as a global override rather than a rule per animation so a component
+   added later is covered by default instead of by remembering. Kept to 0.01ms
+   rather than 0 so transitionend still fires and no JavaScript waiting on it
+   hangs.
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Statement template designer
+   --------------------------------------------------------------------------
+   Built on the shared tokens (--panel, --line, --accent, --up) rather than
+   fixed colours, so the theme work picks this screen up without it
+   being revisited. State is never carried by colour alone — a mapped field
+   also gains a tick and its label in text, which matters for the ~8% of men
+   with a red/green deficiency and for anyone printing this.
+   -------------------------------------------------------------------------- */
+.designer { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; gap: 1rem; }
+@media (max-width: 60rem) { .designer { grid-template-columns: 1fr; } }
+
+.designer .doctext {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem; line-height: 1.6;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 0.8rem; max-height: 34rem; overflow: auto; white-space: pre-wrap;
+}
+/* Every word is a button: this has to be reachable by keyboard, not just by
+   pointer. A visual-only mapper would be unusable for anyone who cannot use a
+   mouse, and "click the value" is the entire interaction. */
+.designer .tok {
+  border: 1px solid transparent; border-radius: 3px; padding: 0 1px;
+  background: none; font: inherit; color: inherit; cursor: pointer;
+}
+.designer .tok:hover { border-color: var(--accent); }
+.designer .tok:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.designer .tok[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: var(--accent);
+}
+
+.designer .fieldlist { list-style: none; margin: 0; padding: 0; }
+.designer .fieldlist li {
+  display: flex; align-items: baseline; gap: 0.5rem;
+  padding: 0.45rem 0.6rem; border: 1px solid var(--line); border-radius: 6px;
+  margin-bottom: 0.4rem; background: var(--panel);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.designer .fieldlist li.active { border-color: var(--accent); }
+.designer .fieldlist li.mapped { border-color: var(--up); }
+/* The tick, not the border colour, is what says "done". */
+.designer .fieldlist li.mapped .state::before { content: "✓ "; color: var(--up); }
+.designer .fieldlist .state { font-size: 0.8rem; color: var(--muted); }
+.designer .fieldlist button { margin: 0; }
+
+.designer .empty {
+  color: var(--muted); text-align: center; padding: 2rem 1rem;
+  border: 1px dashed var(--line); border-radius: 8px;
+}
+
+/* Column chooser. A <details> rather than a modal: no JavaScript, keyboard
+   operable for free, and the browser owns the open/close state. */
+.colchooser { display: inline-block; font-weight: 400; font-size: 0.8rem; }
+.colchooser summary {
+  cursor: pointer; color: var(--muted); list-style: none;
+  border: 1px solid var(--line); border-radius: 6px; padding: 0.15rem 0.6rem;
+}
+.colchooser summary::-webkit-details-marker { display: none; }
+.colchooser summary:hover { color: var(--text); border-color: var(--muted); }
+.colchooser summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* `right: 0` as well as the width cap. The panel was capped at 92vw and still
+   pushed the document sideways, because a cap constrains its WIDTH and nothing
+   constrained where its left edge started — anchored mid-heading, a 386px
+   panel on a 420px screen ran to 485px and the whole page scrolled. Anchoring
+   the right edge to the chooser makes it open leftwards into the page it
+   already occupies. */
+.colchooser { position: relative; }
+.colchooser .panel { position: absolute; z-index: 20; margin-top: 0.4rem;
+  right: 0; width: max-content; max-width: min(44rem, 92vw);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.25); }
+/* Both forms live in this ONE panel: two absolutely-positioned panels stack on
+   top of one another. */
+.colpanel > form + form { margin: 0; }
+.colgroups { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.8rem; }
+.colgroups fieldset { margin: 0; }
+.colgroups legend { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+label.check { display: flex; align-items: center; gap: 0.4rem; margin: 0.2rem 0; font-size: 0.85rem; }
+label.check input { width: auto; margin: 0; }
+
+/* Sticky header: a wide holdings table scrolls, and a scrolled table whose
+   headings have gone is a grid of unlabelled numbers. */
+.holdings thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--sunken);
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+.holdings tbody tr:hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+/* Direction arrow beside a gain. Colour alone cannot carry meaning — this is
+   unreadable for ~8% of men otherwise, and invisible in print. */
+.dir { font-size: 0.75em; opacity: 0.85; }
+
+/* Sortable headers. The whole header is the target, not just the label: a
+   click target the size of a word is a click target people miss. */
+.sortlink {
+  display: block; color: inherit; text-decoration: none;
+  white-space: nowrap;
+}
+.sortlink:hover { color: var(--accent); }
+.sortlink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+/* Only the sorted column has one, so it never needs to reserve space on the
+   others — an arrow on every header stops saying which one is active. */
+.sortarrow { margin-left: 0.3em; font-size: 0.75em; color: var(--accent); }
+th[aria-sort="ascending"], th[aria-sort="descending"] { color: var(--text); }
+
+/* The designer's field list. Each field carries the type it expects, whether
+   it is mapped, an editable label and a note — the note is how a possible
+   discrepancy is REPORTED rather than enforced, and it clears when fixed. */
+.fieldlist li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem; }
+.fieldlist .pick { flex: 0 0 auto; }
+.fieldlist .state { flex: 1 1 auto; }
+/* Unset a field. Red because it destroys work, and last in the row so it is
+   never the thing a hurried click lands on. */
+.fieldlist .clearfield {
+  flex: 0 0 auto; padding: 0 0.35rem; line-height: 1.4;
+  background: transparent; border: 1px solid var(--line); color: var(--down);
+  font-size: 0.85rem;
+}
+.fieldlist .clearfield:hover { border-color: var(--down); }
+.fieldlist .clearfield:focus-visible { outline: 2px solid var(--down); outline-offset: 1px; }
+.fieldlist .labeledit { flex: 1 0 100%; display: block; margin-top: 0.25rem; font-size: 0.75rem; }
+.fieldlist .labelinput { width: 100%; font-size: 0.8rem; padding: 0.2rem 0.35rem; }
+.fieldlist .fieldnote { flex: 1 0 100%; display: block; font-size: 0.75rem; margin-top: 0.2rem; }
+.fieldlist .fieldnote.warn { color: var(--down); }
+.fieldlist .fieldnote.sub { color: var(--muted); }
+.pickform { margin-bottom: 0.8rem; }
+.pickform select { width: 100%; }
+
+/* The designers' side panel. Its form is not inside a `.panel`, so the
+   block-label rule that makes every other form readable never applied to it —
+   labels ran inline with their inputs and the commit buttons crowded. Visible
+   in both designers; found by rendering the visual one. */
+.designer form label { display: block; margin-top: 0.6rem; }
+.designer form input[type="text"], .designer form input:not([type]),
+.designer form textarea { width: 100%; }
+.designer .commitbar { flex-wrap: wrap; gap: 0.4rem; margin-top: 0.8rem; }
+
+/* The visual statement mapper. The page image sits in a positioned wrapper and
+   every word is an absolutely-positioned transparent button over it — so the
+   thing you click is a real control with a real accessible name, not a
+   coordinate on a picture.
+
+   The boxes are invisible until hovered or focused: an outline on every word
+   turns the page into a grid and hides the document you are trying to read. */
+.pagewrap { position: relative; margin: 0 auto 1rem; max-width: 100%; width: 100%; }
+.pagewrap img { display: block; width: 100%; height: auto; border: 1px solid var(--line); }
+.wordbox {
+  position: absolute; padding: 0; margin: 0; background: transparent;
+  border: 1px solid transparent; border-radius: 2px; cursor: pointer;
+}
+.wordbox:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.wordbox:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.wordbox[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  border-color: var(--accent);
+}
+/* The word itself is there for a screen reader; sighted users read the page. */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+
+/* The broker column mapper: field name, its dropdown, and what is actually in
+   the column you picked. The samples are the point — choosing "Price" over
+   "Value" is obvious once you can see 89.50 next to 8950.00. */
+.mapper { width: 100%; }
+.mapper td, .mapper th { padding: 0.3rem 0.5rem; vertical-align: middle; }
+.mapper td:first-child { white-space: nowrap; }
+.mapper select { width: 100%; margin: 0; }
+.mapper .samples { max-width: 22rem; overflow-wrap: anywhere; }
+form.inline { display: inline; margin: 0; }
+
+/* Column order. A list rather than a property of the checkboxes above them:
+   the checkboxes are grouped so that seventeen of them stay scannable, and a
+   group is the wrong shape for "what comes after what". */
+.colorder { margin-top: 0.9rem; border-top: 1px solid var(--line); padding-top: 0.7rem; }
+.colorder h3 { margin: 0 0 0.2rem; font-size: 0.8rem; }
+.colorder ol {
+  list-style: none; margin: 0.4rem 0 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 0.25rem;
+}
+.colorder li {
+  display: flex; align-items: center; gap: 0.35rem;
+  border: 1px solid var(--line); border-radius: 6px; padding: 0.15rem 0.4rem;
+  background: var(--sunken);
+}
+.colorder .colpos {
+  min-width: 1.2rem; text-align: right; color: var(--muted);
+  font-size: 0.7rem; font-variant-numeric: tabular-nums;
+}
+.colorder .colname { flex: 1; font-size: 0.8rem; }
+.colorder button {
+  padding: 0 0.35rem; font-size: 0.8rem; line-height: 1.6;
+  background: transparent; border: 1px solid var(--line); color: var(--muted);
+}
+.colorder button:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
+.colorder button:disabled { opacity: 0.3; cursor: default; }
+/* The grip only means anything where dragging works, so columns.js reveals it
+   rather than the stylesheet promising something that may not be there. */
+.colorder .grip { display: none; color: var(--muted); cursor: grab; }
+.colorder.candrag .grip { display: inline; }
+.colorder li.dragging { opacity: 0.4; }
+.colorder li.dropbefore { box-shadow: -2px 0 0 var(--accent); }
+
+/* --------------------------------------------------------------------------
+   First-run setup wizard.
+
+   A rail beside the content rather than above it: the steps are the one piece
+   of context that must stay visible while you read a step, and a horizontal
+   bar loses that as soon as the labels are longer than a word. Below 48rem it
+   becomes a row, because a sidebar on a phone is just a preamble.
+   -------------------------------------------------------------------------- */
+.wizard { display: grid; grid-template-columns: 13rem 1fr; gap: 2rem;
+  max-width: 56rem; margin: 2rem auto; align-items: start; }
+.wizmain { min-width: 0; }
+.wizmain h1 { margin-bottom: 0.4rem; }
+.wizintro { color: var(--muted); margin-bottom: 1.2rem; max-width: 44rem; }
+.wizmain .panel { margin-bottom: 1.2rem; }
+.wizmain .panel h2 { font-size: 1rem; margin-bottom: 0.6rem; }
+
+.wizrail { list-style: none; margin: 0; padding: 0; position: sticky; top: 1rem; }
+.wizrail li { display: grid; grid-template-columns: 1.6rem 1fr; gap: 0.6rem;
+  align-items: baseline; padding: 0.45rem 0; color: var(--muted); font-size: 0.9rem; }
+.wizrail .wiznum { grid-row: span 2; align-self: center; justify-self: center;
+  width: 1.6rem; height: 1.6rem; line-height: 1.6rem; text-align: center;
+  border-radius: 50%; border: 1px solid var(--line); font-size: 0.8rem; }
+.wizrail .wizlabel { align-self: center; }
+.wizrail .sub { grid-column: 2; font-size: 0.75rem; }
+.wizrail .wiz-active { color: var(--text); font-weight: 600; }
+.wizrail .wiz-active .wiznum { border-color: var(--accent); color: var(--accent); }
+.wizrail .wiz-done .wiznum { background: var(--up); border-color: var(--up); color: #fff; }
+.wizrail .wiz-skipped { opacity: 0.55; }
+
+/* What the welcome step found: a definition list, because that is what it is. */
+.detected { margin: 0; display: grid; grid-template-columns: 9rem 1fr; gap: 0.5rem 1rem; }
+.detected dt { color: var(--muted); font-size: 0.85rem; }
+.detected dd { margin: 0; }
+.detected .sub { display: block; }
+.detected .ok { color: var(--up); font-weight: 600; }
+.detected .warn { color: var(--accent); font-weight: 600; }
+.detected .todo { color: var(--muted); font-weight: 600; }
+
+.panel.good { border-color: var(--up); }
+.choices { margin-bottom: 1rem; }
+.choices label.check { align-items: flex-start; margin: 0.5rem 0; font-size: 0.9rem; }
+.dbfields { border-top: 1px solid var(--line); padding-top: 0.8rem; }
+.panel label.narrow { flex: 0 0 6rem; }
+
+/* The YAML the wizard is about to write, shown before it writes it. Scrolls
+   inside its own box — a long path must not widen the page. */
+pre.yaml { background: var(--sunken); border: 1px solid var(--line); border-radius: 6px;
+  padding: 0.7rem 0.9rem; overflow-x: auto; font-size: 0.8rem; line-height: 1.45; }
+
+.codes { list-style: none; margin: 0.8rem 0 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.4rem; }
+.codes code { background: var(--sunken); border: 1px solid var(--line); border-radius: 4px;
+  padding: 0.3rem 0.5rem; display: block; text-align: center; letter-spacing: 0.05em; }
+
+.enrol { display: flex; gap: 1.2rem; align-items: flex-start; flex-wrap: wrap; }
+/* The instructions need a flex-basis, or their max-content width pushes them
+   onto a line of their own and the QR ends up sitting alone above them. */
+.enrol > :not(.qr) { flex: 1 1 16rem; min-width: 0; }
+.enrol .qr { flex: 0 0 auto; background: #fff; padding: 0.5rem; border-radius: 8px; }
+.enrol .qr svg { display: block; width: 10rem; height: 10rem; }
+code.secret { background: var(--sunken); padding: 0.15rem 0.4rem; border-radius: 4px;
+  word-break: break-all; }
+form.inlineform { display: flex; gap: 0.8rem; align-items: flex-end; flex-wrap: wrap;
+  margin-top: 1rem; }
+form.inlineform label { flex: 0 0 12rem; margin: 0; }
+form.inlineform button { margin: 0; }
+
+a.button { background: var(--accent-grad); color: var(--on-accent); border-radius: var(--radius-xs);
+  padding: 0.45rem 0.95rem; text-decoration: none; display: inline-block; box-shadow: var(--shadow-sm); }
+/* The step down from the filled primary: a real surface with a hairline, so it
+   reads as a control rather than as text that happens to be clickable. */
+button.secondary { background: var(--sunken); color: var(--text); border: 1px solid var(--line);
+  box-shadow: none; }
+button.secondary:hover { border-color: var(--accent); color: var(--accent); filter: none; }
+
+.spinner { display: inline-block; width: 0.9rem; height: 0.9rem; margin-right: 0.5rem;
+  vertical-align: -0.1rem; border: 2px solid var(--line); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+/* Respect a stated preference for less motion — an indefinite spinner is
+   exactly the kind of thing the setting is for. */
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+/* The live badge is a control now (click it for which exchanges are open),
+   so it needs the marker gone and a pointer — but NOT the feed tick's
+   1.25rem circular button sizing, which would clip the text inside it. */
+.livestatus > summary { list-style: none; cursor: pointer; display: inline-flex;
+  align-items: center; border-radius: var(--radius-sm); padding: 0 0.15rem; }
+.livestatus > summary::-webkit-details-marker { display: none; }
+.livestatus > summary::marker { content: ""; }
+.livestatus > summary:hover { background: var(--sunken); }
+
+/* "Live 2026-08-12" — today's figure is a price, not a close.
+   The dot is decoration and the WORD carries the meaning: colour alone would
+   say nothing to a deutan reader, and this is precisely the distinction you
+   need to be able to read at a glance. Accent rather than a status green for
+   the same reason — it is a state, not a verdict. */
+.livedot::before { content: ""; display: inline-block; width: 0.45rem; height: 0.45rem;
+  margin-right: 0.4rem; vertical-align: 0.05rem; border-radius: 50%;
+  background: var(--accent); animation: livepulse 2.4s ease-in-out infinite; }
+@keyframes livepulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .livedot::before { animation: none; } }
+
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+
+@media (max-width: 48rem) {
+  .wizard { grid-template-columns: 1fr; gap: 1rem; }
+  .wizrail { position: static; display: flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; }
+  .wizrail li { padding: 0.2rem 0; font-size: 0.8rem; }
+  .wizrail .sub { display: none; }
+  .detected { grid-template-columns: 1fr; gap: 0.2rem; }
+  .detected dt { margin-top: 0.5rem; }
+}
+
+/* A filesystem path has no spaces to break at, so it will happily run past the
+   edge of its panel. `anywhere` rather than `break-word` because the paths that
+   actually appear here (/mnt/user/appdata/...) break at no width otherwise. */
+.detected dd, .detected dd code, .wizmain .panel p code { overflow-wrap: anywhere; }
+/* The timezone box and its Detect button are siblings in a flex row; without
+   this the button aligns to the input's top margin and sits a few pixels low. */
+.wizmain .panel .row { align-items: center; }
+.wizmain .panel .row button { margin: 0.25rem 0 0; }
+
+/* The "you have no saved recovery codes" prompt. A banner on every page, not a
+   line on the account page: the people who most need it — upgraded accounts
+   and admin-created ones — have no reason to go looking. */
+.banner { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;
+  background: var(--panel); border: 1px solid var(--accent); border-left-width: 4px;
+  border-radius: 8px; padding: 0.7rem 1rem; margin-bottom: 1.2rem; font-size: 0.9rem; }
+.banner span { flex: 1 1 20rem; }
+.banner button { margin: 0; flex: 0 0 auto; }
+
+/* --------------------------------------------------------------------------
+   Add-an-instrument dialog, and the instruments table it was rescued from.
+
+   The controls have their own cells (via `form=`), so a row is one line.
+   Sharing one `colspan="3"` cell makes every row as tall as three stacked
+   inputs and pushes the add form below the fold.
+   -------------------------------------------------------------------------- */
+h1 > button, h1 > .secondary {
+  float: right; margin: 0; font-size: 0.85rem; font-weight: 400;
+}
+dialog {
+  /* The dialog owns the padding. It was 0, with the FORM inside supplying it —
+     which worked only where a form was the whole content. Anything else (a
+     heading, the templates list) sat hard against the border and read as a
+     rendering bug. */
+  border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-4);
+  /* Solid, not glass: a translucent dialog over a blurred backdrop stacks two
+     transparencies and neither reads. This is the one surface that should be
+     unambiguously in front. */
+  background: var(--panel-solid); color: var(--text);
+  max-width: min(40rem, 92vw); width: 100%;
+  box-shadow: var(--shadow);
+}
+/* Rises and fades in — a modal that simply exists gives no sense of having
+   come from the page, which is what the animation is for. The `[open]`
+   attribute selector is what makes this fire on showModal(). */
+dialog[open] { animation: dialog-in 0.18s cubic-bezier(0.2, 0, 0, 1); }
+dialog[open]::backdrop { animation: backdrop-in 0.18s ease; }
+@keyframes dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+dialog::backdrop { background: rgb(0 0 0 / 0.5); backdrop-filter: blur(2px); }
+/* A FORM inside a dialog is not a card in its own right — it is the dialog's
+   content, so it loses the panel chrome and the dialog's padding is the only
+   padding. Scoped to forms deliberately: `p.panel.error` and `p.panel.ok` ARE
+   boxes in their own right and keep theirs. */
+dialog form.panel { border: 0; background: transparent; padding: 0; margin: 0; }
+dialog > h2:first-child { margin-top: 0; }
+dialog h2 { margin-top: 0; }
+
+/* A note box wide enough to be useful but not wide enough to set the row
+   height: one line, scrolling inside itself rather than wrapping. */
+.instruments .notecell {
+  width: 100%; min-width: 8rem; max-width: 22rem; margin: 0;
+  white-space: nowrap; overflow-x: auto;
+  /* The panel input styling does not reach here — this input sits in a table
+     cell, not inside .panel — so without these it renders as a bare browser
+     default, which on a dark surface is a white box. */
+  padding: 0.3rem 0.45rem; border-radius: 6px;
+  background: var(--sunken); color: var(--text); border: 1px solid var(--line);
+  font: inherit;
+}
+.instruments .notecell::placeholder { color: var(--muted); }
+.instruments td { vertical-align: middle; }
+.instruments td .check { margin: 0; white-space: nowrap; }
+.instruments .savemark { font-size: 0.75rem; color: var(--muted); margin-left: 0.4rem; }
+
+/* "in AUD" beside a table's heading: said once, quietly, instead of repeated
+   in every money column's header. Only appears when there IS one currency —
+   a mixed-currency table marks each column instead. */
+.inccy { font-size: 0.75rem; font-weight: 400; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* --- DCA schedule: calendar beside what's coming up --------------------- */
+/* 65/35, and `stretch` is what makes the right column exactly as tall as the
+   calendar rather than ending where its content stops. The list scrolls
+   inside that height. */
+.planpair { display: grid; grid-template-columns: 65fr 35fr; gap: 1rem;
+  align-items: stretch; }
+@media (max-width: 900px) { .planpair { grid-template-columns: 1fr; } }
+.calpanel { background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; }
+.calbar { display: flex; align-items: center; justify-content: space-between;
+  gap: 0.6rem; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--line); }
+.calbar h2 { margin: 0; font-size: 1rem; }
+.calnav { display: flex; gap: 0.3rem; }
+.calnav button { margin: 0; padding: 0.2rem 0.6rem; font-size: 0.8rem;
+  background: var(--sunken); color: var(--text); border: 1px solid var(--line); }
+.calnav button:hover { border-color: var(--accent); color: var(--accent); }
+/* **Never stretch the table.** This was `flex: 1`, which asks the browser to
+   hand a <table> surplus height and leaves it to decide where that height
+   goes. Chromium absorbs it into the body rows; Firefox gives it to the
+   header row group, so the day names ended up floating in the middle of a
+   panel with a large blank above them. There is no correct answer to the
+   question, so the fix is to stop asking it: the calendar is its natural
+   height and the panel keeps any surplus below it. */
+.calpanel .calendar { flex: none; }
+
+/* Which column decides the height, stated properly.
+   `height: 0` makes this panel contribute nothing to the grid row, so the row
+   is sized by the CALENDAR alone; `min-height: 100%` then stretches it back to
+   that row. Without the pair, a long Coming up list drove the height and the
+   calendar had to stretch to match — which is what made the rule above
+   necessary in the first place. */
+.comingup { height: 0; min-height: 100%; }
+
+/* Only the list scrolls: the panel keeps the calendar's height and the header
+   stays put, so the two columns still line up at the top and bottom. */
+.comingscroll { flex: 1; overflow-y: auto; min-height: 0; }
+.upnext { list-style: none; margin: 0; padding: 0; }
+.upnext li { padding: 0.5rem 0.9rem; border-bottom: 1px solid var(--line);
+  display: grid; grid-template-columns: 1fr auto; gap: 0.2rem 0.6rem; }
+.upnext li:last-child { border-bottom: none; }
+.upnext li.due { border-left: 3px solid var(--accent); }
+.upmain { display: flex; flex-direction: column; }
+.upmain a { text-decoration: none; }
+.upside { display: flex; flex-direction: column; align-items: flex-end;
+  gap: 0.15rem; font-size: 0.8rem; }
+.upactions { grid-column: 1 / -1; display: flex; gap: 0.8rem;
+  align-items: center; }
+.upactions form { margin: 0; }
+.upactions button { margin: 0; }
+
+/* The plan editor: fields beside a preview of the dates they produce. */
+.planedit { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem;
+  align-items: start; }
+@media (max-width: 800px) { .planedit { grid-template-columns: 1fr; } }
+.planedit form { margin: 0; }
+.preview h3 { margin: 0 0 0.4rem; font-size: 0.95rem; }
+/* ONE scrolling list rather than three short columns: "when do I next buy
+   ALPHA" is answered by reading down, not across. Only this scrolls. */
+.previewscroll { max-height: 20rem; overflow-y: auto; border: 1px solid var(--line);
+  border-radius: 8px; }
+.previewscroll table { width: 100%; }
+.previewscroll th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.previewscroll tr.due td { color: var(--accent); }
+/* An empty panel should say what would be here and how to fill it, not sit
+   blank — a first run currently looks like something failed. */
+.empty { padding: var(--sp-4) var(--sp-3); text-align: center; color: var(--text); }
+
+/* The first run. Deliberately not a full-bleed hero: it sits where the tiles
+   would be, so the page keeps its shape and filling it in is obviously the
+   next step rather than a different screen. */
+.firstrun { margin-top: var(--sp-3); text-align: center; padding: var(--sp-6) var(--sp-4); }
+.firstrun h2 { margin: 0 0 var(--sp-2); font-size: var(--fs-h1); letter-spacing: -0.018em; }
+.firstrun > p { margin: 0 auto; max-width: 46ch; color: var(--muted); }
+.firstrun .commitbar { justify-content: center; margin: var(--sp-4) 0 var(--sp-2); }
+.firstrun .sub { display: block; }
+
+/* Optional features in the setup wizard: tickbox · name · description.
+   The description is IN the row, not behind a tooltip — somebody meeting the
+   app for the first time is exactly who cannot know what "DCA schedule" means,
+   and this is the screen where they have to decide. */
+.featurelist { list-style: none; margin: 0.4rem 0 0; padding: 0; display: grid;
+  gap: 0.7rem; }
+.featurelist li { border: 1px solid var(--line); border-radius: 8px;
+  padding: 0.7rem 0.9rem; background: var(--sunken); }
+.featurelist .check { margin: 0; }
+.featurename { font-weight: 600; }
+.featurelist p { margin: 0.35rem 0 0 1.5rem; }
+
+/* --- Imports & exports: two equal halves per section -------------------- */
+/* `.columns` is 1fr 2fr, which pushed the imports pair off centre for no
+   reason — the two panels are the same kind of thing and neither is the more
+   important one. */
+/* `minmax(0, 1fr)`, NOT `1fr`: a grid track's default minimum is min-content,
+   so the wide "What's in each" table refused to shrink, pushed past the right
+   edge of the page and squeezed the form beside it into a ribbon. `1fr` only
+   means "an equal share" once the track is allowed to be smaller than its
+   content. Found by rendering; the markup was perfectly valid. */
+.evenpair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.2rem; align-items: start; margin-bottom: 1.4rem; }
+@media (max-width: 900px) { .evenpair { grid-template-columns: 1fr; } }
+.evenpair .panel h3:first-child { margin-top: 0; }
+.sectionhead { font-size: 1.1rem; margin: 1.6rem 0 0.6rem; }
+.sectionhead:first-of-type { margin-top: 0.8rem; }
+
+/* Installed templates, one row each with its verbs on the right. */
+.installed { list-style: none; margin: 0.4rem 0 0.8rem; padding: 0; }
+.installed li { display: flex; align-items: center; justify-content: space-between;
+  gap: 0.8rem; padding: 0.35rem 0; border-bottom: 1px solid var(--line); }
+.installed li:last-child { border-bottom: none; }
+.tplactions { display: flex; align-items: center; gap: 0.8rem; font-size: 0.85rem; }
+.tplactions form { margin: 0; }
+.tplactions button { margin: 0; }
+
+/* Prose in a reference table wraps; only figures need to stay on one line. */
+.reference td { white-space: normal; }
+/* The Report name is two or three words and the Contents is a sentence, so
+   the sentence gets the room. It was the other way around: `nowrap` on the
+   first column made its min-content width unbeatable under auto table layout,
+   so the short label took half the table and the prose wrapped underneath it
+   five lines deep. */
+.reference th:first-child, .reference td:first-child { width: 30%; white-space: normal; }
+
+/* Row actions on the holdings table: Save, and either Remove or the panel
+   saying what is stopping it. */
+.rowactions { display: flex; align-items: center; gap: 0.6rem; white-space: nowrap; }
+.rowactions form { margin: 0; }
+.rowactions button { margin: 0; }
+button.danger, .linkish.danger { color: var(--down); }
+/* The blocked case. A real control, never a disabled button: `disabled`
+   cannot be hovered or focused in most browsers, which puts the explanation
+   out of reach exactly when it is needed. */
+.blockedby { position: relative; }
+.blockedby > summary { list-style: none; cursor: pointer; color: var(--muted);
+  font-size: 0.8rem; text-decoration: underline dotted; }
+.blockedby > summary::-webkit-details-marker { display: none; }
+.blockedby > summary::marker { content: ""; }
+.blockedby > summary:hover { color: var(--text); }
+.blockpanel { position: absolute; right: 0; top: calc(100% + 0.3rem); z-index: 40;
+  width: 20rem; text-align: left; white-space: normal; }
+.blockpanel ul { margin: 0.3rem 0; padding-left: 1.1rem; font-size: 0.85rem; }
+.blockpanel p { margin: 0.2rem 0; }
+/* The $/% half of a paired header's state. Small, next to the arrow: the pair
+   reads as one badge saying "sorted by amount, descending". */
+.sortunit { margin-left: 0.1rem; font-size: 0.85em; }
+
+/* --- a (?) tip: detail that is not in the form -------------------------- */
+/* The setup wizard explained everything inline, which put paragraphs between
+   somebody and a working install. Detail moves in here.
+
+   `details.menu`, so it gets the outside-click and Escape handling every other
+   floating panel on the site already has — and so it STAYS OPEN while the
+   cursor is inside it, which is what makes the text selectable. People copy
+   paths and examples out of these. */
+.tip { display: inline-block; position: relative; vertical-align: middle; }
+.tip > summary { list-style: none; cursor: help; display: inline-flex;
+  align-items: center; justify-content: center; width: 1.15rem; height: 1.15rem;
+  border: 1px solid var(--line); border-radius: 50%; color: var(--muted);
+  font-size: 0.72rem; line-height: 1; }
+.tip > summary::-webkit-details-marker { display: none; }
+.tip > summary::marker { content: ""; }
+.tip > summary:hover { color: var(--accent); border-color: var(--accent); }
+/* Opens LEFTWARDS from the (?), not rightwards.
+   A tip sits at the end of a label, so there is always page to its left and
+   often none to its right — anchored left it ran 300px past the edge of the
+   window on the setup wizard, which the visual check caught at BOTH widths.
+   `.tip.left` is the opposite case, for a (?) near the left edge. */
+.tippanel { position: absolute; right: 0; left: auto; top: calc(100% + 0.3rem);
+  z-index: 40; width: 22rem; max-width: min(22rem, 80vw); text-align: left;
+  font-size: 0.85rem; font-weight: 400; white-space: normal; }
+.tip.left .tippanel { left: 0; right: auto; }
+.tippanel p { margin: 0 0 0.4rem; }
+.tippanel p:last-child { margin-bottom: 0; }
+/* Kept so existing `.tip.right` markup is a no-op rather than a surprise. */
+.tip.right .tippanel { left: auto; right: 0; }
+
+/* A collapsed confirmation panel — the setup summary. The marker is the
+   browser's own disclosure triangle: right when closed, down when open, which
+   is what people already read as "there is more here". */
+details.summary > summary { cursor: pointer; font-weight: 600; }
+details.summary > summary .sub { font-weight: 400; }
+details.summary > summary + * { margin-top: 0.7rem; }
+/* A choice and its (?) on one line. The tip must stay OUTSIDE the <label>:
+   a <details> inside one toggles the radio when you click it. */
+.choiceline { display: flex; align-items: center; gap: 0.4rem; }
+.choiceline .check { margin: 0; flex: 1; }
+/* The DCA prefill's working, above the fields it filled in. Informational, not
+   a warning: nothing is wrong, this is the app showing its arithmetic. */
+.panel.prefill { border-color: var(--accent); margin-bottom: 0.8rem;
+  font-size: 0.9rem; line-height: 1.7; }
+/* A button sitting on a section heading: smaller than a page action, and it
+   must not inherit the heading's weight or size. */
+h2 > a > button, h2 > button { font-size: 0.78rem; padding: 0.25rem 0.6rem;
+  margin: 0 0 0 0.5rem; font-weight: 400; vertical-align: middle; }
+/* A heading whose action must be able to LEAVE the line. Inline, a button
+   beside a two-word title is fine at 1400px and shoves the title into a
+   ragged two lines at 412px. Flex + wrap lets it drop below instead, and the
+   gap replaces the margin above so the two do not stack up. */
+.sectionhead { display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: 0.2rem 0.5rem; }
+.sectionhead > a > button, .sectionhead > button { margin-left: 0; }
+
+/* --- the Portfolio page's performance chart ----------------------------- */
+.summarycard { background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 0.9rem 1.1rem; margin-top: 1rem; }
+.summaryhead { display: flex; align-items: center; justify-content: space-between;
+  gap: 0.8rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.summaryhead h2 { margin: 0; font-size: 1rem; }
+.summaryplot { height: 260px; }
+/* The range bar wraps rather than scrolling: a decade-old portfolio offers a
+   dozen buttons, and a row that scrolls hides the one you want. */
+.summaryhead .rangebar { margin: 0; flex-wrap: wrap; justify-content: flex-end; }
+.rangebar button.active { border-color: var(--accent); color: var(--accent); }
+
+/* --- the calendar's day headings ---------------------------------------- */
+/* They were inheriting the full `th` treatment — uppercase, letter-spaced, and
+   sitting on a 1rem top margin the panel already provides. Inside a panel with
+   its own header, that read as a gap and oversized labels. */
+table.calendar { margin-top: 0; }
+table.calendar th { font-size: 0.68rem; padding: 0.3rem 0.2rem;
+  letter-spacing: 0.02em; font-weight: 600; }
+/* The account menu's two actions, side by side under the switcher. */
+.menuactions { display: flex; gap: 0.5rem; }
+.menuactions form { margin: 0; flex: 1; }
+.menuactions a { flex: 1; }
+.menuactions button { margin: 0; width: 100%; }
+
+/* The account page in two columns on desktop: what the app looks like on the
+   left, how you get into it on the right. `.narrow` is a max-width for a
+   single-column page and fights the grid, so it is dropped inside one. */
+.accountcols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 1.6rem; align-items: start; }
+@media (max-width: 900px) { .accountcols { grid-template-columns: 1fr; } }
+.accountcols .narrow { max-width: none; }
+.accountcols > div > section:first-child h2 { margin-top: 0.6rem; }
+/* The profile control on its own page, matching a selected nav entry. */
+.usermenu.on > summary { color: var(--accent); background: var(--chrome-active); }
+
+/* --- DCA schedule proportions ------------------------------------------- */
+/* The calendar needs the room: seven columns of day cells against a list of
+   short rows. Coming up gives some back rather than the calendar cramping. */
+.planpair { grid-template-columns: 72fr 28fr; }
+table.calendar th { font-size: 0.62rem; padding: 0.25rem 0.15rem;
+  text-transform: uppercase; letter-spacing: 0; }
+table.calendar td { height: 4.6rem; }
+.upnext li { padding: 0.4rem 0.7rem; font-size: 0.9rem; }
+.upside { font-size: 0.75rem; }
+
+/* `.linkish` survives ONLY for actions inside a table row — Save, Remove,
+   Revoke, per row. A full button in every row of a twelve-row table is noise
+   competing with the data it sits beside, which is the one place a quiet
+   control is right. Everything in a dialog or a commit bar is a real button:
+   those are the moments somebody is looking for something to press. */
+
+/* --------------------------------------------------------------------------
+   The DCA rotation editor
+   --------------------------------------------------------------------------
+   Two panels inside the plan dialog: what you can add on the left, the order
+   you buy in on the right. Revealed by `rotation.js` — with scripting off the
+   textarea it replaces is simply what you get, which is why the whole block
+   starts `hidden` in the markup rather than being hidden here.
+
+   The list is vertical rather than a wrapping row of chips on purpose: the
+   rotation is an ORDER, and a wrapped row reads as a set. Position numbers for
+   the same reason.
+   -------------------------------------------------------------------------- */
+.rotation { display: grid; grid-template-columns: 34fr 66fr; gap: var(--sp-3);
+  margin-top: var(--sp-2); align-items: start; }
+@media (max-width: 700px) { .rotation { grid-template-columns: 1fr; } }
+.rotpanel { min-width: 0; }
+.rotpanel h4 { margin: 0 0 var(--sp-2); font-size: var(--fs-label); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+
+.rotsource { list-style: none; margin: 0 0 var(--sp-2); padding: 0;
+  display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.rotchip { margin: 0; padding: 0.25rem 0.55rem; font-size: var(--fs-small);
+  font-weight: 600; background: var(--sunken); color: var(--text);
+  border: 1px solid var(--line); border-radius: 999px; cursor: grab;
+  display: inline-flex; align-items: center; gap: 0.3rem; box-shadow: none; }
+.rotchip:hover { border-color: var(--accent); color: var(--accent); filter: none; }
+.rotchip:active { cursor: grabbing; }
+.rotplus { color: var(--muted); font-weight: 400; }
+.rotchip:hover .rotplus { color: var(--accent); }
+
+.rotorder { list-style: none; margin: 0; padding: var(--sp-1);
+  display: flex; flex-direction: column; gap: var(--sp-1);
+  min-height: 6.5rem; border: 1px dashed var(--line); border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--sunken) 55%, transparent); }
+.rotorder.dropping { border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.rotitem { display: flex; align-items: center; gap: var(--sp-2);
+  padding: 0.3rem 0.5rem; background: var(--panel-solid);
+  border: 1px solid var(--line); border-radius: var(--radius-xs); cursor: grab; }
+.rotitem.dragging { opacity: 0.45; }
+.rotitem:active { cursor: grabbing; }
+/* A fixed-width column so the tickers line up however many digits the position
+   has — the list is read down, and ragged numbers make that harder. */
+.rotpos { min-width: 1.3rem; font-size: var(--fs-small); color: var(--muted);
+  font-variant-numeric: tabular-nums; }
+.rotname { flex: 1; min-width: 0; font-weight: 600; }
+.rotacts { display: flex; gap: 0.15rem; }
+.rotacts button { margin: 0; padding: 0.05rem 0.4rem; font-size: var(--fs-small);
+  line-height: 1.4; background: transparent; color: var(--muted);
+  border: 1px solid transparent; box-shadow: none; }
+.rotacts button:hover:not([disabled]) { color: var(--accent); border-color: var(--line); filter: none; }
+.rotacts button[disabled] { opacity: 0.3; filter: none; }
+.rotempty { margin: var(--sp-2) 0 0; padding: 0; }
+.rotcount { margin: var(--sp-1) 0 0; }
+.rottoggle { margin: var(--sp-2) 0 0; }
+
+/* The plan dialog carries more than the others — a form, a live preview, and
+   now a two-panel rotation arranger — so it gets more room than the 40rem
+   default. Below that width the palette wrapped one chip per line and the
+   three number fields broke onto three rows. */
+#plandialog { max-width: min(62rem, 94vw); }
+
+/* Pointer-driven dragging in the rotation editor.
+   `.rotfloat` is the chip under the cursor — a copy, positioned in the
+   viewport and taken out of hit-testing so the pointer keeps reaching the list
+   underneath it. `.rotplace` is the gap that opens where it would land. */
+.rotchip, .rotitem { touch-action: none; }   /* or a touch-drag scrolls the page */
+.rotfloat {
+  position: fixed; top: 0; left: 0; z-index: 200;
+  pointer-events: none; margin: 0;
+  box-shadow: var(--shadow); opacity: 0.95;
+  border-color: var(--accent); color: var(--accent);
+}
+.rotplace {
+  border: 1px dashed var(--accent); border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  list-style: none;
+}
+/* While a drag is in flight nothing else should look interactive, and the
+   text cursor appearing over the list makes a drag feel like a selection. */
+body.rotdragging { user-select: none; cursor: grabbing; }
+body.rotdragging .rotchip:hover { border-color: var(--line); color: var(--text); }
+
+/* The price feed, while it is running. A thin indeterminate bar under the top
+   bar — a refresh that takes fifteen seconds with no sign of life reads as a
+   button that did nothing. Fixed, so it survives scrolling; two-second cycle,
+   which is slow enough not to nag. */
+.feedprogress {
+  position: fixed; left: 0; right: 0; top: 0; height: 2px; z-index: 60;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  overflow: hidden;
+}
+.feedprogress::after {
+  content: ""; position: absolute; inset: 0;
+  background: var(--accent-grad);
+  transform-origin: left center;
+  animation: feedsweep 2s ease-in-out infinite;
+}
+@keyframes feedsweep {
+  0% { transform: translateX(-100%) scaleX(0.4); }
+  50% { transform: translateX(0) scaleX(0.7); }
+  100% { transform: translateX(100%) scaleX(0.4); }
+}
+/* Indefinite motion is exactly what the preference is about. The bar stays —
+   it still says "something is happening" — it simply stops moving. */
+@media (prefers-reduced-motion: reduce) {
+  .feedprogress::after { animation: none; transform: none; opacity: 0.7; }
+}
+
+/* Chart skeletons. A plot is a fixed-height box that is empty until Chart.js
+   draws into its canvas — on a slow load that is a blank rectangle with no
+   indication anything is coming. */
+.plot.loading {
+  background: color-mix(in srgb, var(--sunken) 70%, transparent);
+  border-radius: var(--radius-sm);
+  position: relative; overflow: hidden;
+}
+.plot.loading::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent,
+              color-mix(in srgb, var(--text) 7%, transparent), transparent);
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .plot.loading::after { animation: none; } }
+
+/* ── Panels that FLOAT over content are opaque ─────────────────────────────
+   A panel sitting IN the page can be translucent, because what shows through
+   is the wash behind it and that is the whole idea of the direction. A panel
+   that floats OVER the page cannot: what shows through is the page's own text.
+
+   On a desktop this was invisible — the profile menu opens over the empty
+   space beside the title, so there was nothing behind it to read. On a phone
+   the same menu opens over a full column of content and every line of it was
+   legible through the panel.
+
+   `--panel-solid` is the opaque colour a glass panel composites to, so these
+   still look like the same surface; they simply stop being see-through. The
+   shadow does the work of saying "this is in front" instead.
+   ------------------------------------------------------------------------- */
+.usermenupanel,
+.feedpanel,
+.colchooser .panel,
+.blockpanel,
+.tippanel {
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+  /* Never wider than the window it opens in. Each of these declares a width in
+     rem for the desktop — 20rem, 22rem, 44rem — and a phone is 412px, so three
+     of the five were already wider than the screen before anything moved them.
+     The cap is the half of the fix that belongs in CSS; where the panel SITS is
+     a runtime measurement, and topbar.js does that half. */
+  max-width: calc(100vw - 1.25rem);
+  box-sizing: border-box;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SMALL SCREENS
+
+   One column, sized to the display. Everything that is deliberately
+   side-by-side on a desktop — the calendar and Coming up, the two import
+   panels, the account page's halves, the builder's four columns — is a single
+   column here.
+
+   **This block is deliberately LAST in the file.** Several layouts declare
+   their desktop columns *after* their own narrow-screen media query:
+   `.planpair` sets `72fr 28fr` about 200 lines below its `max-width: 900px`
+   rule, so on a phone the desktop rule won on source order and the calendar
+   never collapsed — it was clipped to the first two days by the panel's
+   `overflow: hidden`. Collapsing from one place at the end removes that whole
+   class of hazard rather than fixing one instance of it.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 48rem) {
+  /* Type steps down with the viewport. A 29px hero number needs ~200px and the
+     card is ~170px wide, which is why the totals ran outside their tiles. */
+  :root {
+    --fs-h1: 1.5rem;
+    --fs-hero: 1.3125rem;
+    --sp-4: 1rem;
+    --sp-5: 1.375rem;
+    --sp-6: 1.75rem;
+  }
+  main { padding: var(--sp-3); }
+  h1 { letter-spacing: -0.01em; }
+
+  /* Every paired layout, collapsed.
+
+     `minmax(0, 1fr)`, NOT `1fr`. A bare `1fr` is `minmax(auto, 1fr)`, and that
+     `auto` floor is the column's min-content — so one wide thing inside it
+     (the sessions table, whose cells are `nowrap`) held the column open at
+     517px on a 412px screen and took the whole page sideways with it. The
+     collapse looked like it had not applied at all; it had, and the column was
+     simply refusing to be narrower than its widest child. */
+  .planpair, .evenpair, .accountcols, .pair, .columns, .planedit,
+  .rotation, .designer, .builder, .detected, .settingrow, .colgroups,
+  .chartgrid, .wizard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* …and the children must be allowed to shrink too, or they set the floor
+     from inside instead. */
+  .planpair > *, .evenpair > *, .accountcols > *, .pair > *, .columns > *,
+  .builder > *, .chartgrid > *, .wizard > * { min-width: 0; }
+  /* A long unbroken token — a path, an environment variable name, a URL — is
+     the other way a column gets held open from the inside. */
+  .panel, .panel p, code, pre { overflow-wrap: anywhere; }
+
+  /* Rows of fields stack rather than sharing a line. `flex-wrap` was not
+     enough: a <select> carries an intrinsic minimum from its longest option,
+     so three of them held the row open past the viewport and dragged the page
+     into a sideways scroll. */
+  .panel .row { display: block; }
+  .panel .row label { min-width: 0; }
+  .panel input, .panel select, .panel textarea { max-width: none; }
+  .narrow { max-width: 100%; }
+
+  /* The calendar fits the width instead of being cropped. `min-width: 44rem`
+     is right on a desktop and is 704px on a 412px phone — inside a panel that
+     hides its overflow, that is a calendar you cannot see or scroll. */
+  table.calendar { min-width: 0; }
+  table.calendar td { height: 3.2rem; padding: 0.2rem 0.15rem; }
+  table.calendar th { font-size: 0.58rem; padding: 0.2rem 0.1rem; }
+  table.calendar .daynum { font-size: 0.65rem; margin-bottom: 0.1rem; }
+  .chip { font-size: 0.6rem; padding: 0.05rem 0.2rem; }
+  /* Off a desktop the two panels are stacked, so neither takes its height
+     from the other — that pairing only makes sense side by side. */
+  .comingup { height: auto; min-height: 0; }
+  .comingscroll { max-height: 22rem; }
+
+  /* Page headers stack: a title and a row of actions do not share 412px. */
+  .pagehead { flex-direction: column; align-items: stretch; }
+  .headside { align-items: stretch; }
+  .headactions { flex-wrap: wrap; }
+  /* Natural width, wrapping onto a second line when they must. `flex: 1 1 auto`
+     stretched the primary action across the whole screen, which made a Record
+     trade button the largest thing on the page. */
+  .headactions button { flex: 0 0 auto; }
+  .feedline { justify-content: flex-start; }
+
+  /* Tiles: two up, which is what fits a phone once the number does. */
+  .tiles { grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); }
+
+  /* Dialogs use the screen rather than sitting in the middle of it. */
+  dialog { max-width: 100%; padding: var(--sp-3); }
+
+  /* A wide table still scrolls inside its own wrapper — that is correct, and
+     the wrapper must not be what pushes the page sideways. */
+  .tablewrap { max-width: 100%; }
+}
+
+/* --- the theme designer -------------------------------------------------- */
+.swatchlist { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+.swatchrow { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr) 7.5rem;
+  gap: var(--sp-3); align-items: center; }
+@media (max-width: 34rem) {
+  /* The hex box drops under the description rather than squeezing it. */
+  .swatchrow { grid-template-columns: 2.4rem minmax(0, 1fr); }
+  .swatchhex { grid-column: 2; }
+}
+.swatchpick { margin: 0; }
+/* A native colour input, made to look like a swatch rather than a form field —
+   the browsers all draw it differently and all of them draw a border. */
+.swatchwheel { width: 2.4rem; height: 2.4rem; padding: 0; margin: 0;
+  border: 1px solid var(--line); border-radius: var(--radius-xs);
+  background: none; cursor: pointer; }
+.swatchwheel::-webkit-color-swatch-wrapper { padding: 2px; }
+.swatchwheel::-webkit-color-swatch { border: none; border-radius: 4px; }
+.swatchwheel::-moz-color-swatch { border: none; border-radius: 4px; }
+.swatchmeta { display: flex; flex-direction: column; min-width: 0; }
+.swatchmeta .sub { line-height: 1.35; }
+.swatchhex { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--fs-small); text-transform: lowercase; }
+.panel .swatchhex { margin-top: 0; max-width: none; }
+
+/* A ticker in the holdings table. Not a button, and right: a
+   button in every row of a twelve-row table is noise. But a bare underlined
+   link in a grid of right-aligned numbers reads as body text that happens to
+   be blue, so it gets a quiet chip: no fill until you point at it, and then a
+   surface appears under it. Interactive on hover, calm at rest.
+
+   The selector was `.holdings td:first-child a` — scoped to ONE table, so the
+   same ticker on Manage holdings was a bare underlined link and looked like a
+   different kind of thing. `td.tick` is the portable form: any table that
+   marks its ticker cell gets the treatment, and no future table has to be
+   added to a list of class names here. */
+.holdings td:first-child a, td.tick a {
+  display: inline-block; padding: 0.1rem 0.4rem; margin: -0.1rem -0.4rem;
+  border-radius: var(--radius-xs); font-weight: 650; text-decoration: none;
+  border: 1px solid transparent;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+.holdings td:first-child a:hover, td.tick a:hover {
+  background: var(--sunken); border-color: var(--line); text-decoration: none;
+}
+.holdings td:first-child a:focus-visible, td.tick a:focus-visible {
+  background: var(--sunken); border-color: var(--accent);
+}
+
+/* --- our own colour wheel ------------------------------------------------ */
+/* A button showing the current colour; the wheel opens under it. */
+button.swatchwheel { width: 2.4rem; height: 2.4rem; padding: 0; margin: 0;
+  border: 1px solid var(--line); border-radius: var(--radius-xs);
+  cursor: pointer; box-shadow: none; }
+button.swatchwheel:hover { border-color: var(--accent); filter: none; }
+.swatchpick { position: relative; display: block; }
+.cwheel { position: absolute; z-index: 60; top: calc(100% + 0.4rem); left: 0;
+  width: 12.5rem; padding: var(--sp-3);
+  background: var(--panel-solid); box-shadow: var(--shadow); }
+.cwheel-disc { display: block; width: 176px; height: 176px; cursor: crosshair;
+  border-radius: 50%; touch-action: none; }
+/* The marker rides on the disc, so the wheel's box is the positioning
+   context and the marker is centred on its own coordinates. */
+.cwheel-marker { position: absolute; transform: translate(var(--sp-3), var(--sp-3)); width: 14px; height: 14px; margin: -7px 0 0 -7px;
+  border: 2px solid #fff; border-radius: 50%; pointer-events: none;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45); }
+.cwheel-value { display: block; margin-top: var(--sp-2); font-size: var(--fs-small);
+  color: var(--muted); }
+.cwheel-slider { width: 100%; margin-top: 0.2rem; }
+.cwheel-foot { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
+.cwheel-preview { width: 1.4rem; height: 1.4rem; border-radius: var(--radius-xs);
+  border: 1px solid var(--line); flex: none; }
+.cwheel-foot button { margin: 0; padding: 0.25rem 0.6rem; font-size: var(--fs-small); }
+
+/* A secondary action with its (?) beside it, under the main form in a panel.
+   The rule separates it from the form above so it does not read as another
+   field in that form. */
+.altaction { display: flex; align-items: center; gap: var(--sp-2);
+  margin-top: var(--sp-3); padding-top: var(--sp-3);
+  border-top: 1px solid var(--line); }
+.altaction button { margin: 0; }
+
+/* --- the Settings page console ------------------------------------------- */
+/* A window, not the page: tall enough to read a failure in context, short
+   enough that the settings above it stay reachable. */
+.console { max-height: 22rem; overflow-y: auto; padding: var(--sp-2) var(--sp-3);
+  background: var(--sunken); border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.75rem; line-height: 1.6; }
+.cline { white-space: pre-wrap; word-break: break-word; }
+.ctime { color: var(--muted); }
+.clevel { font-weight: 700; }
+.cname { color: var(--muted); }
+.lvl-warning .clevel { color: var(--viz-3); }
+.lvl-error .clevel, .lvl-critical .clevel { color: var(--down); }
+.lvl-critical { background: color-mix(in srgb, var(--down) 12%, transparent); }
+
+@media (max-width: 48rem) {
+  /* The mark alone below this width — the lockup would eat the top BAR, which
+     is the whole of the reason. Scoped to `.topbar` for that: the login card
+     carries the same wordmark and has a screen to itself, so an unscoped rule
+     hid the brand on the one page that is nothing but the brand. */
+  .topbar .brandword { display: none; }
+}

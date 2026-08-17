@@ -1,0 +1,85 @@
+<?xml version="1.0"?>
+<!--
+  Unraid Community Applications template.
+
+  Two things here are specific to Unraid and worth understanding before
+  changing them:
+
+  1. The user override (99:100) in ExtraParams. The image runs as uid 1000, but Unraid's
+     appdata share is owned by nobody:users (99:100), so a bind mount from
+     /mnt/user/appdata arrives unwritable by uid 1000 and the app cannot create
+     its database. Running as 99:100 instead means the volume just works with
+     no chown, which is the Unraid convention. Verified: the app boots, writes
+     its database and serves as 99:100 — nothing outside /data needs writing.
+
+  2. The config file is a FILE, not a directory. Unraid users are used to
+     mapping a /config folder, so this maps the appdata directory and points
+     APP_CONFIG_FILE at a file inside it. Nothing has to be put there first:
+     with no config.yaml the app boots into its setup wizard and writes one,
+     which is the Unraid convention and the reason this template needs no
+     "copy this file before starting" step.
+-->
+<Container version="2">
+  <Name>stocktake</Name>
+  <Repository>ghcr.io/jarrodruggiero/stocktake</Repository>
+  <Registry>https://ghcr.io/jarrodruggiero/stocktake</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/jarrodruggiero/stocktake/discussions</Support>
+  <Project>https://github.com/jarrodruggiero/stocktake</Project>
+  <Overview>
+    A self-hosted share portfolio tracker, built for Australian investors.
+    Tracks holdings, valuations and performance; computes financial-year
+    capital gains with FIFO parcel matching, the CGT discount and franking
+    credits; imports broker CSV, OFX and dividend statement PDFs; and builds
+    charts you design yourself.
+
+    Privacy is the point: only ticker symbols ever leave your server, to fetch
+    prices. No holdings, no balances, no telemetry, no phone-home. Dividend
+    statements are parsed locally — no cloud OCR. Turn the price feed off and
+    it makes no outbound requests at all.
+
+    Runs on SQLite by default: one file in appdata, nothing else to install.
+    Postgres is supported if you already run one.
+
+    SETUP: nothing to prepare. Start the container and open the WebUI — a
+    setup wizard asks where to keep the data, creates your account, and writes
+    the configuration file for you.
+  </Overview>
+  <Category>Productivity: Tools: Other:</Category>
+  <WebUI>http://[IP]:[PORT:8000]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/jarrodruggiero/stocktake/main/deploy/nas/unraid/stocktake.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/jarrodruggiero/stocktake/main/docs/assets/icon.png</Icon>
+  <ExtraParams>--user 99:100</ExtraParams>
+  <PostArgs/>
+  <DonateText/>
+  <DonateLink/>
+
+  <Config Name="WebUI Port" Target="8000" Default="8000" Mode="tcp"
+          Description="Port for the web interface."
+          Type="Port" Display="always" Required="true" Mask="false">8000</Config>
+
+  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/stocktake"
+          Mode="rw"
+          Description="Holds stocktake.db — your entire portfolio. Back this up; it is the only thing that needs backing up."
+          Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/stocktake</Config>
+
+  <Config Name="Config folder" Target="/config" Default="/mnt/user/appdata/stocktake"
+          Mode="rw"
+          Description="Where the app keeps config.yaml. It writes the file itself on first run, so this folder can start out empty."
+          Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/stocktake</Config>
+
+  <Config Name="APP_CONFIG_FILE" Target="APP_CONFIG_FILE" Default="/config/config.yaml"
+          Description="Path to config.yaml inside the container. Leave as-is unless you renamed the file."
+          Type="Variable" Display="advanced" Required="true" Mask="false">/config/config.yaml</Config>
+
+  <Config Name="Timezone" Target="TZ" Default="Australia/Melbourne"
+          Description="Set this to YOUR timezone; the setup wizard asks for it too and the two should agree. Containers run UTC, and every date decision — which financial year today is in, whether a trade is dated in the future — uses this. Leaving it wrong puts the app a day out for part of each day."
+          Type="Variable" Display="always" Required="true" Mask="false">Australia/Melbourne</Config>
+
+  <Config Name="Database password" Target="APP_DATABASE__PASSWORD" Default=""
+          Description="Only if you chose Postgres. Setting it here rather than in the wizard keeps the password out of config.yaml. Leave blank for the default SQLite setup."
+          Type="Variable" Display="advanced" Required="false" Mask="true"/>
+</Container>

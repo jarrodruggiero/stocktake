@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Stocktake{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+  {# Without these every page load 404s on /favicon.ico. The SVG carries its
+     own dark-mode rule, so the tab icon follows the browser, not the app. #}
+  <link rel="icon" href="/static/icon.svg?v={{ asset_v }}" type="image/svg+xml">
+  <link rel="alternate icon" href="/static/icon.png?v={{ asset_v }}" sizes="512x512">
+  {% if auth %}<meta name="csrf-token" content="{{ auth.session.csrf_token }}">{% endif %}
+  {# The portfolio's reporting currency, for the scripts that decide whether an
+     instrument is foreign. One place, so no script hard-codes "AUD". #}
+  <script>window.reportingCurrency = "{{ reporting_ccy }}";</script>
+</head>
+{# `data-feed-running` rather than an inline script on the dashboard: the state
+   belongs on the document, and feedwatch.js reads it from here. #}
+<body data-theme="{{ auth.user.theme if auth else 'auto' }}"
+      data-accent="{{ auth.user.accent if auth else 'blue' }}"
+      {% if feed is defined and feed.running %}data-feed-running="1"{% endif %}
+      {# Always emitted where the feed is on the page, even before the first
+         quote has landed — its absence is what switches the watcher off, and a
+         page that rendered with no live price still wants to notice the one
+         that arrives a minute later. #}
+      {% if feed is defined %}data-quoted="{{ feed.quoted.isoformat() if feed.quoted else '' }}"{% endif %}
+      {% if auth %}data-idle-warning="{{ idle_warning_seconds }}"{% endif %}
+      {% if theme_style %}style="{{ theme_style }}"{% endif %}>
+  <header class="topbar">
+    {# Brand mark links home; the Portfolio nav item does too — one is the
+       identity, the other is a destination in the list. #}
+    <a class="brand" href="/" aria-label="Stocktake home">
+      {% include "_brand.html" %}
+    </a>
+    {% if auth %}
+    <nav class="nav-{{ auth.user.nav_style }}">
+      {% for item in nav %}
+      <a href="{{ item.href }}" {% if item.key == active_nav %}class="on"{% endif %}
+         title="{{ item.label }}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="{{ item.path }}"/></svg>
+        <span>{{ item.label }}</span>
+      </a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+    <div class="spacer"></div>
+    {% if auth and auth.role == 'viewer' %}<span class="badge">read-only</span>{% endif %}
+    {% if auth %}
+    {# App-level controls, and the reason they live in the BAR rather than on
+       the page: they must be in the same place on every screen. A control that
+       moves is a control you hunt for. Everything portfolio-specific — record
+       a trade, manage holdings, view charts — went the other way, onto the page
+       it acts on. #}
+    <a class="iconbtn" href="/admin" title="{{ admin_nav.label }}"
+       aria-label="{{ admin_nav.label }}"
+       {% if active_nav == 'admin' %}aria-current="page"{% endif %}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="{{ admin_nav.path }}"/></svg>
+    </a>
+    {# <details> rather than a scripted menu, the same choice the column chooser
+       makes: keyboard operable for free, and it works with scripting off. #}
+    {# `on` when you are looking at the page behind it, so the profile control
+       behaves like every other destination rather than being the one thing
+       that never shows where you are. #}
+    <details class="usermenu menu{{ ' on' if active_nav == 'account' }}">
+      <summary title="{{ auth.user.name }}" aria-label="Account menu for {{ auth.user.name }}">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0"/>
+        </svg>
+      </summary>
+      <div class="panel usermenupanel">
+        <p class="whoami">{{ auth.user.name }}<span class="sub">{{ auth.user.email }}</span></p>
+        {% if auth.memberships %}
+        {# Always a dropdown, even with one portfolio: it names where you are,
+           and switching is the point once family portfolios exist. The server
+           checks membership — a forged id can't move the session. #}
+        <form method="post" action="/portfolio/switch" id="pfform">
+          <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+          <label>Portfolio
+            <select name="portfolio_id" class="pfswitch" id="pfswitch"
+                    data-current="{{ auth.active_portfolio_id }}">
+              {% for m in auth.memberships %}
+              <option value="{{ m.portfolio_id }}" {% if m.portfolio_id == auth.active_portfolio_id %}selected{% endif %}>{{ m.name }}</option>
+              {% endfor %}
+              <option value="new">+ New portfolio…</option>
+            </select>
+          </label>
+          <noscript><button type="submit">Switch</button></noscript>
+        </form>
+        {% endif %}
+        {# Two buttons on one row, under the switcher: they are the menu's
+           actions, and a link above a differently-shaped button read as two
+           unrelated things. #}
+        <div class="menuactions">
+          <a href="/profile"><button type="button" class="secondary">Settings</button></a>
+          <form method="post" action="/logout">
+            <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+            <button class="secondary" type="submit">Log out</button>
+          </form>
+        </div>
+      </div>
+    </details>
+    {% endif %}
+  </header>
+  <main>
+    {# Codes nobody has saved are codes nobody has. Every account upgrading to
+       this version is in exactly that state, and so is anyone an administrator
+       created — so this is a banner on every page rather than a line on the
+       account page they have no reason to visit. #}
+    {% if auth and not auth.user.recovery_codes_seen_at %}
+    <form class="banner" method="post" action="/profile/recovery">
+      <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+      <span><strong>You have no saved recovery codes.</strong> They are how you
+        get back in if you forget your password or lose your authenticator.</span>
+      <button type="submit">Generate them now</button>
+    </form>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+
+  {% if auth %}
+  {# The idle warning. Hidden until the session is nearly over, at which point
+     it blurs the page behind it — the same "glass brick" treatment that used
+     to sit behind a manual Hide $ button. The button is gone: blurring is no
+     longer something you ask for, it is what happens when you have stopped
+     being there. #}
+  <div id="idlewarn" class="idleoverlay" hidden role="alertdialog"
+       aria-labelledby="idlewarn-title" aria-describedby="idlewarn-body">
+    <div class="idlecard">
+      <h2 id="idlewarn-title">Still there?</h2>
+      <p id="idlewarn-body">You'll be signed out in
+        <strong id="idlewarn-countdown" aria-live="polite">0:00</strong>.</p>
+      <div class="commitbar">
+        <button type="button" id="idlewarn-stay">Stay signed in</button>
+        <button type="button" id="idlewarn-out" class="secondary">Log out now</button>
+      </div>
+    </div>
+  </div>
+  <form id="idlewarn-logout" method="post" action="/logout" hidden>
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  </form>
+  <script src="/static/idle.js?v={{ asset_v }}" defer></script>
+  <script src="/static/feedwatch.js?v={{ asset_v }}" defer></script>
+  {% endif %}
+  {# OUTSIDE the session check, unlike the two above. The setup wizard renders
+     with `auth` as None deliberately (see setup_base.html), and it carries `?`
+     tips — which are `details.menu` panels. So every menu on the first pages
+     anybody ever sees had none of this file's behaviour: no outside-click
+     close, no Escape, and no keep-it-on-screen placement, which is why they
+     opened ~200px off the left edge of a phone and stayed there. The file
+     no-ops when there is no switcher and no menu to wire up. #}
+  <script src="/static/topbar.js?v={{ asset_v }}" defer></script>
+</body>
+</html>

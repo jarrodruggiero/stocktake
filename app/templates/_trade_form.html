@@ -1,0 +1,158 @@
+{# The record/edit trade form, shared by the /trade/new page and the Record
+   trade dialog on the Portfolio page.
+
+   It is an include rather than two copies because the two must not drift: this
+   form decides what a trade IS, and a field present in one place and missing
+   in the other would silently record different things depending on which door
+   you came through.
+
+   Expects: edit, inst, form, instruments, ticker, today, auth.
+   `edit` is None when recording something new. #}
+<form class="panel narrow" method="post"
+      action="{% if edit %}/trade/{{ edit.id }}/edit{% else %}/trade/new{% endif %}"
+      autocomplete="off">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  {# Today's scheduled buy, filled in — and SHOWING ITS WORKING.
+
+     A form that silently supplies a quantity is asking to be signed off
+     without being read, and the number can be wrong: a stale close is the
+     obvious way. Somebody who can see how it was reached will notice; somebody
+     shown only "3" will not.
+
+     Every field stays editable, and the date is today rather than the due
+     date — back-dating a trade quietly would be worse than not helping. #}
+  {% if prefill and not edit %}
+  <p class="panel prefill">
+    <strong>From your DCA Schedule</strong><br>
+    {{ prefill.amount | cash(prefill.currency) }}
+    − {{ prefill.brokerage | cash(prefill.currency) }} brokerage
+    ÷ {{ prefill.unit_price | cash(prefill.currency) }}
+    <span class="sub">(close, {{ prefill.price_date }})</span>
+    = <strong>{{ prefill.units }} units</strong>,
+    {{ prefill.spend | cash(prefill.currency) }} total
+  </p>
+  {% endif %}
+  {% if edit %}
+  <p class="meta">{{ inst.ticker }} — {{ inst.name or inst.asset_class }}{% if inst.currency != 'AUD' %} ({{ inst.currency }}){% endif %}</p>
+  {% else %}
+  <label>Instrument
+    <select name="instrument_id" id="instpick" required>
+      <option value="">— choose —</option>
+      {# Each option carries its own latest close and exchange rate, so picking
+         one fills the fields with no round trip — see `tradeform.js`. #}
+      {% for i in options %}
+      <option value="{{ i.id }}"
+        data-price="{{ i.price }}" data-currency="{{ i.currency }}" data-fx="{{ i.fx }}"
+        {% if form.instrument_id and form.instrument_id|string == i.id|string %}selected
+        {% elif ticker and i.ticker == ticker %}selected
+        {% elif prefill and not form and prefill.instrument_id == i.id %}selected{% endif %}>
+        {{ i.ticker }} — {{ i.name or i.asset_class }}{% if i.currency != reporting_ccy %} ({{ i.currency }}){% endif %}
+      </option>
+      {% endfor %}
+      <option value="new" {% if form.instrument_id == 'new' %}selected{% endif %}>+ Something not listed…</option>
+    </select>
+  </label>
+  {% endif %}
+
+  {# Everything needed to add an instrument, inline — picking "not listed"
+     reveals it so nothing typed above is lost to a detour. Not offered when
+     editing: the instrument is fixed there. #}
+  {% if not edit %}
+  <fieldset id="newinst" hidden>
+    <legend>New instrument</legend>
+    <div class="row">
+      <label>Ticker <input name="new_ticker" value="{{ form.new_ticker or '' }}"
+             class="upper" data-autofill="new_"></label>
+      <label>Exchange
+        <select name="new_exchange" data-autofill="new_">
+          {% for x in ['ASX', 'NASDAQ', 'NYSE', 'CRYPTO'] %}
+          <option value="{{ x }}" {% if form.new_exchange == x %}selected{% endif %}>{{ x }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Class
+        <select name="new_asset_class">
+          <option value="etf" {% if form.new_asset_class == 'etf' %}selected{% endif %}>ETF</option>
+          <option value="share" {% if form.new_asset_class == 'share' %}selected{% endif %}>Share</option>
+          <option value="crypto" {% if form.new_asset_class == 'crypto' %}selected{% endif %}>Crypto</option>
+        </select>
+      </label>
+      <label>Currency <input name="new_currency" value="{{ form.new_currency or 'AUD' }}" size="4"></label>
+    </div>
+    <label>Name <span class="sub">optional</span>
+      <input name="new_name" value="{{ form.new_name or '' }}" placeholder="Vanguard Australian Shares Index ETF">
+    </label>
+    <label>Yahoo price symbol <span class="sub">blank = guessed (ASX codes become CODE.AX)</span>
+      <input name="new_yahoo" value="{{ form.new_yahoo or '' }}" placeholder="ALPHA.AX">
+    </label>
+    <label class="check"><input type="checkbox" name="new_drp" value="1" {% if form.new_drp %}checked{% endif %}> I reinvest its distributions</label>
+    <p class="sub" id="new_lookup-status"></p>
+    <p class="sub">Name, currency and price symbol fill in from the ticker —
+    override any of them.</p>
+  </fieldset>
+  {% endif %}
+
+  <div class="row">
+    <label>Type
+      <select name="type" required>
+        <option value="buy" {% if form.type == 'buy' %}selected{% endif %}>Buy</option>
+        <option value="sell" {% if form.type == 'sell' %}selected{% endif %}>Sell</option>
+      </select>
+    </label>
+    <label>Date
+      <input type="date" name="trade_date" value="{{ form.trade_date or today }}" required>
+    </label>
+  </div>
+
+  {# The time only matters when two trades share a day, so it stays out of the
+     way until someone says they need it. Unticked means the market open. #}
+  <label class="check">
+    <input type="checkbox" name="set_time" value="1" id="settime"
+           {% if form.set_time %}checked{% endif %}>
+    Set a time of day
+  </label>
+  <label id="timefield" hidden>Time
+    <span class="sub">only needed to order two trades on the same day; blank means the market open</span>
+    <input type="time" name="trade_time" value="{{ form.trade_time or '10:00' }}">
+  </label>
+
+  <div class="row">
+    <label>Units <input name="quantity" inputmode="decimal" id="quantity"
+           data-prefilled-for="{{ prefill.instrument_id if prefill and not form else '' }}"
+           value="{{ form.quantity or (prefill.units if prefill and not form else '') }}" required></label>
+    <label>Price per unit <input name="unit_price" inputmode="decimal" id="unit_price"
+           value="{{ form.unit_price or (prefill.unit_price | qty if prefill and not form else '') }}" required></label>
+    <label>Brokerage <input name="brokerage" inputmode="decimal"
+           value="{{ form.brokerage or (prefill.brokerage | qty if prefill and not form else '9.50') }}"></label>
+  </div>
+
+  {# Hidden entirely for an instrument already in the reporting currency —
+     there is nothing to convert, and a blank box invites a "1" that then has
+     to be believed. `tradeform.js` shows it when a foreign one is picked. #}
+  <label id="fxfield" {% if not (prefill and prefill.currency != reporting_ccy) %}hidden{% endif %}>
+    FX rate to {{ reporting_ccy }}
+    {% set fx_tip %}
+    <p>How many {{ reporting_ccy }} one unit of the instrument's own currency
+    was worth on the day of the trade.</p>
+    <p>Leave it blank and the price feed fills it in from that day's close —
+    which is usually what you want. Set it only if you know the rate you
+    actually got.</p>
+    {% endset %}
+    {% with body = fx_tip, label = "About the FX rate" %}{% include "_tip.html" %}{% endwith %}
+    <input name="fx_rate" inputmode="decimal" id="fx_rate"
+           value="{{ form.fx_rate or '' }}">
+  </label>
+
+  <label>Note <span class="sub">optional, private to you</span>
+    <input name="note" value="{{ form.note or '' }}" maxlength="400">
+  </label>
+
+  <div class="commitbar">
+    <button type="submit">{% if edit %}Save changes{% else %}Save trade{% endif %}</button>
+    {% if in_dialog %}
+    <button type="button" class="secondary" data-close-dialog>Cancel</button>
+    {% else %}
+    <a href="{% if edit %}{{ return_to or '/holding/' ~ inst.ticker }}{% else %}/{% endif %}">Cancel</a>
+    {% endif %}
+  </div>
+</form>

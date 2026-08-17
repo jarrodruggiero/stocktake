@@ -1,0 +1,23 @@
+{# The recovery-code list and the warnings that have to travel with it.
+
+   One partial, used by the wizard step, the account page and anywhere else
+   these get shown — because the codes must never appear without the sentence
+   explaining what somebody holding them can do. #}
+<section class="panel warn">
+  <p><strong>Save these now. They are shown once.</strong> Each one works a
+  single time.</p>
+
+  <ul class="codes">
+    {% for code in codes %}<li><code>{{ code }}</code></li>{% endfor %}
+  </ul>
+
+</section>
+
+<p class="note">
+  {# The one thing that cannot wait for the docs: with no second factor, this
+     list is the whole of the account's second line of defence. #}
+  {% if not totp_on %}<strong>Two-factor authentication is not on for this
+  account, so this list is the only thing besides your password that can reach
+  it — treat it exactly like a password.</strong>{% endif %}
+  <a href="{{ docs_url }}/guides/recovery-codes/">Learn more about recovery codes</a>
+</p>

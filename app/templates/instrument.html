@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}{{ inst.ticker }} — Stocktake{% endblock %}
+{% block content %}
+
+{# Where this page was opened from, carried in `?return=` by whoever linked
+   here and validated in the route. Still names its destination rather than
+   calling `history.back()`: a link that says "← Manage holdings" and goes
+   there survives a refresh and a shared URL, and a blind back does not. With
+   no `?return=` — a bookmark, a typed address — it falls back to Portfolio. #}
+<a class="backlink" href="{{ return_to }}"><button type="button"
+   class="secondary">&larr; {{ back_label }}</button></a>
+
+<h1>{{ inst.ticker }} <small>{{ inst.name or '' }}</small></h1>
+<p class="meta">
+  {{ inst.exchange }} · {{ inst.asset_class }} · {{ inst.currency }}
+  {% if holding.drp %} · DRP{% endif %}
+  {% if not inst.active %} · <span class="badge">closed</span>{% endif %}
+</p>
+{% if holding.note %}<p class="note notecell">{{ holding.note }}</p>{% endif %}
+
+<section class="tiles">
+  <div class="tile"><span class="label">Units held</span><span class="big">{{ holding.units | qty }}</span></div>
+  <div class="tile"><span class="label">Avg price</span><span class="big">{{ holding.avg_price | money }}</span></div>
+  <div class="tile"><span class="label">Cost</span><span class="big">{{ holding.cost | money }}</span></div>
+  <div class="tile"><span class="label">Value</span><span class="big">{{ holding.value | money }}</span>
+    {% if holding.price_date %}<span class="sub">@ {{ holding.price_date }}</span>{% endif %}</div>
+  <div class="tile"><span class="label">Dividends</span><span class="big">{{ holding.dividends_cash | money }}</span></div>
+</section>
+
+{% if has_series %}
+<section>
+  <h2>Holding over time</h2>
+  <div class="chartcard">
+    <div class="plot"><canvas id="c-instrument"></canvas></div>
+    <details class="tableview"><summary>Table view (month ends)</summary><div id="t-instrument"></div></details>
+  </div>
+</section>
+{% endif %}
+
+{% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+
+<section>
+  {# A button, not a `<small>` link inside the heading. It is the one action
+     this page offers, and it was set in the heading's own size and weight —
+     which made it read as part of the word "Ledger" rather than as a control.
+     `h2 > a > button` in style.css sizes it down so it does not inherit the
+     heading; on a narrow screen `.sectionhead` wraps it onto its own line
+     rather than squeezing the title. #}
+  <h2 class="sectionhead">Ledger
+    <a href="/trade/new?ticker={{ inst.ticker }}"><button type="button"
+       class="secondary">Record a trade</button></a></h2>
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>Date</th><th>Event</th><th class="num">Units</th><th class="num">Price</th>
+          <th class="num">Brokerage</th><th class="num">Cash</th>
+          <th class="num">$ gain</th><th class="num">% gain</th><th>Note</th>
+          {% if auth.can_write %}<th></th>{% endif %}</tr>
+    </thead>
+    <tbody>
+      {% for e in events %}
+      <tr>
+        {# The time shows only when it says something: a trade left at the open
+           has nothing to add, and a column of 10:00 would just be noise. #}
+        <td>{{ e.date }}{% if e.time and e.time.strftime('%H:%M') != '10:00' %}
+          <span class="sub">{{ e.time.strftime('%H:%M') }}</span>{% endif %}</td>
+        <td><span class="event event-{{ e.kind }}">{{ e.kind }}</span></td>
+        <td class="num">{{ e.quantity | qty }}</td>
+        <td class="num">{{ e.unit_price | money }}</td>
+        <td class="num">{{ e.brokerage | money }}</td>
+        <td class="num">{{ e.cash | money }}</td>
+        <td class="num {{ 'up' if e.gain is not none and e.gain >= 0 else 'down' if e.gain is not none }}">{{ e.gain | money }}</td>
+        <td class="num {{ 'up' if e.gain_pct is not none and e.gain_pct >= 0 else 'down' if e.gain_pct is not none }}">{{ e.gain_pct | pct }}</td>
+        <td class="notecell">{{ e.note or '' }}</td>
+        {# Viewers see the ledger and no way to change it. #}
+        {% if auth.can_write %}
+        <td class="num">
+          {% if e.row_kind == 'trade' %}
+          <a href="/trade/{{ e.row_id }}/edit">edit</a>
+          {% elif e.row_kind == 'dividend' %}
+          <a href="/dividend/{{ e.row_id }}/edit">edit</a>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+{% if has_series %}
+<script id="instrument-data" type="application/json">{{ series_json | tojson }}</script>
+<script src="/static/vendor/chart.umd.js?v={{ asset_v }}"></script>
+<script src="/static/charts.js?v={{ asset_v }}"></script>
+{% endif %}
+
+{% endblock %}

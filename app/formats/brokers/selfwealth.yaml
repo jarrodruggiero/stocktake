@@ -1,0 +1,20 @@
+# SelfWealth — trade confirmation CSV export.
+#
+# Verified against a real export (2026). One row per trade with named columns,
+# which is the common shape and needs no code: `kind: mapped` reads the columns
+# named below straight into trades.
+#
+# If SelfWealth changes its headings, fix them HERE and open a pull request —
+# the fix then reaches everyone rather than living in one person's config.
+name: SelfWealth
+kind: mapped
+exchange: ASX
+currency: AUD
+date_format: "%d/%m/%Y"
+columns:
+  date: Trade Date
+  action: Buy/Sell        # values read case-insensitively as buy / sell
+  ticker: Code
+  units: Units
+  price: Price
+  brokerage: Brokerage

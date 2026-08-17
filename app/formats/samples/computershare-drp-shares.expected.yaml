@@ -1,0 +1,20 @@
+payment_date: 2025-12-16
+record_date: 2025-11-13
+net_amount: "40.00"
+
+# No franked_amount and no franking_credits, deliberately — see the template.
+# Their headings are split across two printed lines, so the words never occur
+# together in extracted text and there is nothing to anchor on. The generic
+# template answers this question anyway, with the NZ imputation credit of
+# 6.00, which is the wrong number and the reason for the refusal.
+
+drp_price: "35.00"
+
+# Money applied, not units: on this layout the share count comes BEFORE its
+# label, which a template cannot anchor on. units = applied / price = 1.
+drp_amount_applied: "35.00"
+
+# The two residual sentences, which nearly match. In is 12.00, out is 17.00.
+drp_residual_brought: "12.00"
+drp_residual: "17.00"
+drp_total_available: "52.00"

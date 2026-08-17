@@ -1,0 +1,80 @@
+# MUFG Corporate Markets (AU) — distribution advice with reinvestment.
+#
+# The registry behind Betashares and a long list of other Australian issuers,
+# formerly Link Market Services. Its advices are recognisable and the generic
+# template does NOT read them: the figures sit at the end of long sentences
+# ("This amount has been applied to 7 units at $63.51 per unit") rather than
+# after a short label, and the distribution itself is in a table whose value
+# column has no label to its left.
+#
+# So the labels below are the tail of each sentence, which is what makes them
+# findable. That is unusual enough to be worth explaining: on this layout the
+# words immediately before a number ARE the label, they are just wordy.
+#
+# `match` rather than a row shape: the table is one line and would match too
+# many other documents, while the registry's own wording is stable.
+name: MUFG / Link distribution advice
+match:
+  any_of:
+    - MUFG Corporate Markets
+    - MUFG Pension & Market Services
+    - Link Market Services
+
+fields:
+  payment_date:
+    after:
+      - payment date
+    type: date
+
+  # The date the holding is measured on, and the one to reconcile units
+  # against — a purchase between the record date and the payment date is
+  # already in your account but not in this distribution, which looks exactly
+  # like a missing allotment if you compare on the wrong date.
+  record_date:
+    after:
+      - record date
+    type: date
+
+  # "Net Amount:" on its own line, after the class table.
+  net_amount:
+    after:
+      - net amount
+    type: money
+
+  # DRP. "applied to 7 units at $63.516629 per unit" carries both, and each
+  # reads from the words that precede it in that sentence.
+  drp_units:
+    after:
+      - has been applied to
+      - applied to
+    type: integer
+
+  drp_price:
+    after:
+      - units at
+    type: number
+
+  # The residual — the cents a registry keeps because it can only allot whole
+  # units, carried into the next distribution. The
+  # figures were on every one of these advices all along and were being read
+  # past. Both lines are unambiguous here, unlike the Computershare share
+  # layout where the two residual sentences nearly match.
+  drp_residual_brought:
+    after:
+      - residual balance brought forward
+    type: money
+
+  drp_residual:
+    after:
+      - residual balance carried forward
+    type: money
+
+  drp_total_available:
+    after:
+      - total amount available for reinvestment
+    type: money
+
+  units_held:
+    after:
+      - units held prior to allotment
+    type: integer

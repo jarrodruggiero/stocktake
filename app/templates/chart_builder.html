@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Build a chart — Stocktake{% endblock %}
+{% block content %}
+
+<div class="calhead">
+  <h1>{{ 'Edit chart' if existing else 'Build a chart' }}</h1>
+  <div class="rangebar"><a href="/charts"><button type="button">← Charts</button></a></div>
+</div>
+
+<p class="note">Drag a field onto a shelf. The preview redraws as you go.</p>
+
+<div class="builder">
+  {# Four columns, in the order the work happens: name and what it is about →
+     what shape it takes and what goes on it → what to leave out → what it
+     looks like. Chart type belongs near the top: it is the first decision
+     anybody makes about a chart. #}
+  <div class="bcol">
+    <div class="panel">
+      {# The name leads: it is the first thing you know about a chart. #}
+      <label>Name this chart
+        <input id="chart-name" form="saveform" value="{{ existing.name if existing else '' }}"
+               placeholder="Value by asset class" required>
+      </label>
+      <label>Start from a template
+        <select id="template">
+          <option value="">— blank —</option>
+          {% for t in templates %}
+          <option value="{{ t.key }}">{{ t.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <p class="sub" id="template-blurb"></p>
+
+      <label>What is this about?
+        <select id="grain"></select>
+      </label>
+      <p class="sub" id="grain-blurb"></p>
+    </div>
+
+    <div class="fieldwell">
+      <h3>Fields</h3>
+      <p class="sub">Drag onto a shelf, or click to send it to the first that fits.</p>
+      <ul class="fieldlist" id="fieldlist"></ul>
+    </div>
+  </div>
+
+  <div class="bcol">
+    <div class="shelf" id="typeshelf">
+      <h3>Chart type</h3>
+      <label class="stack"><select id="type"></select></label>
+      <label class="stack" id="bucket-wrap">Group by <select id="bucket"></select></label>
+      <label class="stack">Size
+        <select id="width">
+          <option value="half">Half width</option>
+          <option value="full">Full width</option>
+        </select>
+      </label>
+    </div>
+    <div class="shelf" data-shelf="x" data-accept="dimension">
+      <h3>X axis <span class="sub">one dimension</span></h3>
+      <ul class="drop" id="shelf-x"></ul>
+    </div>
+    <div class="shelf" data-shelf="measures" data-accept="measure">
+      <h3>Measures <span class="sub">one or more</span></h3>
+      <ul class="drop" id="shelf-measures"></ul>
+    </div>
+    <div class="shelf" data-shelf="split" data-accept="dimension">
+      <h3>Split into series <span class="sub">optional — one line per group</span></h3>
+      <ul class="drop" id="shelf-split"></ul>
+    </div>
+  </div>
+
+  <div class="bcol">
+    <div class="shelf" id="filtershelf">
+      <h3>Filter <span class="sub">optional — leave blank for everything</span></h3>
+      <div id="filters"></div>
+      <label class="stack">From <input type="date" id="since"></label>
+    </div>
+  </div>
+
+  <div class="previewpane">
+    <div class="chartcard">
+      <h2 id="preview-title">Preview</h2>
+      <p class="sub note" id="preview-msg">Pick an X axis and a measure.</p>
+      <div class="plot" id="preview-plot"><canvas id="c-preview"></canvas></div>
+      {# A table-only chart previews as the table itself, not folded away. #}
+      <div id="t-preview" class="charttable scroller"></div>
+    </div>
+    <form class="panel" id="saveform">
+      <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+      <div class="commitbar">
+        <button type="submit">{{ 'Save changes' if existing else 'Save chart' }}</button>
+        <span class="sub" id="save-msg"></span>
+      </div>
+    </form>
+    {% if existing %}
+    {# Removal lives here rather than on the charts page, where it would sit
+       one stray click away from a chart you wanted. #}
+    <form class="panel" method="post" action="/charts/{{ existing.id }}/delete"
+          onsubmit="return confirm('Remove “{{ existing.name }}” from your charts page? You can add it again from the templates list.')">
+      <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+      <button class="secondary danger" type="submit">Remove this chart</button>
+      <p class="sub">Only from your page — nobody else's, and no data is touched.</p>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<script id="catalogue" type="application/json">{{ catalogue | tojson }}</script>
+<script id="existing-spec" type="application/json">{{ existing_spec | tojson }}</script>
+<script id="templates" type="application/json">{{ templates_json | tojson }}</script>
+<script id="filter-values" type="application/json">{{ filter_values | tojson }}</script>
+<script>window.__chartWidth = "{{ existing.width if existing else 'half' }}";</script>
+<script>window.__chartId = {{ existing.id if existing else 'null' }};</script>
+<script src="/static/vendor/chart.umd.js?v={{ asset_v }}"></script>
+<script src="/static/charts.js?v={{ asset_v }}"></script>
+<script src="/static/builder.js?v={{ asset_v }}"></script>
+
+{% endblock %}

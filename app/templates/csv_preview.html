@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}CSV preview — Stocktake{% endblock %}
+{% block content %}
+
+<h1>CSV preview <small>{{ filename }} ({{ broker }})</small></h1>
+
+{% if errors %}
+<div class="panel error">
+  <h2>Errors — nothing can be committed</h2>
+  <ul>{% for e in errors %}<li><code>{{ e }}</code></li>{% endfor %}</ul>
+  <p class="note">If the export format changed, adjust the column mapping under
+  <code>imports.brokers.{{ broker }}</code> in config.yaml.</p>
+</div>
+{% endif %}
+
+{% if candidates %}
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Status</th><th>Date</th><th>Ticker</th><th>Type</th>
+      <th class="num">Units</th><th class="num">Price</th><th class="num">Brokerage</th><th>Detail</th></tr></thead>
+  <tbody>
+    {% for c in candidates %}
+    <tr class="{{ 'muted' if c.status == 'duplicate' }}">
+      <td><span class="badge badge-{{ c.status }}">{{ c.status }}</span></td>
+      <td>{{ c.date }}</td>
+      <td>{{ c.ticker }}</td>
+      <td>{{ c.type }}</td>
+      <td class="num">{{ c.quantity }}</td>
+      <td class="num">{{ c.unit_price }}</td>
+      <td class="num">{{ c.brokerage }}</td>
+      <td class="notecell">{{ c.detail }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if uid and insertable %}
+<form action="/imports-exports/csv/{{ uid }}/commit" method="post" class="commitbar">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  <button type="submit">Commit {{ insertable }} trade(s)</button>
+  <a href="/imports-exports">Cancel</a>
+</form>
+{% elif not insertable %}
+<p class="note">Nothing new to commit — every row is already in the database.</p>
+{% endif %}
+{% endif %}
+
+{% if skipped %}
+<details><summary>{{ skipped | length }} non-trade row(s) skipped</summary>
+<ul class="note">{% for s in skipped %}<li><code>{{ s }}</code></li>{% endfor %}</ul>
+</details>
+{% endif %}
+
+{% endblock %}

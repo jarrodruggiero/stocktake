@@ -1,0 +1,103 @@
+{% extends "setup_base.html" %}
+{% set heading = "Where your data lives" %}
+{% block wizard %}
+
+{% if db_source.configured %}
+<section class="panel">
+  <p><strong>{{ db_description }}</strong> — {{ db_source.detail }}.</p>
+  <p class="note">Decided by your deployment, so there is nothing to choose here — but it
+  could not be reached. Check the server is reachable from this container and
+  the credentials are right, then restart.</p>
+</section>
+{% else %}
+
+
+{% if tested %}
+<p class="panel {{ 'good' if tested_ok else 'error' }}">{{ tested }}</p>
+{% endif %}
+
+<form method="post" action="/setup/database" class="panel" id="dbform">
+  <input type="hidden" name="_csrf" value="{{ csrf }}">
+
+  <fieldset class="choices">
+    <legend>Database</legend>
+    <div class="choiceline">
+    <label class="check">
+      <input type="radio" name="kind" value="sqlite"
+             {% if form.get('kind', 'sqlite') == 'sqlite' %}checked{% endif %}
+             data-shows="sqlitefields">
+      <span><strong>SQLite</strong> — lightweight and easy to manage, suitable
+        for most use cases <span class="sub">(recommended)</span></span>
+    </label>
+    {% set sqlite_tip %}
+    <p>A single file on disk. Nothing else to run, nothing to keep patched, and
+    backing it up is copying one file.</p>
+    <p>It is the right answer for one household. The file lives on whatever
+    volume you point it at — put that on storage you actually back up.</p>
+    {% endset %}
+    {% with body = sqlite_tip, label = "About SQLite" %}{% include "_tip.html" %}{% endwith %}
+    </div>
+    <div class="choiceline">
+    <label class="check">
+      <input type="radio" name="kind" value="postgres"
+             {% if form.get('kind') == 'postgres' %}checked{% endif %}
+             data-shows="pgfields">
+      <span><strong>PostgreSQL</strong> — suitable for larger deployments</span>
+    </label>
+    {% set pg_tip %}
+    <p>Worth it if you already run one, or if something else will read this
+    data directly.</p>
+    <p>It also handles concurrent writers better — several people recording
+    trades at once, or more than one copy of the app running.</p>
+    {% endset %}
+    {% with body = pg_tip, label = "About PostgreSQL" %}{% include "_tip.html" %}{% endwith %}
+    </div>
+  </fieldset>
+
+  <div id="sqlitefields" class="dbfields">
+    <label>Database file
+      <input name="path" value="{{ form.get('path', default_path) }}"
+             placeholder="/data/portfolio.db">
+    </label>
+    <p class="note">This must be on a volume that survives the container being
+    recreated. If you mapped one to <code>/data</code>, the default is right.</p>
+  </div>
+
+  <div id="pgfields" class="dbfields" hidden>
+    <div class="row">
+      <label>Host
+        <input name="host" value="{{ form.get('host', '') }}" placeholder="postgres">
+      </label>
+      <label class="narrow">Port
+        <input name="port" value="{{ form.get('port', '5432') }}" inputmode="numeric">
+      </label>
+    </div>
+    <label>Database name
+      <input name="name" value="{{ form.get('name', 'portfolio') }}">
+    </label>
+    <div class="row">
+      <label>User
+        <input name="user" value="{{ form.get('user', 'portfolio') }}" autocomplete="off">
+      </label>
+      <label>Password
+        <input type="password" name="password" autocomplete="new-password">
+      </label>
+    </div>
+    <p class="note">The database must already exist — the app creates its tables, not the
+    database. Set <code>APP_DATABASE__PASSWORD</code> in the environment to
+    keep the password out of the config file.</p>
+  </div>
+
+  <div class="commitbar">
+    <button type="submit" formaction="/setup/database/test" class="secondary">
+      Test connection
+    </button>
+    <button type="submit">Use this database</button>
+  </div>
+</form>
+
+{# Show the fields for the selected kind. Both sets stay in the DOM so a failed
+   test redraws with everything still typed. #}
+<script src="/static/setup.js?v={{ asset_v }}" defer></script>
+{% endif %}
+{% endblock %}

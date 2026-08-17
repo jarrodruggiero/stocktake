@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}DRP advice — Stocktake{% endblock %}
+{% block content %}
+
+<h1>Combined DRP advice <small>{{ filename }}</small></h1>
+
+{# A statement read from pixels rather than from a text layer. Said loudly and
+   before the form, because OCR misreads digits and every field below is money —
+   this is the one case where "check every field" is not boilerplate. #}
+{% if p.used_ocr %}
+<p class="panel warn"><strong>Read with OCR</strong> — this PDF had no text layer. Check every
+figure against the document before saving.</p>
+{% endif %}
+{% if p.problem %}
+<p class="panel error">{{ p.problem }}</p>
+{% endif %}
+<p class="note">One row per fund — check each against the PDF and save the ones you
+want. “Units on statement” should match “units in app”; a mismatch means missing
+trades. Payment date {{ p.payment_date or 'NOT PARSED — set per row' }}.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Fund</th><th class="num">Distribution ($)</th><th class="num">Units allotted</th>
+      <th class="num">DRP price</th><th class="num">Units on statement</th><th class="num">Units in app</th>
+      <th>Carry</th><th></th></tr></thead>
+  <tbody>
+    {% for r in p.rows %}
+    <tr class="{{ 'muted' if r.status == 'duplicate' }}">
+      <td>{{ r.ticker }} <span class="badge badge-{{ r.status }}">{{ r.status }}</span></td>
+      <td class="num">{{ r.cash_amount }}</td>
+      <td class="num">{{ r.drp_units }}</td>
+      <td class="num">{{ r.drp_price }}</td>
+      <td class="num">{{ r.units_held }}</td>
+      <td class="num {{ 'down' if r.db_units and r.db_units != r.units_held }}">{{ r.db_units or '—' }}</td>
+      <td class="notecell">{{ r.carry_note }}</td>
+      <td>
+        {% if r.status == 'new' %}
+        <form action="/imports-exports/statement/commit" method="post">
+          <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+          <input type="hidden" name="ticker" value="{{ r.ticker }}">
+          <input type="hidden" name="payment_date" value="{{ p.payment_date or '' }}">
+          <input type="hidden" name="net_amount" value="{{ r.cash_amount }}">
+          {% if r.drp_units != '0' %}
+          <input type="hidden" name="drp_units" value="{{ r.drp_units }}">
+          <input type="hidden" name="drp_price" value="{{ r.drp_price }}">
+          {% endif %}
+          <input type="hidden" name="note_extra" value="{{ r.carry_note }}">
+          <button type="submit">Save</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="note">Distributions are saved as the cash amount for the period; allotted
+units become a linked DRP parcel at the statement price (carry-forward balances are
+kept in the note). Rows with 0 allotted are cash-only — the balance stays in the plan.</p>
+
+<details><summary>Extracted text (first lines)</summary>
+<pre class="note">{{ p.text_sample }}</pre>
+</details>
+
+{% endblock %}

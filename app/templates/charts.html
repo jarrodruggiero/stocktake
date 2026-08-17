@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Charts — Stocktake{% endblock %}
+{% block content %}
+
+{# Charts is a spoke off the Portfolio page rather than a top-level
+   destination, so it says where it came from. The browser's Back button does
+   this too, but only for somebody who arrived that way — a bookmark or a
+   shared link lands here with no way onward. #}
+<a class="backlink" href="/"><button type="button" class="secondary">&larr; Portfolio</button></a>
+
+<div class="pagehead">
+  <h1>Charts</h1>
+  <div class="headactions">
+    <a href="/charts/build"><button type="button" class="primary">+ Add a chart</button></a>
+  </div>
+</div>
+
+<p class="note">Drag a card by its handle to rearrange it; Edit changes what it
+shows.</p>
+
+{% for b in broken %}
+<p class="panel error"><strong>{{ b.name }}</strong> can't be drawn: {{ b.why }}
+  — <a href="/charts/build?edit={{ b.id }}">fix it</a>.</p>
+{% endfor %}
+
+{% if excluded %}
+{# Says what is missing and that it fixes itself. The previous version spent
+   four lines explaining the mechanism, which is the over-defensive habit the
+   tone sweep exists to remove: nobody has to do anything here. #}
+<p class="note">Excludes {{ excluded | join(', ') }} — no exchange rate stored
+yet. The next price refresh fills it in.</p>
+{% endif %}
+
+<div class="chartgrid" id="chartgrid">
+  {% for c in charts %}
+  <div class="chartcard {{ 'wide' if c.width == 'full' }}" data-chart="{{ c.id }}">
+    <div class="cardhead">
+      {# Drag from the handle only: a card full of controls that also drags
+         makes clicking anything a gamble. #}
+      <span class="draghandle" title="Drag to move" aria-hidden="true">⠿</span>
+      <h2>{{ c.name }}</h2>
+      <a class="editlink" href="/charts/build?edit={{ c.id }}">Edit</a>
+    </div>
+    {# A table-only chart has nothing to plot: don't reserve canvas height for
+       an empty box. #}
+    {% if c.data.type in ('table', 'periods') %}
+    {# The table IS the chart here — no canvas, and nothing to fold away. #}
+    <div id="t-{{ c.id }}" class="charttable scroller"></div>
+    {% else %}
+    <div class="plot"><canvas id="c-{{ c.id }}"></canvas></div>
+    <details class="tableview"><summary>Table view</summary>
+      <div id="t-{{ c.id }}" class="charttable scroller"></div>
+    </details>
+    {% endif %}
+  </div>
+  {% else %}
+  {% if not broken %}
+  <p class="note">No charts yet. <a href="/charts/build">Add one</a> — you can
+  start from any of the defaults.</p>
+  {% endif %}
+  {% endfor %}
+</div>
+
+<script id="chart-data" type="application/json">{{ chart_json | tojson }}</script>
+<script src="/static/vendor/chart.umd.js?v={{ asset_v }}"></script>
+<script src="/static/charts.js?v={{ asset_v }}"></script>
+<script src="/static/chartgrid.js?v={{ asset_v }}"></script>
+
+{% endblock %}

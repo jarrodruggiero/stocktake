@@ -1,0 +1,189 @@
+# Alerting rules for a Stocktake install. See README.md in this directory
+# before using them — in particular for which rules need `metrics.enabled: true`
+# and which need a blackbox exporter.
+#
+# Plain Prometheus format: point `rule_files:` in prometheus.yml at this file.
+# For the Prometheus Operator / kube-prometheus-stack, use prometheusrule.yaml
+# instead — it wraps these same groups in a `PrometheusRule` resource.
+#
+# The thresholds are deliberately conservative. An alert that cries wolf gets
+# muted, and a muted alert is worse than no alert; every number below is
+# explained where it is not obvious.
+
+groups:
+  # ─────────────────────────────────────────────────────────────────────────
+  # The price feed. Requires `metrics.enabled: true` in the app's config.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: stocktake-feed
+    rules:
+      # The fast, precise signal: the feed ran and raised. Prices go stale from
+      # here, but this fires long before staleness is measurable.
+      #
+      # 36h, not 24h: the feed runs once a day, and a single missed run is
+      # normal enough (a provider hiccup, a restart at the wrong minute) that
+      # alerting on it would be noise. 36h means it has missed a scheduled run
+      # AND the 30-minute retries have been failing since.
+      - alert: StocktakePriceFeedFailing
+        expr: time() - stocktake_feed_last_success_seconds > 36 * 3600
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Portfolio price feed has not succeeded for {{ $value | humanizeDuration }}"
+          description: >-
+            The daily price fetch is erroring. Holdings are still correct but
+            they are being valued at stale closes. Check the app log for
+            "price feed run failed", and the dashboard's feed status panel for
+            the exception.
+
+      # The feed has never worked in this process's lifetime.
+      #
+      # NOTE: `absent()` is also true when Prometheus cannot scrape the app at
+      # all, so this fires for an app that is simply down — route it BELOW your
+      # availability alerts, or drop it if that duplication annoys you.
+      # DELETE this rule if you run with `price_feed.enabled: false`; it will
+      # otherwise fire forever and be correct to do so.
+      - alert: StocktakePriceFeedNeverSucceeded
+        expr: absent(stocktake_feed_last_success_seconds) == 1
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Portfolio price feed has not completed a run since startup"
+          description: >-
+            The feed runs once when the app starts, so six hours without a
+            success means either it is failing on every attempt or the app has
+            been unreachable for that long.
+
+      # The backstop, and the one that catches the failure mode nothing else
+      # sees: a feed that reports success while the provider quietly returns
+      # nothing. The app looks healthy and the numbers stop moving.
+      #
+      # 6 days. The arithmetic, for a market that trades Monday to Friday:
+      # the longest legitimate gap is a public holiday adjacent to a weekend —
+      # Easter (Friday and Monday closed) or Christmas — which leaves the most
+      # recent close about 5 days and 8 hours old just before the next run.
+      # 6 days clears every one of those and still fires within a week of a
+      # real breakage. Raise it if your market closes for longer.
+      - alert: StocktakePricesStale
+        expr: time() - stocktake_last_price_date_seconds > 6 * 24 * 3600
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Portfolio has no closing price newer than {{ $value | humanizeDuration }}"
+          description: >-
+            Prices have stopped arriving even though the feed is not reporting
+            an error. Every valuation on the dashboard is being computed from
+            the last close held. Check whether the price provider still returns
+            data for your symbols.
+
+      # Only meaningful if you hold anything in a currency other than your
+      # reporting one. Delete it if you do not — a single-currency portfolio
+      # never fetches FX and this would fire on day one.
+      #
+      # Worth having if you do: when a currency has no usable rate the app
+      # EXCLUDES that instrument from totals rather than valuing it 1:1, so a
+      # stale FX series shows up as holdings quietly missing from a total
+      # rather than as an error.
+      - alert: StocktakeFxRatesStale
+        expr: time() - stocktake_last_fx_date_seconds > 6 * 24 * 3600
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Portfolio has no FX rate newer than {{ $value | humanizeDuration }}"
+          description: >-
+            Foreign-currency holdings may be excluded from totals until rates
+            resume. The app flags them in the interface rather than valuing
+            them at 1:1, so the numbers are not wrong — they are incomplete.
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # The app itself. Requires `metrics.enabled: true`.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: stocktake-health
+    rules:
+      # Also true on a brand-new install that has not finished the setup
+      # wizard, because there genuinely is no database yet. That is not a false
+      # positive so much as an impatient one — silence it while you install.
+      - alert: StocktakeDatabaseUnreachable
+        expr: stocktake_database_ready == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Portfolio cannot reach its database"
+          description: >-
+            Either the setup wizard has not been finished, or the database has
+            gone away. Nothing can be recorded or read in this state.
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Availability. Requires a blackbox exporter — see README.md for the two
+  # probe jobs these expect, and rename the `job` labels to match yours.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: stocktake-availability
+    rules:
+      # An unauthenticated request must be refused. If it is answered, the
+      # login gate has broken open and the whole portfolio is readable by
+      # anyone who can reach the port — which is a worse day than the app being
+      # down, and the reason this is the one alert here marked critical.
+      - alert: StocktakeLoginGateOpen
+        expr: probe_http_status_code{job="stocktake-auth"} == 200
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Portfolio answered an unauthenticated request with 200"
+          description: >-
+            A request with no session cookie should get 401. A 200 means the
+            authentication middleware is not running. Take the app off the
+            network until you know why.
+
+      - alert: StocktakeUnreachable
+        expr: probe_success{job="stocktake-auth"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Portfolio is not answering probes"
+
+      - alert: StocktakeMetricsTargetDown
+        expr: up{job="stocktake"} == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus cannot scrape Stocktake's /metrics"
+          description: >-
+            Every rule in the stocktake-feed and stocktake-health groups is
+            blind while this is true.
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Kubernetes. Requires kube-state-metrics and the kubelet volume metrics.
+  # Nothing here is specific to this app except the label selectors — delete
+  # the group if your cluster already alerts on these generically.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: stocktake-kubernetes
+    rules:
+      - alert: StocktakeCrashLooping
+        expr: increase(kube_pod_container_status_restarts_total{namespace="stocktake"}[15m]) >= 3
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.pod }} is crash looping"
+
+      # The SQLite database lives on this volume. A full volume is not a
+      # degraded app — it is an app that cannot record a trade.
+      - alert: StocktakeVolumeAlmostFull
+        expr: >-
+          kubelet_volume_stats_available_bytes{namespace="stocktake"}
+            / kubelet_volume_stats_capacity_bytes{namespace="stocktake"} < 0.15
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Portfolio volume {{ $labels.persistentvolumeclaim }} is over 85% full"
+          description: >-
+            The database and any uploaded import templates live here. SQLite
+            fails writes on a full volume.

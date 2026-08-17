@@ -1,0 +1,74 @@
+"""The name and mark, in one place.
+
+Separate from `settings.app_name` on purpose, even though both now read
+"stocktake". They answer different questions and change at different times:
+`app_name` is the *storage* key — appkit derives the SQLite path from it, so
+changing it moves the database — while this is what a person reads on a page.
+Keeping them apart means a wording change ("Stocktake" → "Stocktake Pro")
+cannot quietly repoint a running installation at an empty file.
+"""
+
+from __future__ import annotations
+
+NAME = "Stocktake"
+
+TAGLINE = "Know what you hold, what it cost, and what the tax will be."
+
+# The geometry, and the ONLY copy of it. The mark once lived inline in
+# base.html, again in static/icon.svg and again as a PNG — three chances to
+# change two of them. `tools/render_brand.py` generates all of it from here and
+# tests/test_branding.py fails on any drift.
+#
+# Units: a 24-grid for the mark, matching every nav icon. The wordmark uses
+# embedded IBM Plex Sans Condensed SemiBold outlines.
+
+# Crates stacked one higher each column. The flag marks the accent crate.
+MARK_RECTS = (
+    (2.5, 15.5, False), (9.25, 15.5, False), (9.25, 9.0, False),
+    (16.0, 15.5, False), (16.0, 9.0, False), (16.0, 2.5, True),
+)
+
+WORDMARK_TYPEFACE = "IBM Plex Sans Condensed SemiBold"
+
+WORDMARK_VIEWBOX = "-12 -12 813 170"
+WORDMARK_WIDTH, WORDMARK_DEPTH = 789, 146
+
+# Lowercase IBM Plex Sans Condensed SemiBold, converted to paths so the
+# mark stays stable without loading a font at runtime. The offsets retain
+# the font's advances and kerning rather than replacing them with a grid.
+WORDMARK_LETTERS = (
+    (0, '<path d="M43.46 142.33L43.46 142.33Q30.85 142.33 21.34 137.77Q11.83 133.21 4.66 124.09L4.66 124.09L19.01 110.12Q23.86 116.91 29.88 120.41Q35.89 123.90 43.84 123.90L43.84 123.90Q58.59 123.90 58.59 111.48L58.59 111.48Q58.59 106.63 56.16 103.82Q53.74 101.01 47.92 100.04L47.92 100.04L38.41 98.29Q22.50 95.38 15.33 88.40Q8.15 81.41 8.15 68.03L8.15 68.03Q8.15 52.12 17.46 44.26Q26.77 36.40 43.84 36.40L43.84 36.40Q55.68 36.40 64.31 40.28Q72.94 44.16 79.35 51.73L79.35 51.73L65.57 65.50Q61.69 60.65 56.16 57.74Q50.63 54.83 43.84 54.83L43.84 54.83Q30.26 54.83 30.26 67.06L30.26 67.06Q30.26 72.10 32.98 74.72Q35.70 77.34 41.52 78.31L41.52 78.31L51.22 80.05Q67.12 82.96 74.01 89.85Q80.90 96.74 80.90 109.15L80.90 109.15Q80.90 124.87 71.20 133.60Q61.50 142.33 43.46 142.33Z"/>'),
+    (86.52, '<path d="M57.81 140L40.74 140Q28.52 140 23.09 134.57Q17.65 129.14 17.65 117.30L17.65 117.30L17.65 57.55L4.27 57.55L4.27 38.73L11.25 38.73Q16.30 38.73 18.14 36.40Q19.98 34.08 19.98 29.03L19.98 29.03L19.98 11.18L41.13 11.18L41.13 38.73L59.36 38.73L59.36 57.55L41.13 57.55L41.13 121.18L57.81 121.18L57.81 140Z"/>'),
+    (150.74, '<path d="M49.08 142.33L49.08 142.33Q28.91 142.33 17.75 129.52Q6.60 116.72 6.60 89.37L6.60 89.37Q6.60 62.01 17.75 49.21Q28.91 36.40 49.08 36.40L49.08 36.40Q69.26 36.40 80.41 49.21Q91.57 62.01 91.57 89.37L91.57 89.37Q91.57 116.72 80.41 129.52Q69.26 142.33 49.08 142.33ZM49.08 123.32L49.08 123.32Q66.93 123.32 66.93 102.36L66.93 102.36L66.93 76.37Q66.93 55.42 49.08 55.42L49.08 55.42Q31.23 55.42 31.23 76.37L31.23 76.37L31.23 102.36Q31.23 123.32 49.08 123.32Z"/>'),
+    (248.9, '<path d="M48.69 142.33L48.69 142.33Q28.13 142.33 17.36 129.52Q6.60 116.72 6.60 89.37L6.60 89.37Q6.60 62.01 17.36 49.21Q28.13 36.40 48.69 36.40L48.69 36.40Q63.63 36.40 72.46 43.19Q81.29 49.98 85.17 61.82L85.17 61.82L65.96 70.35Q64.41 62.98 60.43 59.20Q56.45 55.42 48.69 55.42L48.69 55.42Q31.23 55.42 31.23 76.37L31.23 76.37L31.23 102.36Q31.23 123.32 48.69 123.32L48.69 123.32Q56.84 123.32 61.11 119.44Q65.38 115.56 67.51 107.41L67.51 107.41L85.75 116.14Q76.82 142.33 48.69 142.33Z"/>'),
+    (338.92, '<path d="M12.80 140L12.80-3.56L36.28-3.56L36.28 63.37L34.73 84.32L37.44 84.32L49.28 65.70L69.45 38.73L96.03 38.73L64.41 78.50L97.78 140L71.39 140L48.11 93.63L36.28 108.38L36.28 140L12.80 140Z"/>'),
+    (436.31, '<path d="M57.81 140L40.74 140Q28.52 140 23.09 134.57Q17.65 129.14 17.65 117.30L17.65 117.30L17.65 57.55L4.27 57.55L4.27 38.73L11.25 38.73Q16.30 38.73 18.14 36.40Q19.98 34.08 19.98 29.03L19.98 29.03L19.98 11.18L41.13 11.18L41.13 38.73L59.36 38.73L59.36 57.55L41.13 57.55L41.13 121.18L57.81 121.18L57.81 140Z"/>'),
+    (501.1, '<path d="M92.93 140L78.76 140Q63.05 140 62.27 122.73L62.27 122.73L59.95 122.73Q58.01 132.05 51.22 137.19Q44.43 142.33 34.34 142.33L34.34 142.33Q20.37 142.33 13.39 134.57Q6.40 126.81 6.40 112.84L6.40 112.84Q6.40 96.93 16.30 89.17Q26.19 81.41 44.81 81.41L44.81 81.41L60.53 81.41L60.53 72.68Q60.53 63.76 56.75 59.49Q52.96 55.22 44.23 55.22L44.23 55.22Q37.05 55.22 32.20 58.62Q27.35 62.01 23.67 68.22L23.67 68.22L9.89 55.80Q15.52 47.07 24.15 41.74Q32.79 36.40 46.17 36.40L46.17 36.40Q84.00 36.40 84.00 72.10L84.00 72.10L84.00 121.18L92.93 121.18L92.93 140ZM43.26 125.06L43.26 125.06Q50.44 125.06 55.48 120.89Q60.53 116.72 60.53 109.35L60.53 109.35L60.53 95.96L46.37 95.96Q30.07 95.96 30.07 108.57L30.07 108.57L30.07 112.84Q30.07 119.24 33.56 122.15Q37.05 125.06 43.26 125.06Z"/>'),
+    (599.46, '<path d="M12.80 140L12.80-3.56L36.28-3.56L36.28 63.37L34.73 84.32L37.44 84.32L49.28 65.70L69.45 38.73L96.03 38.73L64.41 78.50L97.78 140L71.39 140L48.11 93.63L36.28 108.38L36.28 140L12.80 140Z"/>'),
+    (697.04, '<path d="M51.02 142.33L51.02 142.33Q41.13 142.33 32.88 139.13Q24.64 135.93 18.82 129.43Q13.00 122.93 9.80 112.94Q6.60 102.95 6.60 89.37L6.60 89.37Q6.60 62.01 17.56 49.21Q28.52 36.40 48.89 36.40L48.89 36.40Q69.26 36.40 80.22 49.21Q91.18 62.01 91.18 89.37L91.18 89.37L91.18 94.99L31.23 94.99L31.23 101.59Q31.23 111.68 36.86 117.50Q42.49 123.32 52.38 123.32L52.38 123.32Q60.72 123.32 66.45 119.73Q72.17 116.14 76.24 109.35L76.24 109.35L89.05 122.73Q83.42 131.66 73.91 136.99Q64.41 142.33 51.02 142.33ZM48.89 54.45L48.89 54.45Q31.23 54.45 31.23 75.40L31.23 75.40L31.23 80.44L66.54 80.44L66.54 75.40Q66.54 54.45 48.89 54.45Z"/>'),
+)
+
+
+# Standalone artefacts (favicon, README banner) render outside the page and
+# cannot read its custom properties, so they carry their own colours.
+INK_LIGHT, INK_DARK = "#1a1d29", "#e7eaf4"
+ACCENT_LIGHT, ACCENT_DARK = "#4338ca", "#8b83f0"
+
+
+def mark_svg(css_class: str = "brandmark") -> str:
+    """The mark, taking its colour from the page."""
+    rects = "".join(
+        f'<rect{" class=\'top\'" if accent else ""} x="{x}" y="{y}"'
+        f' width="5.5" height="5.5" rx="1"/>'
+        for x, y, accent in MARK_RECTS
+    )
+    return (f'<svg viewBox="0 0 24 24" class="{css_class}" aria-hidden="true">'
+            f"{rects}</svg>")
+
+
+def wordmark_svg(css_class: str = "brandword") -> str:
+    """The word, as paths."""
+    body = "".join(f'<g transform="translate({x} 0)">{g}</g>'
+                   for x, g in WORDMARK_LETTERS)
+    return (f'<svg viewBox="{WORDMARK_VIEWBOX}" class="{css_class}" '
+            f'aria-hidden="true">{body}</svg>')
