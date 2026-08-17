@@ -43,9 +43,9 @@ everywhere, at once.
 ## Quick start
 
 ```sh
-docker run -d --name portfolio -p 8000:8000 \
-  -v portfolio-config:/config \
-  -v portfolio-data:/data \
+docker run -d --name stocktake -p 8000:8000 \
+  -v stocktake-config:/config \
+  -v stocktake-data:/data \
   -e TZ=Australia/Melbourne \
   <image>
 ```
