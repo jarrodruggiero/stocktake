@@ -16,7 +16,7 @@
 # moving target — the same tag is a different image next month — and a build
 # that cannot be reproduced cannot be audited after an incident. Bumping these
 # is a deliberate commit, which is the point.
-FROM python@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS base
+FROM python@sha256:4fad23465a06cc5149a541fbec6f87e234a64dc0550f6bfdd2d290d8f03240df AS base
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 # uv, also pinned by digest.
