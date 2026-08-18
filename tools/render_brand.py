@@ -21,10 +21,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import branding  # noqa: E402
+from tools.browser import find_chrome  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-CHROME = ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-          "/usr/bin/google-chrome", "/usr/bin/chromium")
 
 
 def partial() -> str:
@@ -82,10 +81,10 @@ def banner_html(dark: bool) -> str:
 
 
 def _chrome() -> str:
-    for c in CHROME:
-        if Path(c).exists():
-            return c
-    raise SystemExit("headless Chrome not found — PNGs not regenerated")
+    found = find_chrome()
+    if not found:
+        raise SystemExit("headless Chrome not found — PNGs not regenerated")
+    return found
 
 
 def _shoot(html: str, out: Path, width: int, height: int) -> None:

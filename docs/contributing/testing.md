@@ -3,7 +3,8 @@
 ```sh
 pytest tests/ -q                    # SQLite, ~50s
 pytest tests/ -q --cov              # enforces the coverage gate
-ruff check app tests
+pytest tests/ -m visual             # layout, in a real browser, ~2.5min
+ruff check app appkit tests tools
 ```
 
 ## Write the test first
@@ -159,3 +160,30 @@ It has repeatedly caught tests that could not fail. Most recently, a test for
 the session absolute cap passed with the cap removed, because another mechanism
 was masking it — the real hole only showed up when the check was deleted and
 nothing complained.
+
+## The visual tests
+
+`tests/test_visual.py` renders every page through `tools/screenshot.py` and
+measures it in headless Chrome at 1400px and 412px, failing on four faults: the
+document scrolling sideways, an element past the viewport edge, text outside its
+own box, and a popup opening off screen.
+
+They are **deselected by default** — a full pass drives a browser over 28 pages
+twice and takes about two and a half minutes, which is not what `pytest tests`
+should cost. Select them with `-m visual`; CI runs them as their own job.
+
+Two things to know before changing them:
+
+* **Add a new page to `PAGES`** when you add one to `screenshot.py`.
+  `test_every_rendered_page_is_listed` fails if you forget, which is deliberate:
+  the alternative is a page that renders, is never measured, and nobody notices.
+* **The width comes from an iframe, not from `--window-size`.** Headless Chrome
+  silently clamps its window to 500px, so a check that trusts the flag measures
+  a 500px viewport while claiming to measure a phone. Everything between 412 and
+  500 — the width real phones report — went untested for as long as this did
+  that.
+
+An element crossing the viewport edge is only a fault if nothing between it and
+the page scrolls. `.tablewrap` exists precisely so a twelve-column table can
+scroll on its own, and a check that cannot tell that from a bug gets switched
+off, so the probe walks ancestors before reporting.

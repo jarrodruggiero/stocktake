@@ -13,16 +13,19 @@ Run them from the repository root.
 | --- | --- |
 | `verify_migration.py` | "Every migration is verified against a **populated** predecessor, including downgrade" — which the test suite does not cover, because it builds every schema from nothing at head |
 | `headline_numbers.py` | "Numbers are sacred" — the before/after comparison required of any change touching `queries.py`, `fyreport.py`, `charts_build.py` or `exports.py` |
-| `screenshot.py` | Rendering the pages and *looking* at them, which is the only thing that catches layout |
-| `visual_check.py` | The same pages at desktop **and** mobile width, with the failure stated as a number — every width-specific bug so far rendered perfectly at 1400px |
+| `screenshot.py` | Rendering the pages and *looking* at them, which is the only thing that catches what a measurement cannot |
 
 ```sh
 uv run python tools/verify_migration.py 0002        # sqlite
 PG=1 uv run python tools/verify_migration.py 0002   # postgres
 
 uv run python tools/screenshot.py                   # -> shots/
-uv run python tools/visual_check.py                 # then check them
 ```
+
+Measuring those pages is no longer a tool: it is `tests/test_visual.py`, which
+renders them itself and checks both widths. `screenshot.py` stays because
+looking at a page catches what no assertion was written for. `browser.py` is
+where both of them find Chrome.
 
 **The one that will catch you:** compare numbers with the price feed **off**
 (`APP_PRICE_FEED__ENABLED=false`) when the "after" side is a test container.

@@ -132,6 +132,41 @@ jobs:
           docker build --target test -t stocktake:ci-test .
           docker run --rm stocktake:ci-test
 
+  # Layout, measured in a real browser. Its own job because it takes minutes
+  # rather than seconds, and because a failure here means something different
+  # from a failing unit test: the code works, the page is unreadable.
+  #
+  # ubuntu-latest ships Google Chrome, so nothing is installed. The tests skip
+  # themselves on a machine without one, which is what makes the same command
+  # safe to run inside the image, where there is no browser.
+  visual:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install the project and its dev tools
+        run: uv sync --dev
+
+      - name: Confirm a browser is actually present
+        # Without this a missing Chrome would skip all 57 tests and report
+        # green — the job would pass by doing nothing, which is the failure
+        # mode a visual check can least afford.
+        run: |
+          uv run python -c "
+          from tools.browser import find_chrome
+          found = find_chrome()
+          print(found or 'NONE')
+          raise SystemExit(0 if found else 'no browser on the runner')
+          "
+
+      - name: Every page at both widths
+        run: uv run pytest tests -m visual -q
+
   # The development channel. `edge` moves with main; releases are tagged and
   # publish `latest` (see release.yml). Two channels rather than two long-lived
   # branches: a `dev` branch would be just as public as this one, so it would
@@ -142,7 +177,7 @@ jobs:
   # always names something that passed the full suite.
   edge:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [lint, test, image]
+    needs: [lint, test, image, visual]
     runs-on: ubuntu-latest
     permissions:
       contents: read

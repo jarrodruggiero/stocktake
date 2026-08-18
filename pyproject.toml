@@ -134,7 +134,14 @@ markers = [
     # test_memory.py). A few seconds each, and they cannot be done in-process:
     # by then something else has already imported the module under test.
     "slow: spawns a subprocess; deselect with -m 'not slow'",
+    # Layout checks that drive a real headless Chrome over every page twice.
+    # Minutes, not seconds, so they are deselected by default below.
+    "visual: drives a browser; select with -m visual",
 ]
+# Visual tests are opt-in: `pytest tests` should stay a seconds-long loop. CI
+# runs them as their own job with `-m visual`, which overrides this because
+# addopts are prepended and the last -m on the command line wins.
+addopts = ["-m", "not visual"]
 filterwarnings = [
     # yfinance/pandas emit deprecation noise we neither cause nor can fix here.
     "ignore::DeprecationWarning:yfinance.*",
