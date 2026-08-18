@@ -76,7 +76,11 @@ and `test_a_code_cannot_also_answer_the_2fa_challenge_it_led_to` went red" is.
 
 Run `pytest tests/ -q` **and** the Postgres variant before claiming a change
 works — see `docs/contributing/testing.md` for the command. Run
-`ruff check app tests`.
+`ruff check app appkit tests tools`.
+
+If you changed a template or a stylesheet, also run `pytest tests/ -m visual`.
+Those are deselected by default and drive a real browser over every page at
+desktop and phone width; a layout fault is invisible to every other test here.
 
 When you make a non-obvious decision, write the reason in a comment. Not what
 the code does — why it does it that way, and what happens if someone changes it.

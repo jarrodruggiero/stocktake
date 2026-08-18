@@ -33,11 +33,11 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: portfolio_test
+          POSTGRES_DB: stocktake_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d portfolio_test"
+          --health-cmd "pg_isready -U postgres -d stocktake_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
@@ -50,12 +50,12 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --dev
-      - run: uv run ruff check app appkit tests
+      - run: uv run ruff check app appkit tests tools
       - env:
-          PORTFOLIO_TEST_DB: ${{ matrix.backend }}
+          STOCKTAKE_TEST_DB: ${{ matrix.backend }}
           PGHOST: localhost
           PGPORT: 5432
-          PGDATABASE: portfolio_test
+          PGDATABASE: stocktake_test
           PGUSER: postgres
           PGPASSWORD: postgres
         run: uv run pytest tests -q

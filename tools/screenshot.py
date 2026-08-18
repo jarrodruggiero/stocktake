@@ -46,7 +46,7 @@ WORK = Path(tempfile.mkdtemp(prefix="shot-"))
 (WORK / "data").mkdir()
 for name in [k for k in os.environ if k.startswith("APP_")]:
     del os.environ[name]
-os.environ.pop("PORTFOLIO_TEST_DB", None)
+os.environ.pop("STOCKTAKE_TEST_DB", None)
 os.environ["APP_CONFIG_FILE"] = str(WORK / "config" / "config.yaml")
 sys.path.insert(0, str(APP_ROOT))
 

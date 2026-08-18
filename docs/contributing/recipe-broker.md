@@ -17,7 +17,7 @@ common case — you add a block to `config.yaml` and you are done.
 
 !!! tip "Start with the test"
     Even on the no-code path: drop your **redacted** sample into
-    `tests/formats/samples/` with its expected rows *first*, and run
+    `app/formats/samples/` with its expected rows *first*, and run
     `pytest tests/test_format_samples.py -q`. It will fail saying it cannot
     parse the file — which is the specification for the format block you are
     about to write, in the app's own words. See

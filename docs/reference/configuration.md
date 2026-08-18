@@ -39,7 +39,7 @@ default — uncomment what you want to change.
 
 ```yaml
 # ─────────────────────────────────────────────────────────────────────────────
-#  Portfolio — configuration
+#  Stocktake — configuration
 #
 #  Every option the application understands is listed here. Options that are
 #  commented out are showing their DEFAULT: uncomment one only to change it.
@@ -215,7 +215,7 @@ auth:
   # webauthn:
   #   enabled: false
   #   rp_id: stocktake.example.com
-  #   rp_name: Portfolio
+  #   rp_name: Stocktake
   #   origins:
   #     - https://stocktake.example.com
 

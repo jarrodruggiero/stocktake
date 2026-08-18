@@ -23,7 +23,7 @@ names the files to touch and the test to write.
       Which mutation? _(one line — "removed the X check and test_Y failed")_
 - [ ] Tests pass on SQLite — `pytest tests/ -q`
 - [ ] Tests pass on **Postgres** — see `docs/contributing/testing.md`
-- [ ] `ruff check app tests` is clean
+- [ ] `ruff check app appkit tests tools` is clean
 - [ ] Non-obvious decisions carry a comment saying *why*, not what
 - [ ] **No personal data.** Fictional tickers, redacted fixtures, no account
       numbers, names or addresses — including in test files and screenshots

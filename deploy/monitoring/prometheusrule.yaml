@@ -40,7 +40,7 @@ spec:
       labels:
         severity: warning
       annotations:
-        summary: "Portfolio price feed has not succeeded for {{ $value | humanizeDuration }}"
+        summary: "Stocktake price feed has not succeeded for {{ $value | humanizeDuration }}"
         description: >-
           The daily price fetch is erroring. Holdings are still correct but
           they are being valued at stale closes. Check the app log for
@@ -60,7 +60,7 @@ spec:
       labels:
         severity: warning
       annotations:
-        summary: "Portfolio price feed has not completed a run since startup"
+        summary: "Stocktake price feed has not completed a run since startup"
         description: >-
           The feed runs once when the app starts, so six hours without a
           success means either it is failing on every attempt or the app has
@@ -82,7 +82,7 @@ spec:
       labels:
         severity: warning
       annotations:
-        summary: "Portfolio has no closing price newer than {{ $value | humanizeDuration }}"
+        summary: "Stocktake has no closing price newer than {{ $value | humanizeDuration }}"
         description: >-
           Prices have stopped arriving even though the feed is not reporting
           an error. Every valuation on the dashboard is being computed from
@@ -103,7 +103,7 @@ spec:
       labels:
         severity: warning
       annotations:
-        summary: "Portfolio has no FX rate newer than {{ $value | humanizeDuration }}"
+        summary: "Stocktake has no FX rate newer than {{ $value | humanizeDuration }}"
         description: >-
           Foreign-currency holdings may be excluded from totals until rates
           resume. The app flags them in the interface rather than valuing
@@ -123,7 +123,7 @@ spec:
       labels:
         severity: critical
       annotations:
-        summary: "Portfolio cannot reach its database"
+        summary: "Stocktake cannot reach its database"
         description: >-
           Either the setup wizard has not been finished, or the database has
           gone away. Nothing can be recorded or read in this state.
@@ -144,7 +144,7 @@ spec:
       labels:
         severity: critical
       annotations:
-        summary: "Portfolio answered an unauthenticated request with 200"
+        summary: "Stocktake answered an unauthenticated request with 200"
         description: >-
           A request with no session cookie should get 401. A 200 means the
           authentication middleware is not running. Take the app off the
@@ -156,7 +156,7 @@ spec:
       labels:
         severity: critical
       annotations:
-        summary: "Portfolio is not answering probes"
+        summary: "Stocktake is not answering probes"
 
     - alert: StocktakeMetricsTargetDown
       expr: up{job="stocktake"} == 0
@@ -194,7 +194,7 @@ spec:
       labels:
         severity: critical
       annotations:
-        summary: "Portfolio volume {{ $labels.persistentvolumeclaim }} is over 85% full"
+        summary: "Stocktake volume {{ $labels.persistentvolumeclaim }} is over 85% full"
         description: >-
           The database and any uploaded import templates live here. SQLite
           fails writes on a full volume.

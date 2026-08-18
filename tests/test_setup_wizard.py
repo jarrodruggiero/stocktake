@@ -202,14 +202,14 @@ def test_a_successful_postgres_probe_reports_the_server_version():
     """
     import os
 
-    if os.environ.get("PORTFOLIO_TEST_DB") != "postgres":
+    if os.environ.get("STOCKTAKE_TEST_DB") != "postgres":
         pytest.skip("needs the Postgres backend")
 
     result = database.probe(DatabaseSettings(
         type="postgres",
         host=os.environ.get("PGHOST", "localhost"),
         port=int(os.environ.get("PGPORT", "5432")),
-        name=os.environ.get("PGDATABASE", "portfolio_test"),
+        name=os.environ.get("PGDATABASE", "stocktake_test"),
         user=os.environ.get("PGUSER", "postgres"),
         password=os.environ.get("PGPASSWORD", "postgres")))
 
@@ -1374,7 +1374,7 @@ def test_a_completely_unconfigured_install_boots_into_the_wizard(tmp_path):
         import os, sys
         for name in [k for k in os.environ if k.startswith("APP_")]:
             del os.environ[name]
-        os.environ.pop("PORTFOLIO_TEST_DB", None)
+        os.environ.pop("STOCKTAKE_TEST_DB", None)
         os.environ["APP_CONFIG_FILE"] = {str(tmp_path / "config.yaml")!r}
         sys.path[:0] = [{str(APP_ROOT)!r},
                         {str(APP_ROOT.parent.parent / "libs" / "appkit")!r}]
@@ -1438,7 +1438,7 @@ def test_the_database_step_probes_before_it_connects_and_connects_before_it_writ
         import os, sys
         for name in [k for k in os.environ if k.startswith("APP_")]:
             del os.environ[name]
-        os.environ.pop("PORTFOLIO_TEST_DB", None)
+        os.environ.pop("STOCKTAKE_TEST_DB", None)
         os.environ["APP_CONFIG_FILE"] = {str(tmp_path / "config.yaml")!r}
         sys.path[:0] = [{str(APP_ROOT)!r},
                         {str(APP_ROOT.parent.parent / "libs" / "appkit")!r}]

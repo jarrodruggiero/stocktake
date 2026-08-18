@@ -1,4 +1,4 @@
-"""Portfolio data model.
+"""Stocktake data model.
 
 Design:
   * `trade` is the single source of truth — buys, sells and DRP allocations for

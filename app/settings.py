@@ -1,4 +1,4 @@
-"""Portfolio app settings: shared base + this app's own config keys."""
+"""Stocktake settings: shared base + this app's own config keys."""
 
 from __future__ import annotations
 

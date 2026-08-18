@@ -123,14 +123,7 @@ it.
 
 ## Getting it into an app store
 
-Two of these have open catalogues that accept community submissions:
-
-- **Unraid Community Applications** — see `deploy/nas/unraid/README.md`. Needs the
-  public repository, an OSI licence, and a resolving icon URL.
-- **CasaOS AppStore** — fork `IceWhaleTech/CasaOS-AppStore`, add
-  `Apps/Portfolio/` with the manifest from `deploy/nas/casaos/`, an icon, a
-  thumbnail and a screenshot, then open a pull request.
-
-Both are blocked on the same thing: the public repository and the branding
-assets. TrueNAS, Synology and QNAP have no equivalent third-party catalogue —
-their users install from a Compose file, which is what the page above is for.
+Unraid Community Applications and the CasaOS AppStore both accept community
+submissions, and `deploy/nas/` holds a ready manifest for each. TrueNAS,
+Synology and QNAP have no equivalent third-party catalogue — their users install
+from a Compose file, which is what the rest of this page is for.

@@ -8,7 +8,7 @@
 # "Install a customized app", then paste this in.
 #
 # To submit it: fork IceWhaleTech/CasaOS-AppStore, add
-# Apps/Portfolio/docker-compose.yml plus icon.svg, thumbnail.png and at least
+# Apps/Stocktake/docker-compose.yml plus icon.svg, thumbnail.png and at least
 # one screenshot, and open a pull request. The `icon`/`screenshot_link` URLs
 # below must resolve before that will be accepted — they land with the branding
 # work.
@@ -82,7 +82,7 @@ x-casaos:
     - https://raw.githubusercontent.com/jarrodruggiero/stocktake/main/docs/assets/screenshot-dashboard.png
   thumbnail: https://raw.githubusercontent.com/jarrodruggiero/stocktake/main/docs/assets/icon.png
   title:
-    en_US: Portfolio
+    en_US: Stocktake
   tagline:
     en_US: Self-hosted share portfolio tracker for Australian investors
   description:

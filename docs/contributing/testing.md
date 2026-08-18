@@ -73,10 +73,10 @@ worth nothing, so the suite takes either:
 
 ```sh
 docker run -d --name pf-pg -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=portfolio_test -p 55432:5432 postgres:16-alpine
+  -e POSTGRES_DB=stocktake_test -p 55432:5432 postgres:16-alpine
 
-PORTFOLIO_TEST_DB=postgres PGHOST=localhost PGPORT=55432 \
-  PGDATABASE=portfolio_test PGUSER=postgres PGPASSWORD=postgres \
+STOCKTAKE_TEST_DB=postgres PGHOST=localhost PGPORT=55432 \
+  PGDATABASE=stocktake_test PGUSER=postgres PGPASSWORD=postgres \
   pytest tests/ -q
 ```
 
@@ -103,9 +103,10 @@ copied per test. `Base.metadata.create_all` would test a schema production
 never has — and it would not catch a migration that fails on a table with data
 in it.
 
-If you add a migration, also run it against a **populated** database by hand.
-Every migration in this project was verified that way, including the downgrade;
-"it works on an empty database" has never been the interesting case.
+If you add a migration, also run it against a **populated** database:
+`tools/verify_migration.py <revision>` walks the path a real deployment takes —
+stop at the predecessor, put rows in, upgrade, downgrade, re-upgrade — on either
+backend. "It works on an empty database" has never been the interesting case.
 
 ## Never use a real holding as an example
 

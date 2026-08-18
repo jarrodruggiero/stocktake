@@ -19,8 +19,8 @@
 **Backend.** SQLite by default, because that is what the app ships on. It also
 claims to run on Postgres, and an untested claim is worth nothing:
 
-    PORTFOLIO_TEST_DB=postgres PGHOST=localhost PGPORT=5432 \\
-    PGDATABASE=portfolio_test PGUSER=postgres PGPASSWORD=postgres \\
+    STOCKTAKE_TEST_DB=postgres PGHOST=localhost PGPORT=5432 \\
+    PGDATABASE=stocktake_test PGUSER=postgres PGPASSWORD=postgres \\
     pytest tests/
 
 Isolation differs by necessity — SQLite copies a migrated template file per
@@ -43,9 +43,9 @@ TESTS_DIR = Path(__file__).parent
 APP_ROOT = TESTS_DIR.parent
 _TMP_ROOT = Path(tempfile.mkdtemp(prefix="portfolio-tests-"))
 
-BACKEND = os.environ.get("PORTFOLIO_TEST_DB", "sqlite").lower()
+BACKEND = os.environ.get("STOCKTAKE_TEST_DB", "sqlite").lower()
 if BACKEND not in ("sqlite", "postgres"):
-    raise RuntimeError(f"PORTFOLIO_TEST_DB must be sqlite or postgres, got {BACKEND!r}")
+    raise RuntimeError(f"STOCKTAKE_TEST_DB must be sqlite or postgres, got {BACKEND!r}")
 
 os.environ["APP_CONFIG_FILE"] = str(TESTS_DIR / "config.test.yaml")
 if BACKEND == "sqlite":
@@ -56,7 +56,7 @@ else:
     os.environ["APP_DATABASE__TYPE"] = "postgres"
     os.environ["APP_DATABASE__HOST"] = os.environ.get("PGHOST", "localhost")
     os.environ["APP_DATABASE__PORT"] = os.environ.get("PGPORT", "5432")
-    os.environ["APP_DATABASE__NAME"] = os.environ.get("PGDATABASE", "portfolio_test")
+    os.environ["APP_DATABASE__NAME"] = os.environ.get("PGDATABASE", "stocktake_test")
     os.environ["APP_DATABASE__USER"] = os.environ.get("PGUSER", "postgres")
     os.environ["APP_DATABASE__PASSWORD"] = os.environ.get("PGPASSWORD", "postgres")
 
