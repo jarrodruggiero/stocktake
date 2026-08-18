@@ -19,6 +19,4 @@ __pycache__/
 # Rendered pages from tools/screenshot.py — output, not source.
 shots/
 
-# tools/codeshape.py's snapshot — a local before/after marker, not a fact
 # about the project.
-tools/codeshape.json

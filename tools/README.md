@@ -45,17 +45,5 @@ The wordmark's letter offsets are the typeface's own advances and kerning, so
 there is nothing to solve: spacing questions are answered by re-exporting from
 the font, not by fitting a model to the outlines.
 
-## Working on the source itself
-
-`codeshape.py` fingerprints `app`, `appkit`, `tests` and `tools` with comments
-and docstrings stripped, so an edit that claims to touch only prose can be
-checked rather than hoped for. It caught a 531-line duplicated region that the
-suite also caught — but only because that region happened to be executed.
-
-```sh
-uv run python tools/codeshape.py save   # ...then edit, then:
-uv run python tools/codeshape.py check
-```
-
 See `docs/contributing/style.md` for what earns a comment, and
 `docs/contributing/decisions.md` for where the long reasoning goes instead.
