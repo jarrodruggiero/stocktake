@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """Render every page at a desktop AND a mobile width, and fail on layout faults.
 
-    ../../.venv/bin/python tools/screenshot.py     # writes shots/*.html first
-    ../../.venv/bin/python tools/visual_check.py   # then check them
+    uv run python tools/screenshot.py     # writes shots/*.html first
+    uv run python tools/visual_check.py   # then check them
 
 **Why this exists.** Every layout bug so far was found by a person looking at a
 page, and the ones that took longest were the ones that only exist at one

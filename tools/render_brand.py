@@ -2,7 +2,7 @@
 
 Run after changing the geometry:
 
-    ../../.venv/bin/python tools/render_brand.py
+    uv run python tools/render_brand.py
 
 Writes the Jinja partial the app includes, the favicon, and the README banners.
 `tests/test_branding.py` re-runs this in memory and fails if anything on disk

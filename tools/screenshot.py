@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Render the app's pages to standalone HTML, for looking at.
 
-    ../../.venv/bin/python tools/screenshot.py            # writes ./shots/*.html
+    uv run python tools/screenshot.py            # writes ./shots/*.html
 
     # then, to actually see one:
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \\

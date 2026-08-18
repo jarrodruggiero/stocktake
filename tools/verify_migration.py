@@ -1,7 +1,7 @@
 """Verify a migration against a POPULATED predecessor, on either backend.
 
-    ./tools/verify_migration.py 0014            # sqlite
-    PG=1 ./tools/verify_migration.py 0014       # postgres
+    ./tools/verify_migration.py 0002            # sqlite
+    PG=1 ./tools/verify_migration.py 0002       # postgres
 
 Every migration in this project gets this before it ships, and the reason is
 that a green test suite does not cover it: the suite builds every schema from
@@ -11,7 +11,7 @@ predecessor, put data in, upgrade, check the data survived and the new columns
 behave, downgrade, re-upgrade.
 
 The generic checks below catch the usual failures. **Anything specific to the
-migration under test still needs adding by hand** — 0014's backfill, for
+migration under test still needs adding by hand** — a backfill, for
 instance, had to be checked for giving every row a *distinct* UUID, because the
 tempting one-line version gives them all the same one and that would make every
 account the same person to any app federating with this one. Generic checks
@@ -37,8 +37,8 @@ from sqlalchemy import create_engine, inspect, text  # noqa: E402
 
 SCRIPTS = str(APP_ROOT / "app" / "migrations")
 
-# A user row that satisfies every NOT NULL as at 0014. Extend it when a
-# migration adds one — that is the usual reason this script suddenly fails on
+# A user row that satisfies every NOT NULL in the current schema. Extend it when
+# a migration adds one — that is the usual reason this script suddenly fails on
 # the INSERT rather than on a check.
 USER_INSERT = (
     'insert into "user" (id, email, name, password_hash, is_admin,'
@@ -84,15 +84,19 @@ def new_columns(engine_before: set[str], engine_after: set[str]) -> set[str]:
 
 
 def extra_checks(engine, target: str) -> None:
-    """Per-migration assertions. Add to this rather than trusting the generic
-    ones — they cannot know what the migration was *for*."""
-    if target == "0014":
-        import uuid
-        with engine.begin() as conn:
-            ids = [r[0] for r in conn.execute(text('select public_id from "user"'))]
-        check("every public_id is distinct (not one value copied across)",
-              len(set(ids)) == len(ids))
-        check("all v4 UUIDs", all(uuid.UUID(i).version == 4 for i in ids))
+    """Per-migration assertions, keyed on the revision under test.
+
+    Add to this rather than trusting the generic ones — they see that a column
+    arrived, never what the migration was *for*. A migration that backfills a
+    value is the case they cannot cover: the column is present and non-null
+    either way, so only a check written against that migration's intent can
+    tell a correct backfill from one that wrote the same value to every row.
+
+        if target == "0002":
+            with engine.begin() as conn:
+                ids = [r[0] for r in conn.execute(text('select ... from ...'))]
+            check("every value is distinct", len(set(ids)) == len(ids))
+    """
 
 
 def run(url: str, dialect: str, target: str) -> None:
@@ -112,14 +116,9 @@ def run(url: str, dialect: str, target: str) -> None:
     with engine.begin() as conn:
         import uuid as _u
         for i in range(1, 4):
-            params = {"id": i, "email": f"u{i}@example.test", "name": f"u{i}",
-                      "admin": i == 1, "public_id": str(_u.uuid4())}
-            statement = USER_INSERT
-            if "public_id" not in before_user:
-                statement = (statement.replace(", public_id)", ")")
-                             .replace(", :public_id)", ")"))
-                params.pop("public_id")
-            conn.execute(text(statement), params)
+            conn.execute(text(USER_INSERT), {
+                "id": i, "email": f"u{i}@example.test", "name": f"u{i}",
+                "admin": i == 1, "public_id": str(_u.uuid4())})
     with engine.begin() as conn:
         check("rows inserted at the predecessor",
               conn.execute(text('select count(*) from "user"')).scalar() == 3)

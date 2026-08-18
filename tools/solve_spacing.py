@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 """Solve the wordmark's letter offsets by measuring, instead of by eye.
 
-    ../../.venv/bin/python tools/solve_spacing.py            # check stocktake
-    ../../.venv/bin/python tools/solve_spacing.py --word dues
+    uv run python tools/solve_spacing.py            # check stocktake
+    uv run python tools/solve_spacing.py --word ledger
 
 **Why this is in the repo.** Optical spacing is not something to eyeball, and
 this has already had to be rebuilt from scratch twice — once for the wordmark
-itself and once to space the sibling apps'. Any change to a letter width needs
+itself and once for a second one. Any change to a letter width needs
 it again.
 
 ## What it does

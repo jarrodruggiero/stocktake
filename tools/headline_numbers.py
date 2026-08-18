@@ -1,41 +1,41 @@
 #!/usr/bin/env python
 """Print the app's headline numbers, using the app's own query code.
 
-    POD=$(kubectl get pods -n portfolio -o jsonpath='{.items[0].metadata.name}')
-    kubectl cp tools/headline_numbers.py portfolio/$POD:/tmp/h.py
-    kubectl exec -n portfolio $POD -- python /tmp/h.py > before.json
-    # ...deploy...
-    kubectl exec -n portfolio $POD -- python /tmp/h.py > after.json
+Run it against the same database before and after a change and diff the two —
+that is the check any change to `queries.py`, `fyreport.py`, `charts_build.py`
+or `exports.py` has to pass.
+
+    uv run python tools/headline_numbers.py > before.json
+    # ...make the change...
+    uv run python tools/headline_numbers.py > after.json
     diff <(jq -S . before.json) <(jq -S . after.json)
 
-**This exists because "numbers are sacred" is a ground rule** and doing it by
-hand each time gets it wrong. Four things caught me building it:
+Two things make it trickier than it looks:
 
-  * The pod label is `app.kubernetes.io/component=portfolio`, not `app=portfolio`.
-  * The package path differs by image age — older images used `/srv/app`,
-    newer ones `/srv/apps/portfolio`. Both are on sys.path below.
+  * **Compare with the price feed OFF** (`APP_PRICE_FEED__ENABLED=false`).
+    Otherwise the second run fetches the day's closes, every price moves, and
+    it reads exactly like a calculation change. That produced 95 false
+    differences the first time.
   * The dashboard's path is `cached_holdings` -> `split_positions` -> `totals`.
     Any other route measures something the page does not show.
-  * **Run the comparison with the price feed OFF**
-    (`APP_PRICE_FEED__ENABLED=false`) when the "after" side is a test
-    container. Otherwise it fetches the day's closes, every price moves, and it
-    looks exactly like a calculation change. This produced 95 false
-    differences the first time.
 
-Kept out of the repo: these are real holdings. The file lives in the session
-scratchpad and the values are only ever compared before/after a deploy.
+The output is whatever the dataclasses hold — fields are discovered, never
+named — so a renamed field shows up as a rename rather than as a number that
+changed.
 
-Every field is discovered rather than named, for two reasons: the package moved
-between two images, and comparing them means the script has to run
-unchanged on both. Naming fields would make a rename look like a number change.
+The numbers are real holdings, so send the output somewhere untracked and
+delete it afterwards; it is never something to commit.
 """
 import json
 import sys
 from dataclasses import fields, is_dataclass
+from pathlib import Path
 
-for candidate in ("/srv/app", "/srv/apps/portfolio"):
-    if candidate not in sys.path:
-        sys.path.insert(0, candidate)
+# `python tools/headline_numbers.py` puts tools/ on the path, not the root that
+# `app` and `appkit` sit in, so importing them needs this. Run it from anywhere
+# the repository is checked out; to run it against a container instead, mount
+# or copy the file into the application root rather than into /tmp.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select  # noqa: E402
 

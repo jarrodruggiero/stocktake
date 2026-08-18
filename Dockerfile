@@ -29,8 +29,8 @@ COPY --from=ghcr.io/astral-sh/uv@sha256:cf4eedcaa81655197f625739489effcbe71b61ce
 # `chown -R 1000:1000 /srv/stocktake` — and a recursive chown rewrites
 # every file it touches into a new layer. With a 281 MB virtualenv above it,
 # that shipped the virtualenv TWICE: 300 MB to build it and another 297 MB to
-# change its ownership. It is why the image went from 680 MB to 1.04 GB in
-# 0.16.0, which looked like new dependencies and was not.
+# change its ownership. It is what took the image from 680 MB to 1.04 GB, and
+# it looked like new dependencies rather than a chown.
 #
 # The uid is fixed at 1000 rather than left to the distro because it has to be
 # predictable from outside the container:
@@ -131,12 +131,12 @@ COPY --chown=1000:1000 tests ./tests
 #                      architecture map, every route documented is served.
 #   tools/           — test_branding.py imports tools/render_brand.py to prove
 #                      every generated brand file still matches branding.py.
-#                      Missing since 0.40.0, and it did not fail loudly: the
+#                      It went missing once, and it did not fail loudly: the
 #                      import error stopped COLLECTION, so the containerised
-#                      run reported an error rather than 1900 passes and was
-#                      easy to read as a flake. This is the third time this
-#                      stage has silently stopped being the same run as the
-#                      local one — check here first when they disagree.
+#                      run reported an error rather than the full pass count
+#                      and was easy to read as a flake. This stage has silently
+#                      stopped being the same run as the local one more than
+#                      once — check here first when the two disagree.
 COPY --chown=1000:1000 config.yaml ./config.yaml
 COPY --chown=1000:1000 deploy ./deploy
 COPY --chown=1000:1000 tools ./tools

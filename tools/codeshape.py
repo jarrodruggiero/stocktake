@@ -36,7 +36,9 @@ class Strip(ast.NodeTransformer):
 
 def shape() -> dict:
     out = {}
-    for base in ("app", "tests"):
+    # appkit ships in the image, so a pass that leaves it out is only checking
+    # part of what it claims. tools is here because these edit each other.
+    for base in ("app", "appkit", "tests", "tools"):
         for p in sorted(Path(base).rglob("*.py")):
             tree = Strip().visit(ast.parse(p.read_text()))
             ast.fix_missing_locations(tree)
