@@ -47,13 +47,12 @@ the font, not by fitting a model to the outlines.
 
 ## Working on the source itself
 
-| Tool | Does |
-| --- | --- |
-| `prose.py` | Ranks a tree by long comment blocks and docstrings, so a documentation pass can work highest-first |
-| `codeshape.py` | Fingerprints the code with comments and docstrings stripped: `save` before a comment pass, `check` after. A pass that claims to touch only prose has to leave this unchanged |
+`codeshape.py` fingerprints `app`, `appkit`, `tests` and `tools` with comments
+and docstrings stripped, so an edit that claims to touch only prose can be
+checked rather than hoped for. It caught a 531-line duplicated region that the
+suite also caught — but only because that region happened to be executed.
 
 ```sh
-uv run python tools/prose.py app        # blocks of 4+ comment / 8+ docstring lines
 uv run python tools/codeshape.py save   # ...then edit, then:
 uv run python tools/codeshape.py check
 ```
