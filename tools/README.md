@@ -31,14 +31,19 @@ like a calculation change. That produced 95 false differences the first time.
 
 ## The brand
 
-`app/branding.py` holds the drawing; everything else is generated from it.
+`app/branding.py` holds the drawing; everything else is generated from it by
+`render_brand.py`, which writes the Jinja partial, the favicon and the README
+banners. **`tests/test_branding.py` re-runs it in memory and fails if anything
+on disk has drifted**, so it is the one tool here the test suite depends on —
+a redraw cannot land in the top bar and miss the favicon.
 
-| Tool | Does |
-| --- | --- |
-| `render_brand.py` | Regenerates the Jinja partial, the favicon and the README banners from `branding.py`. **`tests/test_branding.py` re-runs this in memory and fails if anything on disk has drifted**, so it is the one tool here the test suite depends on |
-| `solve_spacing.py` | Solves the wordmark's letter offsets by measuring rather than by eye. Needed after any change to a letterform's width |
+```sh
+uv run python tools/render_brand.py     # needs headless Chrome for the PNGs
+```
 
-Both need headless Chrome for the PNG steps.
+The wordmark's letter offsets are the typeface's own advances and kerning, so
+there is nothing to solve: spacing questions are answered by re-exporting from
+the font, not by fitting a model to the outlines.
 
 ## Working on the source itself
 
