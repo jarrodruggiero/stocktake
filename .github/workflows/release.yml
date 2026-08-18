@@ -37,7 +37,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d portfolio_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
@@ -92,12 +92,12 @@ jobs:
           # v1.2.3 publishes 1.2.3, 1.2 and latest, so a compose file can
           # follow a minor line without chasing patches.
           #
-          # `latest` is set by the flavor rather than by
-          # `enable={{is_default_branch}}`: a tag push is not on a branch, so
-          # that condition is FALSE here and would have published every release
-          # without the tag every deploy example in this repo pulls.
+          # `latest=auto` tags a release `latest` only when it is a semver and
+          # NOT a prerelease — so `v1.0.0-rc1` publishes 1.0.0-rc1 and leaves
+          # `latest` pointing at the last stable one, which is what every deploy
+          # example in this repo pulls.
           flavor: |
-            latest=true
+            latest=auto
           # `value=` supplies the version on a manual run, where there is no
           # tag ref for the semver patterns to read.
           tags: |

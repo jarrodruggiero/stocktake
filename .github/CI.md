@@ -10,7 +10,7 @@ covers the image push to ghcr.io.
 
 | File | Does |
 | --- | --- |
-| `workflows/ci.yml` | ruff, then pytest on SQLite **and** Postgres, then build the image and run the suite inside it |
+| `workflows/ci.yml` | ruff, then pytest on SQLite **and** Postgres, then build the image and run the suite inside it — and on a push to main, publish `edge` |
 | `workflows/release.yml` | on a `v*` tag: re-verify, then push a multi-arch (amd64 + arm64) image to ghcr.io and open a Release |
 | `workflows/docs.yml` | publish `docs/` to GitHub Pages |
 | `dependabot.yml` | weekly pip updates (grouped), monthly actions and Docker |
@@ -37,3 +37,19 @@ fails CI for a reason nobody can reproduce locally.
 that stopped working is otherwise discovered at the moment you most want a
 release, and its `test` stage runs the suite against the layers the app actually
 ships from — including OCR, which skips on a runner without Tesseract.
+
+## Two channels, one branch
+
+| Tag | From | For |
+| --- | --- | --- |
+| `edge`, `sha-<commit>` | every push to main | trying a change out |
+| `X.Y.Z`, `X.Y`, `latest` | a `vX.Y.Z` tag | everybody else |
+
+A prerelease tag (`v1.0.0-rc1`) publishes its own version and **leaves `latest`
+alone** — that is `flavor: latest=auto` in release.yml, and the reason it is not
+`latest=true`.
+
+There is deliberately no long-lived `dev` branch. It would be exactly as public
+as `main`, so it would relocate the noisy history rather than remove it. What
+keeps `main` readable is squash-merging a pull request: one commit per change,
+and the twenty commits it took never leave the machine they were written on.
