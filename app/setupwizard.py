@@ -205,10 +205,15 @@ def database_config(db: DatabaseSettings) -> dict:
     """The `database:` block to write for a chosen database.
 
     The password is included because there is nowhere else for it to go on a
-    first run — but the block is only written when the wizard chose the
-    database, and a deployment that would rather keep it in a Secret sets
-    `APP_DATABASE__PASSWORD` instead, which stops the wizard offering the step
-    at all.
+    first run, and the block is only written when the wizard chose the database.
+
+    A deployment that would rather keep the password in a Secret sets
+    `APP_DATABASE__PASSWORD`, which wins at runtime because environment beats
+    the config file. It does NOT change this page: the field is still shown and
+    whatever is typed is still written here, so leave it blank to keep the
+    password out of the file. "Test connection" probes with the form's values
+    rather than the environment, so with the field blank it will fail against a
+    server that wants one — trust the app's own startup instead.
     """
     if db.type == "sqlite":
         return {"type": "sqlite", "path": db.path}

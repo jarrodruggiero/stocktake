@@ -585,6 +585,17 @@ def test_the_shipped_manifests_mount_the_directory_the_app_writes_to():
     assert "mkdir -p" in dockerfile and mount in dockerfile, (
         f"the image never creates {mount}, so uid 1000 cannot write there"
     )
+    # Writable by whatever uid the operator runs, not just the image's own.
+    # /data and /config are always mounted over, so the mount's ownership is
+    # what applies to them; this one is deliberately never mounted, so the
+    # image's mode is what the app meets. Owned by 1000 and mode 755, an
+    # operator running `--user 99:100` — which the Unraid template does, because
+    # appdata is nobody:users — could not create the directory underneath, and
+    # every visual statement import failed on it.
+    assert f"chmod 1777 {mount}" in dockerfile, (
+        f"{mount} must be mode 1777 (sticky, world-writable, like /tmp) so it "
+        f"works under any --user; owning it differently only moves the failure"
+    )
 
     manifest = (root / "deploy/kubernetes/stocktake.yaml").read_text()
     assert f"mountPath: {mount}" in manifest
