@@ -43,9 +43,8 @@ versions take a Compose file directly.
 `stocktake` and paste the contents of
 [`../compose/docker-compose.yml`](../compose/docker-compose.yml).
 
-Two edits before you save:
+One edit before you save:
 
-- Replace `ghcr.io/jarrodruggiero/stocktake:latest` with the real image.
 - Change `TZ` to your own timezone.
 
 Storage: the Compose file uses Docker named volumes, which TrueNAS manages for

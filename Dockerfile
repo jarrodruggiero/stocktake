@@ -82,9 +82,20 @@ RUN apt-get update \
 # directory for itself. It holds the visual mapper's rendered pages — see
 # `imports.visual_dir` in app/settings.py — and it is DELIBERATELY not a volume.
 # Anything here is disposable and must not be backed up.
+#
+# Mode 1777, which is what /tmp is: writable by anyone, sticky so nobody can
+# remove another user's files. /data and /config do NOT need it because they are
+# always mounted over, and the mount's ownership is what applies — but /scratch
+# is deliberately never mounted, so the image's own ownership is what the app
+# meets. Owned by uid 1000, an operator running `--user 99:100` (which the
+# Unraid template does, because appdata is nobody:users) could not create
+# /scratch/visual and every visual statement import failed. Owning it 99:100
+# instead would only move the failure onto uid 1000; 1777 works for whatever
+# uid the operator picks.
 RUN useradd --uid 1000 --create-home --shell /usr/sbin/nologin stocktake \
     && mkdir -p /srv/stocktake /data /config /scratch \
-    && chown -R 1000:1000 /srv /data /config /scratch
+    && chown -R 1000:1000 /srv /data /config /scratch \
+    && chmod 1777 /scratch
 
 USER 1000:1000
 WORKDIR /srv/stocktake

@@ -68,8 +68,8 @@ database:
   # the password should come from APP_DATABASE__PASSWORD, never from here):
   # host: postgres
   # port: 5432
-  # name: portfolio
-  # user: portfolio
+  # name: stocktake
+  # user: stocktake
   # sslmode: disable
 
 # ── Prices and exchange rates ───────────────────────────────────────────────
@@ -162,10 +162,10 @@ auth:
   # an app that shows everything you own.
   # webauthn:
   #   enabled: false
-  #   rp_id: portfolio.example.com
+  #   rp_id: stocktake.example.com
   #   rp_name: Stocktake
   #   origins:
-  #     - https://portfolio.example.com
+  #     - https://stocktake.example.com
 
 # ── Housekeeping ────────────────────────────────────────────────────────────
 # A daily sweep, on its own schedule rather than riding along with the price

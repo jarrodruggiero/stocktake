@@ -271,6 +271,47 @@ def test_what_it_boots_into_is_a_working_app(monkeypatch):
     assert settings.imports.max_upload_mb == 10
 
 
+def test_the_helm_chart_declares_the_version_this_release_is():
+    """Chart.yaml's appVersion must equal the app's version.
+
+    values.yaml ships `tag: ""`, which the deployment resolves to
+    .Chart.AppVersion — so an appVersion left behind at the previous release
+    does not fail, it quietly deploys the OLD image to everybody using the
+    chart. Nothing in the release workflow bumps this, so the check has to be
+    here.
+    """
+    import tomllib
+    from pathlib import Path
+
+    from ruamel.yaml import YAML
+
+    root = Path(__file__).resolve().parent.parent
+    version = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
+    chart = YAML(typ="safe").load((root / "deploy/helm/stocktake/Chart.yaml").read_text())
+    assert str(chart["appVersion"]) == version, (
+        f"Chart.yaml appVersion is {chart['appVersion']!r} but the app is "
+        f"{version!r} — bump it with the release")
+
+
+def test_the_compose_copy_of_the_config_has_not_drifted():
+    """deploy/compose/config.yaml must be the same file as the shipped default.
+
+    It is a reference copy — the compose README tells people it documents every
+    option — so when it drifts it documents an app that does not exist. It had:
+    example hostnames the root file did not, and it was missing the `features:`
+    and `ocr:` blocks entirely, so two shipped features were undocumented for
+    anyone reading the copy rather than the original.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    shipped = (root / "config.yaml").read_text()
+    copy = (root / "deploy" / "compose" / "config.yaml").read_text()
+    assert copy == shipped, (
+        "deploy/compose/config.yaml has drifted from config.yaml — copy the "
+        "root file over it rather than editing one of them")
+
+
 def test_the_annotated_default_config_ships_for_the_wizard_to_write_from():
     """The wizard produces a config by editing this file, so it must exist and
     still parse. The Dockerfile copies it in as config.default.yaml."""

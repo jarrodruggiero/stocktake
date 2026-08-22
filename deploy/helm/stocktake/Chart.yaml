@@ -6,6 +6,7 @@ version: 0.1.0
 # The application version this chart deploys. Track it with each release.
 appVersion: "0.64.0"
 home: https://github.com/jarrodruggiero/stocktake
+icon: https://raw.githubusercontent.com/jarrodruggiero/stocktake/main/docs/assets/icon.png
 sources:
   - https://github.com/jarrodruggiero/stocktake
 keywords: [portfolio, investing, shares, asx, self-hosted]

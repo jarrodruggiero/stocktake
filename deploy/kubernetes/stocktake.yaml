@@ -4,7 +4,7 @@
 #   kubectl apply -f stocktake.yaml
 #
 # Deliberately one file and deliberately plain: no Helm, no operator, no
-# Kustomize. Read it, change the four things marked CHANGE ME, apply it.
+# Kustomize. Read it, change the seven things marked CHANGE ME, apply it.
 #
 # There is no Secret because there is nothing secret to hold — sessions are
 # database-backed tokens and the price feed needs no credentials. If you point

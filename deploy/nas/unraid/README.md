@@ -54,10 +54,9 @@ restore.
    (AGPL-3.0 qualifies).
 2. `ca_profile.xml` must be present **at the repository root** with the
    maintainer details filled in.
-3. Replace every `jarrodruggiero` placeholder in `stocktake.xml` and in the root
-   `ca_profile.xml` with the real GitHub owner, and add `docs/assets/icon.png`
-   — the `Icon` URL must resolve, which means it lands with the branding work
-   Check `TemplateURL` still matches this file's path if it has moved.
+3. The `Icon` URL must resolve — it points at `docs/assets/icon.png` on the
+   default branch, so the file has to be committed, not just rendered locally.
+   Check `TemplateURL` still matches this file's path if either has moved.
 4. Point `Support` at a real destination (GitHub Discussions is fine; some
    maintainers use an Unraid forum thread).
 5. Submit the repository at <https://ca.unraid.net/submit/new> — sign in with
