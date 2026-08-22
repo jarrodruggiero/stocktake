@@ -1,8 +1,9 @@
 # Publishes docs/ to GitHub Pages.
 #
-# Enable once, in Settings → Pages → Source: GitHub Actions. Then point the
-# repo's About → website field at the published URL; that is the "Docs" link
-# other projects have. There is no special GitHub docs feature.
+# The Pages site itself and the repo's website field are Terraform, in the
+# private git-management workspace - not something to switch on by hand here.
+# There is no special GitHub docs feature; this is a workflow that uploads a
+# built site.
 #
 # The docs render on GitHub without this. If Pages is ever a nuisance, delete
 # this file and nothing is lost but search and navigation.
