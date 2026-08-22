@@ -54,7 +54,13 @@ jobs:
           # Postgres on the shipped interpreter only: the backend and the
           # interpreter are independent axes, and the full cross product would
           # be six jobs to tell us what four already do.
-          - python: "3.12"
+          #
+          # "Shipped" means whatever the Dockerfile's base pin resolves to, and
+          # that has to be kept in step by hand — this said 3.12 for as long as
+          # the base did, then the pin moved to 3.14 and this did not follow, so
+          # the interpreter the container actually runs was the one combination
+          # never tested against Postgres.
+          - python: "3.14"
             backend: postgres
 
     services:

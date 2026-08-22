@@ -12,11 +12,19 @@
 #   tests: docker build --target test -t stocktake-test . \
 #          && docker run --rm stocktake-test
 #
-# Both base images are pinned BY DIGEST, not by tag. `python:3.12-slim` is a
+# Both base images are pinned BY DIGEST, not by tag. `python:3.14-slim` is a
 # moving target — the same tag is a different image next month — and a build
 # that cannot be reproduced cannot be audited after an incident. Bumping these
 # is a deliberate commit, which is the point.
-FROM python@sha256:4fad23465a06cc5149a541fbec6f87e234a64dc0550f6bfdd2d290d8f03240df AS base
+#
+# It must stay a SLIM digest, and that is worth checking when bumping it: this
+# pin was once a full `python` image, which is built on buildpack-deps and
+# carries a 236 MB compressed layer of autoconf, automake and compilers. The
+# comment still said slim, so nothing looked wrong, and every first pull moved
+# 534 MB. Nothing needs that toolchain — every dependency in uv.lock resolves
+# from a wheel, verified by running `uv sync --frozen` on bare slim with no
+# compiler present.
+FROM python@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS base
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 # uv, also pinned by digest.
