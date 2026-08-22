@@ -179,6 +179,16 @@ auth:
 #   attempt_retention_days: 30   # failed sign-ins are kept only to drive lockout
 #   staged_upload_hours: 24      # a half-finished import holds real trade data
 
+# ── Optional features ───────────────────────────────────────────────────────
+# Parts of the app an install can leave out. Every one defaults ON, so an
+# upgrade never removes something that was there. Switching one off hides its
+# pages and refuses its routes; it does NOT delete anything, so turning it back
+# on restores what was there.
+#
+# The setup wizard writes this block, and Admin → Settings edits it.
+# features:
+#   dca_schedule: true   # scheduled buys, the rotation, and the calendar
+
 # ── Broker imports ──────────────────────────────────────────────────────────
 imports:
   # Whether a broker CSV may create instruments it does not recognise. Off
@@ -189,6 +199,18 @@ imports:
   # a few hundred kilobytes. This bounds what the application reads into
   # memory; limiting what a client can SEND is a job for the proxy in front.
   # max_upload_mb: 10
+  # Reading statements that arrive as SCANS — a photograph of a page wrapped in
+  # a PDF, with no text in it. On by default; where the tesseract program is
+  # missing the app says so per upload and carries on.
+  #
+  # The work is entirely local. Tesseract is a binary in the container with no
+  # network of its own, and there is no cloud OCR option here — a dividend
+  # statement carries your name, your address and your holder number.
+  #
+  # Turn it off if you would rather no subprocess ran over an uploaded file.
+  # You are still told why a scan produced nothing; that never depends on this.
+  # ocr:
+  #   enabled: true
 
   # Broker CSV formats are FILES now, in app/formats/brokers/ — they ship with
   # the app, are tested in CI, and a new one is a pull request rather than a

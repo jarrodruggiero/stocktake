@@ -79,7 +79,4 @@
           Description="Set this to YOUR timezone; the setup wizard asks for it too and the two should agree. Containers run UTC, and every date decision — which financial year today is in, whether a trade is dated in the future — uses this. Leaving it wrong puts the app a day out for part of each day."
           Type="Variable" Display="always" Required="true" Mask="false">Australia/Melbourne</Config>
 
-  <Config Name="Database password" Target="APP_DATABASE__PASSWORD" Default=""
-          Description="Only if you chose Postgres. Setting it here rather than in the wizard keeps the password out of config.yaml. Leave blank for the default SQLite setup."
-          Type="Variable" Display="advanced" Required="false" Mask="true"/>
 </Container>
