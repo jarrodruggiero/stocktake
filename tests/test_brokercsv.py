@@ -510,3 +510,55 @@ def test_creating_instruments_is_the_default():
     """An import of a broker's own export is normally the first thing an
     install does, and every ticker in it is unknown at that point."""
     assert ImportSettings().allow_new_instruments is True
+
+
+# --------------------------------------------------------------------------- #
+# This broker's vocabulary
+# --------------------------------------------------------------------------- #
+
+def test_a_broker_word_maps_to_a_trade_type():
+    """"In" is what one broker calls a DRP allotment. Mapping it is
+    configuration, not code."""
+    fmt = MAPPED.model_copy(update={"actions": {"Purchase": "buy", "Disposal": "sell"}})
+    result = _one(
+        "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+        "06/01/2025,Purchase,ACME,100,5.00,9.50\n"
+        "07/01/2025,Disposal,ACME,40,7.25,9.50\n", fmt,
+    )
+    assert [c.type for c in result.candidates] == ["buy", "sell"]
+
+
+def test_the_builtin_words_still_work_with_a_vocabulary_set():
+    fmt = MAPPED.model_copy(update={"actions": {"In": "drp"}})
+    result = _one(
+        "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+        "06/01/2025,Buy,ACME,100,5.00,9.50\n", fmt,
+    )
+    assert result.candidates[0].type == "buy"
+
+
+def test_a_drp_allotment_with_no_price_is_refused_not_booked_at_zero():
+    """The row the whole mapping question came from.
+
+    An allotment carries units and no price; the registry bought them out of
+    the distribution. Booking it at zero understates the parcel's cost base and
+    overstates the gain when it is sold, which is a tax figure.
+    """
+    fmt = MAPPED.model_copy(update={"actions": {"In": "drp"}})
+    result = _one(
+        "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+        "06/01/2025,In,ACME,7,,\n", fmt,
+    )
+    assert result.candidates == []
+    assert "no price" in result.skipped[0]
+    assert "dividend statement" in result.skipped[0]
+
+
+def test_a_drp_allotment_that_does_carry_a_price_is_imported():
+    fmt = MAPPED.model_copy(update={"actions": {"In": "drp"}})
+    result = _one(
+        "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+        "06/01/2025,In,ACME,7,12.50,\n", fmt,
+    )
+    assert result.candidates[0].type == "drp"
+    assert result.candidates[0].unit_price == Decimal("12.50")

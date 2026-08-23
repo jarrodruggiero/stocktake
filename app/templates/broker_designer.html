@@ -61,6 +61,58 @@ anywhere; it is held in this form until you leave the page.</p>
   the dates are quietly wrong.</p>
   {% endif %}
 
+  {# Drag or tap a field onto a column heading in the sheet below. The selects
+     underneath stay the source of truth, so this works with JavaScript off. #}
+  <div id="fieldtray" class="fieldtray" hidden>
+    <span class="sub">Drag onto a column below</span>
+    {% for f in fields %}
+    <span class="chipwrap">
+      <button type="button" class="fieldchip" data-field="{{ f }}" draggable="true">
+        {{ f }}{% if f not in required %} <span class="sub">optional</span>{% endif %}
+      </button>
+      {# Clearing is its own control, not a second meaning for tapping the
+         chip: a stray tap must not undo a mapping. #}
+      <button type="button" class="chipclear" data-field="{{ f }}" hidden
+              aria-label="Clear the {{ f }} column">&times;</button>
+    </span>
+    {% endfor %}
+  </div>
+
+  {# The words THIS file uses for a trade type. Each carries a select so the
+     mapping submits without JavaScript; brokerdrag.js turns the same values
+     into chips you drop onto a cell. #}
+  {% if action_words %}
+  <div id="typetray" class="fieldtray">
+    <span class="sub">Drop onto a value in the action column</span>
+    {% for kind in ("buy", "sell", "drp") %}
+    <button type="button" class="fieldchip typechip" data-kind="{{ kind }}" draggable="true">{{ kind }}</button>
+    {% endfor %}
+  </div>
+  <details id="typefallback">
+    <summary>Set the trade types from a list</summary>
+    <table class="mapper">
+      <thead><tr><th>Word in your file</th><th>What the app calls it</th></tr></thead>
+      <tbody>
+        {% for word in action_words %}
+        <tr>
+          <td><code>{{ word }}</code></td>
+          <td>
+            <select name="act_{{ word }}" class="typepick" data-word="{{ word }}">
+              <option value="">— skip these rows —</option>
+              {% for kind in ("buy", "sell", "drp") %}
+              <option value="{{ kind }}" {{ 'selected' if actions.get(word) == kind }}>{{ kind }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+
+  <details id="mapperfallback">
+    <summary>Set the columns from a list</summary>
   <table class="mapper">
     <thead><tr><th>Field</th><th>Column in your file</th><th>Sample values</th></tr></thead>
     <tbody>
@@ -86,6 +138,7 @@ anywhere; it is held in this form until you leave the page.</p>
       {% endfor %}
     </tbody>
   </table>
+  </details>
 
   <div class="commitbar">
     <button type="submit">Preview these trades</button>

@@ -202,8 +202,25 @@ def dates_are_ambiguous(values: list[str]) -> bool:
     return _parse_all(usable, "%d/%m/%Y") and _parse_all(usable, "%m/%d/%Y")
 
 
+def action_words(rows: list[dict], header: str | None) -> list[str]:
+    """The distinct words this file uses in its action column, commonest first.
+
+    What the page offers to map. Sorted by frequency because the two that
+    matter are almost always the two most common.
+    """
+    if not header:
+        return []
+    counts: dict[str, int] = {}
+    for row in rows:
+        word = str(row.get(header, "") or "").strip()
+        if word:
+            counts[word] = counts.get(word, 0) + 1
+    return [w for w, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
 def broker_yaml(*, name: str, exchange: str, currency: str,
-                date_format: str | None, columns: dict[str, str | None]) -> str:
+                date_format: str | None, columns: dict[str, str | None],
+                actions: dict[str, str] | None = None) -> str:
     """A broker format file, as text, ready to install or attach to a pull
     request.
 
@@ -230,6 +247,9 @@ def broker_yaml(*, name: str, exchange: str, currency: str,
         header = columns.get(name_)
         if header:
             lines.append(f"  {name_}: {header}")
+    if actions:
+        lines += ["actions:   # this broker's word -> what the app calls it"]
+        lines += [f"  {word}: {kind}" for word, kind in sorted(actions.items())]
     return "\n".join(lines) + "\n"
 
 
