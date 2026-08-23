@@ -2,6 +2,8 @@
 {% block title %}Statement preview — Stocktake{% endblock %}
 {% block content %}
 
+<a class="backlink" href="{{ return_to }}"><button type="button" class="secondary">&larr; {{ back_label }}</button></a>
+
 <h1>Dividend statement <small>{{ filename }}</small></h1>
 
 {# A statement read from pixels rather than from a text layer. Said loudly and

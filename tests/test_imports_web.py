@@ -445,3 +445,55 @@ def test_the_warning_sits_above_the_report_picker(client, session_factory):
     picker = page.index('<select name="report">')
 
     assert notice < picker
+
+
+# --------------------------------------------------------------------------- #
+# Getting back out of an import
+# --------------------------------------------------------------------------- #
+
+def test_every_import_page_offers_a_way_back(client, session_factory, with_acme, monkeypatch):
+    """These pages are reached by POSTing a file, so there is no browser
+    history entry to go back to and no `?return=` in the address bar. Each one
+    renders a back link, and the default is the page you came from."""
+    from app import statements
+
+    monkeypatch.setattr(statements, "_pdf_text", lambda data: SINGLE_STATEMENT)
+    make_login(client, session_factory)
+    csrf = session_csrf(session_factory)
+
+    pages = {
+        "statement preview": client.post(
+            "/imports-exports/statement",
+            files={"file": ("advice.pdf", b"%PDF-fake", "application/pdf")},
+            data={"_csrf": csrf}, headers=HTML),
+        "csv preview": client.post(
+            "/imports-exports/csv",
+            files={"file": ("t.csv", b"Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+                                     b"06/01/2025,Buy,ACME,100,5.00,9.50\n", "text/csv")},
+            data={"_csrf": csrf, "broker": "selfwealth"}, headers=HTML),
+    }
+    for label, resp in pages.items():
+        assert resp.status_code == 200, label
+        assert 'class="backlink"' in resp.text, f"{label} has no way back"
+        assert "/imports-exports" in resp.text, label
+
+
+def test_the_way_back_follows_where_you_came_from(client, session_factory, with_acme):
+    """Same rule as the holdings back button, and the same guard: the origin
+    travels with the request, and an off-site one is refused."""
+    make_login(client, session_factory)
+    csrf = session_csrf(session_factory)
+    csv = (b"Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+           b"06/01/2025,Buy,ACME,100,5.00,9.50\n")
+
+    came_from = client.post("/imports-exports/csv?return=/holdings",
+                            files={"file": ("t.csv", csv, "text/csv")},
+                            data={"_csrf": csrf, "broker": "selfwealth"}, headers=HTML)
+    assert 'href="/holdings"' in came_from.text
+    assert "Holdings" in came_from.text
+
+    hostile = client.post("/imports-exports/csv?return=//evil.test",
+                          files={"file": ("t.csv", csv, "text/csv")},
+                          data={"_csrf": csrf, "broker": "selfwealth"}, headers=HTML)
+    assert "evil.test" not in hostile.text
+    assert 'href="/imports-exports"' in hostile.text
