@@ -155,6 +155,11 @@ PUBLIC_PATHS = {"/healthz", "/readyz", "/login", "/login/code", "/login/recover"
 #   * a route under /api/ that does not open with `auth.api_session(...)`
 #   * a route under /setup/ that does not open with `_wizard_step()`
 PUBLIC_PREFIXES = ("/static/", "/api/", "/setup/")
+# The subset that must answer with NO database at all. Everything else — /login
+# included — needs one to say anything useful, and gets sent to the wizard
+# instead of a 500 from its first query.
+NO_DATABASE_PATHS = {"/healthz", "/readyz", "/setup", "/metrics"}
+NO_DATABASE_PREFIXES = ("/static/", "/setup/")
 
 
 def _db_ready() -> bool:
@@ -651,15 +656,25 @@ async def require_login(request: Request, call_next):
     rather than a redirect, so a stale fetch doesn't silently render a page.
     """
     path = request.url.path
-    if path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES):
+    # Serve-without-a-database: static files, the health probes, the wizard
+    # itself and the metrics endpoint, which guards its own access.
+    if path.startswith(NO_DATABASE_PREFIXES) or path in NO_DATABASE_PATHS:
         return await call_next(request)
     # No database means no sessions, no users, and nothing any other route can
     # do. Everything goes to the wizard rather than to a 500 from the first
     # query — this is the state a fresh container starts in.
+    #
+    # This is checked BEFORE the public paths, not after. /login is public and
+    # opens a session to look for the account, so an unconfigured app answered
+    # it with `NotConfigured` — a 500 on the one page somebody lands on after
+    # any redirect, which reads as the app being broken beyond recovery rather
+    # than as "finish setting me up".
     if not database.is_ready():
         if "text/html" not in request.headers.get("accept", ""):
             return PlainTextResponse("not set up yet — visit /setup", status_code=503)
         return _redirect("/setup")
+    if path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES):
+        return await call_next(request)
     with anon() as db:
         ctx = auth.load_auth(request, db)
         logged_in = ctx is not None

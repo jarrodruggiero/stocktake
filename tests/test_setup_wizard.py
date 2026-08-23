@@ -1595,3 +1595,37 @@ def test_every_step_after_the_first_offers_a_way_back(client):
     # And the recovery page, which is part of a step rather than one of its
     # own, goes back to the step it belongs to rather than to itself.
     assert 'class="backlink"' in client.get("/setup/recovery", headers=HTML).text
+
+
+def test_login_does_not_explode_when_no_database_is_configured():
+    """The state a restarted container is in when its config never got written:
+    accounts on the disk, nothing configured to reach them with.
+
+    `/login` is public, so the middleware's "no database" guard used to be
+    skipped for it — and the route opens a session to look for the account, so
+    it answered `NotConfigured`. A 500 on the page every redirect lands on
+    reads as an app broken beyond recovery rather than one asking to be set up.
+    """
+    import subprocess
+    import sys
+    import textwrap
+
+    script = textwrap.dedent('''
+        import os, tempfile
+        home = tempfile.mkdtemp()
+        os.environ["APP_CONFIG_FILE"] = os.path.join(home, "config.yaml")
+        os.environ.pop("APP_DATABASE__PATH", None)
+        os.environ.pop("APP_DATABASE__TYPE", None)
+        os.environ.pop("STOCKTAKE_TEST_DB", None)
+        from fastapi.testclient import TestClient
+        from app.main import app
+        c = TestClient(app)
+        for path in ("/login", "/"):
+            r = c.get(path, headers={"accept": "text/html"}, follow_redirects=False)
+            assert r.status_code == 303, (path, r.status_code)
+            assert r.headers["location"] == "/setup", (path, r.headers["location"])
+        print("OK")
+    ''')
+    out = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                         text=True, cwd=str(APP_ROOT))
+    assert "OK" in out.stdout, out.stdout + out.stderr
