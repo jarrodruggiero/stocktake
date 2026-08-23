@@ -1849,6 +1849,21 @@ button.swatchwheel:hover { border-color: var(--accent); filter: none; }
   border-color: var(--accent); }
 .fieldchip:active { cursor: grabbing; }
 
+/* The chip and its clear button read as one pill. */
+.chipwrap { display: inline-flex; align-items: stretch; }
+.chipwrap .fieldchip.assigned { border-top-right-radius: 0; border-bottom-right-radius: 0;
+  border-right: none; }
+.chipclear { font: inherit; font-size: var(--fs-sm); line-height: 1; cursor: pointer;
+  margin: 0; padding: 0.2rem 0.5rem; border-radius: 0 999px 999px 0;
+  background: var(--accent); color: var(--on-accent);
+  border: 1px solid var(--accent); border-left: 1px solid rgb(255 255 255 / 0.35); }
+.chipclear:hover { background: var(--down); border-color: var(--down); }
+/* A 44px target on touch, without making the pill that tall on a desktop. */
+@media (pointer: coarse) {
+  .chipclear { padding: 0.2rem 0.85rem; }
+  .fieldchip { padding: 0.35rem 0.75rem; }
+}
+
 /* While a chip is armed or in flight, the headings are the thing to aim at. */
 .sheet.targeting thead .headings th[data-header] { outline: 1px dashed var(--accent);
   outline-offset: -3px; cursor: copy; }

@@ -10,7 +10,7 @@ covers the image push to ghcr.io.
 
 | File | Does |
 | --- | --- |
-| `workflows/ci.yml` | ruff, then pytest on SQLite **and** Postgres, then build the image and run the suite inside it — and on a push to main, publish `edge` |
+| `workflows/ci.yml` | ruff, then pytest on SQLite **and** Postgres, then build the image and run the suite inside it — and on a push to main, publish `dev` |
 | `workflows/release.yml` | on a `v*` tag: re-verify, then push a multi-arch (amd64 + arm64) image to ghcr.io and open a Release |
 | `workflows/docs.yml` | publish `docs/` to GitHub Pages |
 | `dependabot.yml` | weekly pip updates (grouped), monthly actions and Docker |
@@ -42,7 +42,7 @@ ships from — including OCR, which skips on a runner without Tesseract.
 
 | Tag | From | For |
 | --- | --- | --- |
-| `edge`, `sha-<commit>` | every push to main | trying a change out |
+| `dev`, `sha-<commit>` | every push to main | trying a change out |
 | `X.Y.Z`, `X.Y`, `latest` | a `vX.Y.Z` tag | everybody else |
 
 A prerelease tag (`v1.0.0-rc1`) publishes its own version and **leaves `latest`

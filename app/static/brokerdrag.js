@@ -30,6 +30,16 @@
   function assign(field, header) {
     var select = selectFor(field);
     if (!select) return;
+    /* A column is claimed by at most one field. Two fields reading the same
+       column parses without complaint and produces trades whose price is their
+       brokerage — so taking a column takes it from whoever had it. */
+    if (header) {
+      tray.querySelectorAll(".fieldchip").forEach(function (other) {
+        if (other.dataset.field === field) return;
+        var s = selectFor(other.dataset.field);
+        if (s && s.value === header) { s.value = ""; s.dispatchEvent(new Event("change", { bubbles: true })); }
+      });
+    }
     select.value = header || "";
     select.dispatchEvent(new Event("change", { bubbles: true }));
     paint();
@@ -43,6 +53,8 @@
       var select = selectFor(chip.dataset.field);
       var header = select ? select.value : "";
       chip.classList.toggle("assigned", !!header);
+      var clear = tray.querySelector('.chipclear[data-field="' + chip.dataset.field + '"]');
+      if (clear) clear.hidden = !header;
       if (header) taken[header] = chip.dataset.field;
     });
     sheet.querySelectorAll("th[data-header]").forEach(function (th) {
@@ -74,12 +86,18 @@
   }
 
   tray.addEventListener("click", function (e) {
+    var clear = e.target.closest(".chipclear");
+    if (clear) {
+      e.preventDefault();
+      assign(clear.dataset.field, "");
+      disarm();
+      return;
+    }
     var chip = e.target.closest(".fieldchip");
     if (!chip) return;
     e.preventDefault();
-    /* A chip already holding a column gives it up rather than re-arming: the
-       only other way to clear one would be a second control nobody looks for. */
-    if (chip.classList.contains("assigned")) { assign(chip.dataset.field, ""); disarm(); return; }
+    /* Arming, even when already assigned: tapping a chip is how you MOVE it to
+       another column, and a mis-tap then costs nothing. The × clears. */
     arm(chip);
   });
 

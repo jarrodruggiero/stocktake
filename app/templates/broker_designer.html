@@ -66,9 +66,15 @@ anywhere; it is held in this form until you leave the page.</p>
   <div id="fieldtray" class="fieldtray" hidden>
     <span class="sub">Drag onto a column below</span>
     {% for f in fields %}
-    <button type="button" class="fieldchip" data-field="{{ f }}" draggable="true">
-      {{ f }}{% if f not in required %} <span class="sub">optional</span>{% endif %}
-    </button>
+    <span class="chipwrap">
+      <button type="button" class="fieldchip" data-field="{{ f }}" draggable="true">
+        {{ f }}{% if f not in required %} <span class="sub">optional</span>{% endif %}
+      </button>
+      {# Clearing is its own control, not a second meaning for tapping the
+         chip: a stray tap must not undo a mapping. #}
+      <button type="button" class="chipclear" data-field="{{ f }}" hidden
+              aria-label="Clear the {{ f }} column">&times;</button>
+    </span>
     {% endfor %}
   </div>
 

@@ -713,3 +713,15 @@ trays reveal themselves only once the script runs.
 the whole column needs attention when two rows do. They render greyed with
 their resolved type; only a word nothing can read is outlined.
 
+**103. Clearing a mapping is its own control, and tapping a chip re-arms it.**
+A tap that both assigns and un-assigns is a mapping lost to a stray touch, and
+long-press is invisible, has no keyboard equivalent and fights the operating
+system's own context menu. So an assigned chip carries an explicit ×, and
+tapping the chip itself arms it — which is also how a field MOVES to another
+column without being cleared first.
+
+**104. A column is claimed by at most one field.** Two fields reading the same
+column parses without complaint and produces trades whose price is their
+brokerage, so taking a column takes it from whoever had it. `guess()` already
+worked this way; assigning by hand now does too.
+
