@@ -681,3 +681,14 @@ licensing question about somebody else's document in an AGPL repository.
 Generating it also tests the layout that actually ships, since the sample is
 the layout.
 
+**99. A broker import creates instruments it does not know, and asks first.**
+Refusing was the old default, and it makes the first import of an install
+impossible: every ticker in a broker's own export is unknown at that point, so
+the answer was a config edit before anything could be imported at all. What
+stops a typo becoming an instrument is the preview's resolve step — the new
+tickers grouped by instrument, each with its exchange, editable, and rechecked
+against the database on demand. That also settles the case a flag cannot: one
+ticker listed on two exchanges, where the file is right and the exchange is
+what needs correcting. `annotate()` is re-entrant for this reason; a stale
+"unknown-instrument" would keep refusing a ticker that now resolves.
+

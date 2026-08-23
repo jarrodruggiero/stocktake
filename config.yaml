@@ -191,9 +191,10 @@ auth:
 
 # ── Broker imports ──────────────────────────────────────────────────────────
 imports:
-  # Whether a broker CSV may create instruments it does not recognise. Off
-  # means an unknown ticker stops the import so you can check it first.
-  # allow_new_instruments: false
+  # Whether a broker CSV may create instruments it does not recognise. On by
+  # default: the preview lists every new ticker with its exchange for you to
+  # correct before anything is written. Off refuses the import instead.
+  # allow_new_instruments: true
 
   # Largest upload accepted, in megabytes. A broker CSV or a statement PDF is
   # a few hundred kilobytes. This bounds what the application reads into

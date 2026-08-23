@@ -13,6 +13,44 @@
 </div>
 {% endif %}
 
+{% if unresolved %}
+<section class="panel">
+  <h2>New instruments
+    {%- set new_tip %}
+    <p>These tickers are not in your instrument list yet. Check the exchange —
+    the same code can exist on more than one.</p>
+    <p>A correction applies to every trade of that instrument.</p>
+    {% endset %}
+    {% with body = new_tip, label = "What this is" %}
+      {% include "_tip.html" %}
+    {% endwith %}
+  </h2>
+  {% if rechecked %}
+  <p class="note ok">Rechecked against your instruments.</p>
+  {% endif %}
+  <form method="post" action="/imports-exports/csv/{{ uid }}/resolve">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <table class="mapper">
+      <thead><tr><th>Ticker</th><th>Exchange</th><th>Trades</th></tr></thead>
+      <tbody>
+        {% for ticker, exchange, count in unresolved %}
+        <tr>
+          <td><input name="ticker__{{ ticker }}__{{ exchange }}" value="{{ ticker }}"
+                     autocomplete="off" required></td>
+          <td><input name="exchange__{{ ticker }}__{{ exchange }}" value="{{ exchange }}"
+                     autocomplete="off" required></td>
+          <td class="sub">{{ count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="commitbar">
+      <button type="submit" class="secondary">Recheck</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+
 {% if candidates %}
 <div class="tablewrap">
 <table>
@@ -21,7 +59,10 @@
   <tbody>
     {% for c in candidates %}
     <tr class="{{ 'muted' if c.status == 'duplicate' }}">
-      <td><span class="badge badge-{{ c.status }}">{{ c.status }}</span></td>
+      {# "unknown-instrument" is the internal state; on the page it is the
+         ordinary case of a ticker this install has not seen before. #}
+      <td><span class="badge badge-{{ c.status }}">{{
+        "new instrument" if c.status == "unknown-instrument" else c.status }}</span></td>
       <td>{{ c.date }}</td>
       <td>{{ c.ticker }}</td>
       <td>{{ c.type }}</td>
