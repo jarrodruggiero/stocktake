@@ -126,6 +126,10 @@ class BrokerFormat(BaseModel):
     currency: str = "AUD"
     date_format: str = "%d/%m/%Y"
     columns: dict[str, str] = {}  # logical field -> CSV header (kind: mapped)
+    # This broker's word for a trade type -> the app's. Only needed where the
+    # export says something other than buy/sell: "In" for a DRP allotment,
+    # "Purchase", "B". Anything unmapped falls back to the built-in vocabulary.
+    actions: dict[str, str] = {}
     # The zone a time in this export is written in, where it is NOT the
     # exchange's. An IANA name ("Australia/Perth"). Left empty the times are
     # taken as the market's own, which is what every export checked so far

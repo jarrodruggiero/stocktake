@@ -685,6 +685,13 @@ async def broker_designer(request: Request, file: UploadFile = None,
         form = await request.form()
         chosen = {f: (form.get(f"col_{f}") or "").strip() or None
                   for f in brokerdesign.FIELDS}
+        # This broker's word for a trade type -> ours, one field per word.
+        actions = {}
+        for key in form:
+            if key.startswith("act_"):
+                kind = str(form.get(key, "")).strip()
+                if kind in ("buy", "sell", "drp"):
+                    actions[key[len("act_"):]] = kind
         first_pass = not any(chosen.values())
         if first_pass:
             chosen = brokerdesign.guess(read.headers)
@@ -734,10 +741,12 @@ async def broker_designer(request: Request, file: UploadFile = None,
                 "using_custom": using_custom,
                 "date_format_custom": date_format_custom,
                 "ambiguous": brokerdesign.dates_are_ambiguous(dates),
+                "action_words": brokerdesign.action_words(read.rows, chosen.get("action")),
+                "actions": actions,
                 "result": result,
                 "yaml": brokerdesign.broker_yaml(
                     name=name or "My broker", exchange=exchange, currency=currency,
-                    date_format=date_format, columns=chosen),
+                    date_format=date_format, columns=chosen, actions=actions),
             },
         )
 

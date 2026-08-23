@@ -632,3 +632,17 @@ def test_nonsense_in_the_custom_box_does_not_crash_the_page(client, session_fact
         headers=HTML)
 
     assert page.status_code == 200
+
+
+def test_the_pages_builtin_word_list_matches_the_importers():
+    """brokerdrag.js carries its own copy so it can grey the words that need no
+    mapping. Two lists in two languages is exactly what drifts."""
+    import re
+    from pathlib import Path
+
+    from app import brokercsv
+
+    js = (Path(__file__).resolve().parent.parent / "app/static/brokerdrag.js").read_text()
+    block = re.search(r"var BUILTIN = \{(.*?)\};", js, re.S).group(1)
+    in_js = dict(re.findall(r'(\w+):\s*"(\w+)"', block))
+    assert in_js == brokercsv.BUILTIN_ACTIONS

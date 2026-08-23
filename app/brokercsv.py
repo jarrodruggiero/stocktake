@@ -174,9 +174,19 @@ def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
         col = fmt.columns
         for i, row in enumerate(reader, start=2):
             try:
-                action = row[col["action"]].strip().lower()
-                if action not in ("buy", "sell", "b", "s"):
+                action = trade_type(row[col["action"]], fmt.actions)
+                if action is None:
                     result.skipped.append(f"line {i}: action {row[col['action']]!r}")
+                    continue
+                # A DRP allotment carries units and no price: the registry
+                # bought them out of the distribution, and the cost base is in
+                # the statement rather than this export. Booking it at zero
+                # would understate the cost base of every parcel and overstate
+                # the gain on sale — decisions.md #100.
+                if action == "drp" and not str(row.get(col["price"], "")).strip():
+                    result.skipped.append(
+                        f"line {i}: DRP allotment with no price — import the "
+                        f"dividend statement, which carries the cost base")
                     continue
                 when, clock = parse_when(row[col["date"]], fmt.date_format)
                 if clock and fmt.times_zone:
@@ -188,7 +198,7 @@ def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
                         date=when,
                         time=clock,
                         ticker=row[col["ticker"]].strip().upper(),
-                        type="buy" if action.startswith("b") else "sell",
+                        type=action,
                         quantity=_num(row[col["units"]]),
                         unit_price=_num(row[col["price"]]),
                         brokerage=_num(row.get(col.get("brokerage", ""), "0") or "0"),
@@ -250,6 +260,23 @@ def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
 
     result.errors.append(f"unknown broker format kind {fmt.kind!r}")
     return result
+
+
+BUILTIN_ACTIONS = {"buy": "buy", "b": "buy", "sell": "sell", "s": "sell"}
+
+
+def trade_type(raw: str, mapped: dict[str, str] | None = None) -> str | None:
+    """This broker's word for a trade type, as one of ours, or None to skip.
+
+    The format's own vocabulary wins, matched without case, so a broker calling
+    a DRP allotment "In" needs no code. Everything else falls back to the words
+    every broker agrees on.
+    """
+    word = raw.strip()
+    for source, target in (mapped or {}).items():
+        if source.strip().lower() == word.lower():
+            return target if target in ("buy", "sell", "drp") else None
+    return BUILTIN_ACTIONS.get(word.lower())
 
 
 def unresolved(candidates: list[CandidateTrade]) -> list[tuple[str, str, int]]:

@@ -996,9 +996,14 @@ form.inline { display: inline; margin: 0; }
 .wizrail { list-style: none; margin: 0; padding: 0; position: sticky; top: 1rem; }
 .wizrail li { display: grid; grid-template-columns: 1.6rem 1fr; gap: 0.6rem;
   align-items: baseline; padding: 0.45rem 0; color: var(--muted); font-size: 0.9rem; }
+/* Centred by flex, not by line-height: `box-sizing: border-box` is global, so
+   the border eats into the 1.6rem box while a 1.6rem line-height still centres
+   over the full height — which put every glyph 1.4px low, measured. Flex also
+   holds for the tick and the dash, whose metrics differ from a digit's. */
 .wizrail .wiznum { grid-row: span 2; align-self: center; justify-self: center;
-  width: 1.6rem; height: 1.6rem; line-height: 1.6rem; text-align: center;
-  border-radius: 50%; border: 1px solid var(--line); font-size: 0.8rem; }
+  display: flex; align-items: center; justify-content: center;
+  width: 1.6rem; height: 1.6rem; border-radius: 50%;
+  border: 1px solid var(--line); font-size: 0.8rem; line-height: 1; }
 .wizrail .wizlabel { align-self: center; }
 .wizrail .sub { grid-column: 2; font-size: 0.75rem; }
 .wizrail .wiz-active { color: var(--text); font-weight: 600; }
@@ -1827,3 +1832,39 @@ button.swatchwheel:hover { border-color: var(--accent); filter: none; }
 
 /* An empty cell should read as empty, not as a rendering fault. */
 .sheet td:empty::after { content: "·"; color: var(--muted); opacity: 0.4; }
+
+/* ── Dragging a field onto a column ───────────────────────────────────────── */
+.fieldtray { display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--sp-2); margin: var(--sp-3) 0; }
+.fieldtray > .sub { margin-right: var(--sp-1); }
+.fieldchip { cursor: grab; font: inherit; font-size: var(--fs-sm);
+  padding: 0.2rem 0.6rem; border-radius: 999px; background: var(--sunken);
+  border: 1px solid var(--line); color: var(--ink); margin: 0; }
+.fieldchip .sub { font-size: var(--fs-label); }
+.fieldchip:hover { border-color: var(--accent); }
+.fieldchip.armed { border-color: var(--accent); background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-soft); }
+/* Assigned reads as done, and clicking it gives the column back. */
+.fieldchip.assigned { background: var(--accent); color: var(--on-accent);
+  border-color: var(--accent); }
+.fieldchip:active { cursor: grabbing; }
+
+/* While a chip is armed or in flight, the headings are the thing to aim at. */
+.sheet.targeting thead .headings th[data-header] { outline: 1px dashed var(--accent);
+  outline-offset: -3px; cursor: copy; }
+.sheet thead th.dropping { background: var(--accent-soft); }
+.sheet .coltag { display: block; font-size: var(--fs-label); font-weight: 600;
+  color: var(--accent); text-transform: none; letter-spacing: 0; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .fieldchip { transition: background-color 0.12s ease, border-color 0.12s ease; }
+}
+.sheet.targeting-cells td[data-col] { cursor: copy; }
+.sheet td.untyped { outline: 1px dashed var(--down); outline-offset: -3px; }
+.sheet td.typed { outline: 1px solid var(--accent); outline-offset: -3px; }
+.sheet .typetag { margin-left: var(--sp-2); font-size: var(--fs-label);
+  color: var(--accent); font-weight: 600; }
+/* A word the app already knows: shown, but not as something you chose. */
+.sheet .typetag-builtin { color: var(--muted); font-weight: 400; }
+.sheet td.typed { outline: none; }
+.sheet.targeting-cells td[data-col] { outline: 1px dashed var(--accent); outline-offset: -3px; }

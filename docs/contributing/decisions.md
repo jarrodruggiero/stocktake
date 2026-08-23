@@ -692,3 +692,24 @@ ticker listed on two exchanges, where the file is right and the exchange is
 what needs correcting. `annotate()` is re-entrant for this reason; a stale
 "unknown-instrument" would keep refusing a ticker that now resolves.
 
+**100. A DRP allotment with no price is refused, not booked at zero.** Some
+exports list the allotment as a row with units and no price — the registry
+bought them out of the distribution, and the cost base is in the statement
+rather than the export. Importing it at zero understates that parcel's cost
+base and overstates the gain when it is sold, which is a tax figure. The row is
+skipped with the reason, and the dividend statement is the path that carries
+the number.
+
+**101. The broker mapper is drag OR tap, and the selects stay the state.**
+HTML drag-and-drop does not fire on touch at all, and the layout is checked at
+412px, so a drag-only mapper is one that does not work on a phone. Dragging a
+chip, tapping a chip then a heading, and choosing from the list all do the same
+thing: set a named `<select>` and fire `change`. That is also what makes the
+page work with JavaScript off — the list is what a plain browser gets, and the
+trays reveal themselves only once the script runs.
+
+**102. Words the app already understands are shown, not flagged.** `Buy` and
+`Sell` need no mapping, so outlining them beside a genuinely unknown word says
+the whole column needs attention when two rows do. They render greyed with
+their resolved type; only a word nothing can read is outlined.
+
