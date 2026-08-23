@@ -42,7 +42,9 @@ failure.
 
 ## Backing up
 
-`/mnt/user/appdata/stocktake/stocktake.db` is the entire application state.
+`/mnt/user/appdata/stocktake` is the entire application state — the
+database and `config.yaml` both sit in it, because the template maps one
+folder rather than two.
 Include that folder in your appdata backup and you have everything. Test the
 restore.
 

@@ -591,3 +591,54 @@ def test_the_shipped_manifests_mount_the_directory_the_app_writes_to():
     helm = (root / "deploy/helm/stocktake/templates/deployment.yaml").read_text()
     assert f"mountPath: {mount}" in helm
     assert "emptyDir" in helm
+
+
+def test_the_unraid_template_puts_its_config_file_somewhere_it_mounted():
+    """`APP_CONFIG_FILE` has to live under a mounted path, or the wizard writes
+    it into the container and it vanishes on the next restart.
+
+    The template used to map the appdata folder twice — once at /data and once
+    at /config — so this could not be got wrong by construction. With one mount
+    it can, which is why this exists.
+    """
+    import xml.etree.ElementTree as ET
+    from pathlib import Path
+
+    root = ET.parse(
+        Path(__file__).resolve().parent.parent / "deploy/nas/unraid/stocktake.xml"
+    ).getroot()
+
+    mounts = [c.get("Target") for c in root.findall("Config")
+              if c.get("Type") == "Path"]
+    config = next((c.text or "").strip() for c in root.findall("Config")
+                  if c.get("Target") == "APP_CONFIG_FILE")
+
+    assert mounts, "the template mounts nothing"
+    assert any(config.startswith(m.rstrip("/") + "/") for m in mounts), (
+        f"APP_CONFIG_FILE is {config}, which is not under any mounted path "
+        f"({mounts}) — the wizard would write it into the container"
+    )
+
+
+def test_the_unraid_template_gives_the_container_a_restart_policy():
+    """The setup wizard ends by restarting, and `lifecycle` restarts by
+    STOPPING and relying on the runtime to bring the container back.
+
+    dockerMan creates containers with no restart policy, so without this the
+    wizard's last step stops the app and it stays stopped. Both shipped compose
+    files set it; the template was the only target that did not.
+    """
+    import xml.etree.ElementTree as ET
+    from pathlib import Path
+
+    root = ET.parse(
+        Path(__file__).resolve().parent.parent / "deploy/nas/unraid/stocktake.xml"
+    ).getroot()
+    extra = root.findtext("ExtraParams") or ""
+    assert "--restart=" in extra, (
+        "the Unraid template sets no restart policy, so the wizard's final "
+        "step stops the container and nothing starts it again"
+    )
+    assert "--restart=always" not in extra, (
+        "always ignores a stop from the Unraid UI; unless-stopped respects it"
+    )
