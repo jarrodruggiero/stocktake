@@ -763,3 +763,11 @@ bounces them to /login, which bounces them to /, which arrives back here.
 `/logout` stays open, because abandoning a wizard is a legitimate thing to
 want.
 
+**108. The "no database" check runs BEFORE the public-path list, not after.**
+`/login` is public and opens a session to look for the account, so an
+unconfigured app answered it with `NotConfigured` — a 500 on the one page every
+redirect lands on, which reads as an app broken beyond recovery rather than one
+asking to be finished. Only static files, the health probes, the wizard and
+`/metrics` answer with no database at all; everything else, `/login` included,
+is sent to the wizard.
+
