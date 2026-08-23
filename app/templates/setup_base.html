@@ -4,7 +4,7 @@
    None on purpose even once there is a session, because a half-configured app
    has nowhere useful for those links to go. #}
 {% extends "base.html" %}
-{% block title %}{{ heading }} — Setting up Stocktake{% endblock %}
+{% block title %}{% if heading %}{{ heading }} — {% endif %}Setting up Stocktake{% endblock %}
 {% block content %}
 <div class="wizard">
   <ol class="wizrail" aria-label="Setup progress">
@@ -21,7 +21,13 @@
   </ol>
 
   <div class="wizmain">
-    <h1>{{ heading }}</h1>
+    {# A way back, so noticing a mistake on the summary does not mean starting
+       again. Absent on the first step, which has nothing behind it. #}
+    {% if wizard_back %}
+    <a class="backlink" href="{{ wizard_back }}"><button type="button"
+       class="secondary">&larr; Back</button></a>
+    {% endif %}
+    {% if heading %}<h1>{{ heading }}</h1>{% endif %}
     {% if intro %}<p class="wizintro">{{ intro }}</p>{% endif %}
     {% if error %}<p class="panel error">{{ error }}</p>{% endif %}
     {% block wizard %}{% endblock %}

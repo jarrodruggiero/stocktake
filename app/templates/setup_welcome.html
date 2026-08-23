@@ -1,6 +1,14 @@
 {% extends "setup_base.html" %}
-{% set heading = "Set up Stocktake" %}
+{# No heading: the mark below is the heading, and "Set up Stocktake" restates
+   what a setup wizard on a freshly deployed app has already established. #}
 {% block wizard %}
+
+{# The same `.authbrand` treatment the login page uses, not a second one:
+   `_brand.html` ships one set of markup and the context sizes it. #}
+<h1 class="authbrand">
+  {% include "_brand.html" %}
+  <span class="visually-hidden">{{ app_name }}</span>
+</h1>
 
 {# No "What this is". Somebody reading this page already read a README or an
    app-store listing to get here — repeating the pitch is a paragraph between

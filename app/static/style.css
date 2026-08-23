@@ -240,7 +240,11 @@ a { color: var(--accent); }
    tiles and table cells — where it was scoped, it silently rendered as
    ordinary text, so "optional" and "blank = guessed" read as part of the
    field name. One selector, many pages. */
-.sub { color: var(--muted); font-size: var(--fs-small); }
+/* A filesystem path has no spaces to break at, so a long one pushes the whole
+   document sideways rather than wrapping. `.sub` carries paths in several
+   places (the config file, the database, the templates directory), and the
+   path being long is a property of somebody's deployment, not of this app. */
+.sub { color: var(--muted); font-size: var(--fs-small); overflow-wrap: anywhere; }
 .tile.up .big { color: var(--up); } .tile.down .big { color: var(--down); }
 
 .tablewrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line);

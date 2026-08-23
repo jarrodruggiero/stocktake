@@ -1540,3 +1540,58 @@ def test_the_database_step_probes_before_it_connects_and_connects_before_it_writ
 
     assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
     assert "OK" in result.stdout
+
+
+def test_the_app_is_unreachable_until_the_wizard_finishes(client, session_factory):
+    """The database and the account exist from step 3 onward — the account has
+    to be written somewhere — so from there every page answers and deleting
+    `/setup` from the address bar walks straight into a half-configured app: no
+    timezone, no portfolio, no config file written.
+
+    Setup is finished when the draft is discarded, so that is the test.
+    """
+    _through_the_account(client)
+
+    for path in ("/", "/holdings", "/imports-exports", "/profile"):
+        resp = client.get(path, headers=HTML, follow_redirects=False)
+        assert resp.status_code == 303, path
+        assert resp.headers["location"].startswith("/setup"), path
+
+    # Not a bounce to a CLOSED step: welcome shuts once an account exists, and
+    # sending somebody there loops through /login and back.
+    resp = client.get("/", headers=HTML, follow_redirects=False)
+    assert resp.headers["location"] != "/setup"
+
+    # Abandoning it is legitimate, so the way out stays open. /logout is POST
+    # only, and 405 from the ROUTE is the proof: the middleware let it past
+    # rather than bouncing it to the wizard like everything else.
+    assert client.get("/logout", headers=HTML,
+                      follow_redirects=False).status_code == 405
+
+    # And once it is finished, the app answers.
+    setupwizard.discard()
+    assert client.get("/", headers=HTML, follow_redirects=False).status_code == 200
+
+
+def test_a_machine_caller_gets_503_rather_than_a_redirect_mid_wizard(client):
+    """A redirect to an HTML page is a useless answer to a fetch, and a 200
+    would be a lie about a half-configured app."""
+    _through_the_account(client)
+    resp = client.get("/holdings", headers={"accept": "application/json"},
+                      follow_redirects=False)
+    assert resp.status_code == 503
+
+
+def test_every_step_after_the_first_offers_a_way_back(client):
+    """Noticing on the summary that step 5 was wrong should not mean starting
+    the wizard again."""
+    _through_the_account(client)
+
+    for path, expected in (("/setup/portfolio", "/setup/recovery"),
+                           ("/setup/environment", "/setup/features")):
+        page = client.get(path, headers=HTML)
+        assert f'class="backlink" href="{expected}"' in page.text, path
+
+    # And the recovery page, which is part of a step rather than one of its
+    # own, goes back to the step it belongs to rather than to itself.
+    assert 'class="backlink"' in client.get("/setup/recovery", headers=HTML).text

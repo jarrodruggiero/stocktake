@@ -148,6 +148,12 @@ def render_all() -> None:
                       "external_url": "https://portfolio.example.com"},
                 headers=HTML, follow_redirects=False)
     save("8-finish", client.get("/setup/finish", headers=HTML).text)
+    # POST it, not just GET it. The app refuses every page while a wizard is in
+    # progress, so leaving the draft open means every screenshot after this one
+    # is a redirect back to the wizard. `lifecycle.request_stop` is stubbed
+    # above, so finishing here does not stop the process.
+    client.post("/setup/finish", data={"_csrf": token("/setup/finish")},
+                headers=HTML, follow_redirects=False)
     save("9-restarting", client.get(
         "/setup/restarting?to=https%3A%2F%2Fportfolio.example.com%2F",
         headers=HTML).text)

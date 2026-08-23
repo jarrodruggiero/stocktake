@@ -734,3 +734,32 @@ other back link, because it ends up in an href — `//evil.test` and
 reach them: a guard that is copied is one that will eventually be copied
 slightly wrong.
 
+**106. The Unraid template maps ONE folder and sets a restart policy.**
+`/data` and `/config` are a real distinction on Kubernetes — a writable volume
+and a read-only ConfigMap — and no distinction at all on Unraid, where both
+were the same appdata directory. Mapping it twice asked one question twice and
+let somebody answer it two different ways, with the database and the config
+ending up in different folders and a backup of "the appdata folder" missing
+one. `APP_CONFIG_FILE` points inside `/data` instead.
+
+dockerMan also creates containers with no restart policy, and `lifecycle`
+restarts by STOPPING and relying on the runtime — so the setup wizard's final
+step stopped the app and it stayed stopped. `supervision()` says so on the
+page, honestly, but an honest warning is not a working restart. Both shipped
+compose files already set `unless-stopped`; the template was the only target
+that did not. `unless-stopped` rather than `always`, so a stop from the Unraid
+UI is respected.
+
+**107. The app refuses every page while a wizard is in progress.** The database
+and the account exist from step 3 onward — the account has to be written
+somewhere — so from there a session exists and every route answers. Deleting
+`/setup` from the address bar then walked into a half-configured app: no
+timezone, no portfolio, no config file written. Deferring the database until
+the end is not the alternative it looks like; step 3 needs somewhere to put the
+account. Setup is finished when the draft is discarded, so that is the signal.
+The redirect goes to the step the wizard is ON, not to `/setup` — welcome
+closes the moment an account exists, and sending somebody to a closed step
+bounces them to /login, which bounces them to /, which arrives back here.
+`/logout` stays open, because abandoning a wizard is a legitimate thing to
+want.
+

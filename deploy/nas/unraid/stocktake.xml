@@ -2,21 +2,36 @@
 <!--
   Unraid Community Applications template.
 
-  Two things here are specific to Unraid and worth understanding before
+  Three things here are specific to Unraid and worth understanding before
   changing them:
 
-  1. The user override (99:100) in ExtraParams. The image runs as uid 1000, but Unraid's
+  1. A restart policy in ExtraParams (a double hyphen cannot appear inside an
+     XML comment, so it is written without one here). dockerMan creates
+     containers with no restart policy, and the app's "restart now" — which the setup wizard
+     ends with — works by stopping this process and relying on the runtime to
+     start it again. Without a policy it stops and stays stopped, which is what
+     the page warns about but reads as the app breaking. Both shipped compose
+     files already set it; this was the only target that did not.
+
+     `unless-stopped` rather than `always`: stopping the container from the
+     Unraid UI must keep it stopped.
+
+  2. The user override (99:100) in ExtraParams. The image runs as uid 1000, but Unraid's
      appdata share is owned by nobody:users (99:100), so a bind mount from
      /mnt/user/appdata arrives unwritable by uid 1000 and the app cannot create
      its database. Running as 99:100 instead means the volume just works with
      no chown, which is the Unraid convention. Verified: the app boots, writes
      its database and serves as 99:100 — nothing outside /data needs writing.
 
-  2. The config file is a FILE, not a directory. Unraid users are used to
-     mapping a /config folder, so this maps the appdata directory and points
-     APP_CONFIG_FILE at a file inside it. Nothing has to be put there first:
-     with no config.yaml the app boots into its setup wizard and writes one,
-     which is the Unraid convention and the reason this template needs no
+  3. ONE mount, not two. The app keeps its database under /data and its config
+     under /config, which is a real distinction on Kubernetes — /config is a
+     read-only ConfigMap there and /data a writable volume. On Unraid both are
+     the same appdata directory, so mapping it twice asks one question twice
+     and lets somebody answer it two different ways. APP_CONFIG_FILE points at
+     a file inside /data instead, and /config is never touched.
+
+     Nothing has to be put there first: with no config.yaml the app boots into
+     its setup wizard and writes one, which is why this template needs no
      "copy this file before starting" step.
 -->
 <Container version="2">
@@ -52,7 +67,7 @@
   <WebUI>http://[IP]:[PORT:8000]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/jarrodruggiero/stocktake/main/deploy/nas/unraid/stocktake.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/jarrodruggiero/stocktake/main/docs/assets/icon.png</Icon>
-  <ExtraParams>--user 99:100</ExtraParams>
+  <ExtraParams>--user 99:100 --restart=unless-stopped</ExtraParams>
   <PostArgs/>
   <DonateText/>
   <DonateLink/>
@@ -63,17 +78,12 @@
 
   <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/stocktake"
           Mode="rw"
-          Description="Holds stocktake.db — your entire portfolio. Back this up; it is the only thing that needs backing up."
+          Description="Holds stocktake.db and config.yaml — your entire portfolio and its settings. Back this up; it is the only thing that needs backing up."
           Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/stocktake</Config>
 
-  <Config Name="Config folder" Target="/config" Default="/mnt/user/appdata/stocktake"
-          Mode="rw"
-          Description="Where the app keeps config.yaml. It writes the file itself on first run, so this folder can start out empty."
-          Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/stocktake</Config>
-
-  <Config Name="APP_CONFIG_FILE" Target="APP_CONFIG_FILE" Default="/config/config.yaml"
-          Description="Path to config.yaml inside the container. Leave as-is unless you renamed the file."
-          Type="Variable" Display="advanced" Required="true" Mask="false">/config/config.yaml</Config>
+  <Config Name="APP_CONFIG_FILE" Target="APP_CONFIG_FILE" Default="/data/config.yaml"
+          Description="Path to config.yaml inside the container. It sits beside the database so one folder holds everything. Leave as-is unless you renamed the file."
+          Type="Variable" Display="advanced" Required="true" Mask="false">/data/config.yaml</Config>
 
   <Config Name="Timezone" Target="TZ" Default="Australia/Melbourne"
           Description="Set this to YOUR timezone; the setup wizard asks for it too and the two should agree. Containers run UTC, and every date decision — which financial year today is in, whether a trade is dated in the future — uses this. Leaving it wrong puts the app a day out for part of each day."

@@ -56,11 +56,16 @@
 
   <div id="sqlitefields" class="dbfields">
     <label>Database file
+    {%- set file_tip %}
+    <p>This must be on a volume that survives the container being recreated.
+    If you mapped one to <code>/data</code>, the default is right.</p>
+    {% endset %}
+    {% with body = file_tip, label = "Where to put it" %}
+      {% include "_tip.html" %}
+    {% endwith %}
       <input name="path" value="{{ form.get('path', default_path) }}"
              placeholder="/data/portfolio.db">
     </label>
-    <p class="note">This must be on a volume that survives the container being
-    recreated. If you mapped one to <code>/data</code>, the default is right.</p>
   </div>
 
   <div id="pgfields" class="dbfields" hidden>
@@ -73,6 +78,16 @@
       </label>
     </div>
     <label>Database name
+    {%- set pg_tip %}
+    <p>The database must already exist. The app creates its tables, not the
+    database itself.</p>
+    <p>To keep the password out of <code>config.yaml</code>, set
+    <code>APP_DATABASE__PASSWORD</code> in the environment instead and leave
+    the field below empty — it wins over anything saved here.</p>
+    {% endset %}
+    {% with body = pg_tip, label = "About this database" %}
+      {% include "_tip.html" %}
+    {% endwith %}
       <input name="name" value="{{ form.get('name', 'stocktake') }}">
     </label>
     <div class="row">
@@ -83,9 +98,6 @@
         <input type="password" name="password" autocomplete="new-password">
       </label>
     </div>
-    <p class="note">The database must already exist — the app creates its tables, not the
-    database. Set <code>APP_DATABASE__PASSWORD</code> in the environment to
-    keep the password out of the config file.</p>
   </div>
 
   <div class="commitbar">
