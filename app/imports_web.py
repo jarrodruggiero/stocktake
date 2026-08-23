@@ -120,6 +120,21 @@ def imports_page(request: Request):
         )
 
 
+def _came_from(request: Request, form=None) -> tuple[str, str]:
+    """Where the back button goes, and what it says.
+
+    These pages are reached by POSTing a file, so the origin travels in a
+    hidden field rather than a query string. Validated the same way a
+    `?return=` is — it ends up in an href.
+    """
+    where = None
+    if form is not None:
+        where = form.get("return")
+    where = where or request.query_params.get("return")
+    path = navigation.safe_path(str(where) if where else None, "/imports-exports")
+    return path, navigation.back_label(path, "Imports")
+
+
 @router.post("/imports-exports/csv", response_class=HTMLResponse)
 async def csv_preview(request: Request, file: UploadFile, broker: str = Form(...)):
     templates, settings, session_factory = _ctx(request)
@@ -164,6 +179,8 @@ async def csv_preview(request: Request, file: UploadFile, broker: str = Form(...
             "active_nav": "imports",
             "broker": broker,
             "filename": file.filename,
+            "return_to": _came_from(request)[0],
+            "back_label": _came_from(request)[1],
             "candidates": result.candidates,
             "skipped": result.skipped,
             "errors": result.errors,
@@ -222,6 +239,8 @@ async def csv_resolve(request: Request, uid: str):
                 "active_nav": "imports",
                 "broker": staged["broker"],
                 "filename": staged.get("filename", ""),
+                "return_to": _came_from(request)[0],
+                "back_label": _came_from(request)[1],
                 "candidates": candidates,
                 "skipped": [],
                 "errors": [],
@@ -740,8 +759,11 @@ async def broker_designer(request: Request, file: UploadFile = None,
                 "date_formats": brokerdesign.DATE_FORMATS,
                 "using_custom": using_custom,
                 "date_format_custom": date_format_custom,
+                "return_to": _came_from(request, form)[0],
+                "back_label": _came_from(request, form)[1],
                 "ambiguous": brokerdesign.dates_are_ambiguous(dates),
                 "action_words": brokerdesign.action_words(read.rows, chosen.get("action")),
+                "drp_skipped": brokerdesign.drp_skipped(result.skipped) if result else 0,
                 "actions": actions,
                 "result": result,
                 "yaml": brokerdesign.broker_yaml(

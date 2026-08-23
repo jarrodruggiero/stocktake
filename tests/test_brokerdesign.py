@@ -646,3 +646,17 @@ def test_the_pages_builtin_word_list_matches_the_importers():
     block = re.search(r"var BUILTIN = \{(.*?)\};", js, re.S).group(1)
     in_js = dict(re.findall(r'(\w+):\s*"(\w+)"', block))
     assert in_js == brokercsv.BUILTIN_ACTIONS
+
+
+def test_the_back_button_goes_where_you_came_from_not_somewhere_fixed():
+    """The same rule as the holdings back button: the origin travels with the
+    request, and an off-site one is refused because it ends up in an href."""
+    from app import navigation
+
+    assert navigation.safe_path("/holdings", "/imports-exports") == "/holdings"
+    assert navigation.back_label("/holdings", "Imports") == "Holdings"
+    # The open-redirect cases, which look like paths and are not.
+    for hostile in ("//evil.test", "/\\evil.test", "https://evil.test", ""):
+        assert navigation.safe_path(hostile, "/imports-exports") == "/imports-exports"
+    # Unnamed but valid: the fallback names it rather than the template guessing.
+    assert navigation.back_label("/holding/ALPHA", "Imports") == "Imports"

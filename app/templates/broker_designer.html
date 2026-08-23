@@ -2,6 +2,8 @@
 {% block title %}Map a broker CSV — Stocktake{% endblock %}
 {% block content %}
 
+<a class="backlink" href="{{ return_to }}"><button type="button" class="secondary">&larr; {{ back_label }}</button></a>
+
 <h1>Map a broker CSV <small>{{ read.headers | length }} columns</small></h1>
 
 {% if read.problem %}
@@ -182,6 +184,13 @@ anywhere; it is held in this form until you leave the page.</p>
   {% else %}
   <p class="panel ok">{{ result.candidates | length }} trade(s) read from the sample.
   If these look right, the format below is ready.</p>
+  {% if drp_skipped %}
+  <p class="panel warn"><strong>{{ drp_skipped }} DRP allotment(s) left out.</strong>
+  They carry units and no price, because the registry bought them out of the
+  distribution — so this file cannot say what they cost. Import the dividend
+  statement instead, which carries the cost base and creates the units with it.
+  <a href="{{ docs_url }}/guides/">More on statement imports</a></p>
+  {% endif %}
   <div class="tablewrap">
   <table>
     <thead><tr><th>Date</th><th>Ticker</th><th>Type</th><th class="num">Units</th>

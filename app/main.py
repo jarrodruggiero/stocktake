@@ -2367,40 +2367,23 @@ def _safe_query(back: str | None) -> str:
 # decided WITH the path and not in the template: `?return=` is an arbitrary
 # path, and a template turning one into a name is guessing. Anything not named
 # here falls back to something the caller knows — the ticker, usually.
-BACK_LABELS = {"/": "Portfolio", "/holdings": "Holdings",
-               "/imports-exports": "Imports", "/charts": "Charts",
-               "/schedule": "DCA Schedule"}
+BACK_LABELS = navigation.BACK_LABELS
 
 
 def _back_label(path: str, fallback: str) -> str:
     """The name of the page `path` leads to."""
     # A financial year is the one destination whose name is in the path rather
-    # than in the table above — there is one per year and they are generated.
+    # than in the table — there is one per year and they are generated.
     if path.startswith("/?fy="):
         year = path.removeprefix("/?fy=")
         if year.isdigit():
             return fyreport.fy_label(int(year))
-    return BACK_LABELS.get(path, fallback)
+    return navigation.back_label(path, fallback)
 
 
-def _safe_path(where: str | None, fallback: str) -> str:
-    """A path on this site, or the fallback. The open-redirect guard.
-
-    Anything arriving from a request that ends up in a `Location` header goes
-    through here. The subtlety is that "starts with a slash" is not enough:
-    `//evil.test` is a protocol-relative URL and a browser follows it straight
-    off this site, while `/\\evil.test` is treated the same way by some. Both
-    look like paths and neither is one.
-
-    Extracted rather than written a third time — logout had this inline, the
-    trade editor's `?return=` needed it next, and a guard that is copied is a
-    guard that will eventually be copied slightly wrong.
-    """
-    if not where or not where.startswith("/"):
-        return fallback
-    if where.startswith("//") or where.startswith("/\\"):
-        return fallback
-    return where
+# Both live in `navigation` so the imports router can reach them too; a guard
+# that is copied is a guard that will eventually be copied slightly wrong.
+_safe_path = navigation.safe_path
 
 
 @app.post("/profile/columns")
