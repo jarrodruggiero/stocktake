@@ -303,7 +303,7 @@ select:focus-visible, textarea:focus-visible {
 .flash { background: rgba(21, 115, 71, 0.12); color: var(--up); border-radius: 8px; padding: 0.6rem 0.9rem; }
 .badge-new { background: var(--up); }
 .badge-duplicate { background: var(--muted); }
-.badge-unknown-instrument { background: var(--down); }
+.badge-unknown-instrument { background: var(--accent); }
 tr.muted td { opacity: 0.55; }
 pre.note { overflow-x: auto; background: var(--sunken); border-radius: 8px; padding: 0.8rem; }
 

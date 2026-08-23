@@ -156,7 +156,11 @@ class OcrSettings(BaseModel):
 
 
 class ImportSettings(BaseModel):
-    allow_new_instruments: bool = False
+    # On, because an import of a broker's own export is normally the FIRST
+    # thing an install does, and every ticker in it is unknown at that point.
+    # What stops a typo becoming an instrument is the preview's resolve step,
+    # which shows each new ticker and exchange for correction — decisions.md #99.
+    allow_new_instruments: bool = True
     # Largest upload accepted, in megabytes. A broker CSV or a statement PDF is
     # a few hundred kilobytes; the cap is there so a large file cannot be read
     # into memory on a container with a few hundred megabytes to its name.

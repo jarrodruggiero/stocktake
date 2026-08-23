@@ -447,3 +447,66 @@ def test_times_are_left_alone_when_no_zone_is_declared():
         "15/07/2025 14:00:00,Buy,ACME,100,5.00,9.50\n"
     )
     assert result.candidates[0].time == dt.time(14, 0)
+
+
+# --------------------------------------------------------------------------- #
+# Resolving an instrument the import has never seen
+# --------------------------------------------------------------------------- #
+
+def test_unknown_instruments_are_grouped_by_instrument_not_by_row():
+    """Ninety trades in six instruments asks six questions, not ninety."""
+    result = _one(
+        "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+        "06/01/2025,Buy,ACME,100,5.00,9.50\n"
+        "07/01/2025,Buy,ACME,100,6.00,9.50\n"
+        "08/01/2025,Buy,NOVA,10,7.00,9.50\n"
+    )
+    for c in result.candidates:
+        c.status = "unknown-instrument"
+    assert brokercsv.unresolved(result.candidates) == [
+        ("ACME", "ASX", 2), ("NOVA", "ASX", 1)]
+
+
+def test_correcting_an_exchange_moves_every_trade_of_that_instrument():
+    """The case this exists for: one ticker listed on two exchanges.
+
+    A correction is per instrument, so fixing it once fixes the whole file —
+    and a row of a DIFFERENT instrument that happens to share the ticker string
+    must not be dragged along with it.
+    """
+    result = _one(
+        "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+        "06/01/2025,Buy,ACME,100,5.00,9.50\n"
+        "07/01/2025,Buy,ACME,100,6.00,9.50\n"
+        "08/01/2025,Buy,NOVA,10,7.00,9.50\n"
+    )
+    moved = brokercsv.relabel(result.candidates, {("ACME", "ASX"): ("ACME", "NASDAQ")})
+    assert moved == 2
+    assert [(c.ticker, c.exchange) for c in result.candidates] == [
+        ("ACME", "NASDAQ"), ("ACME", "NASDAQ"), ("NOVA", "ASX")]
+
+
+def test_a_correction_that_matches_an_existing_instrument_stops_being_new(pf):
+    """The point of rechecking: a corrected ticker that already exists must
+    read as an existing holding before anything is written, not as a second
+    instrument about to be created beside it."""
+    fac.make_instrument(pf, "ACME", exchange="NASDAQ", currency="USD")
+    pf.commit()
+
+    result = _one(
+        "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+        "06/01/2025,Buy,ACME,100,5.00,9.50\n"
+    )
+    brokercsv.annotate(pf, result.candidates, PERMISSIVE)
+    assert result.candidates[0].status == "unknown-instrument"
+
+    brokercsv.relabel(result.candidates, {("ACME", "ASX"): ("ACME", "NASDAQ")})
+    brokercsv.annotate(pf, result.candidates, PERMISSIVE)
+    assert result.candidates[0].status == "new"
+    assert brokercsv.unresolved(result.candidates) == []
+
+
+def test_creating_instruments_is_the_default():
+    """An import of a broker's own export is normally the first thing an
+    install does, and every ticker in it is unknown at that point."""
+    assert ImportSettings().allow_new_instruments is True

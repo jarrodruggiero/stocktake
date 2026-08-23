@@ -149,6 +149,7 @@ async def csv_preview(request: Request, file: UploadFile, broker: str = Form(...
             json.dumps(
                 {
                     "broker": broker,
+                    "filename": file.filename,
                     "user_id": ctx.user.id,
                     "rows": [c.as_dict() for c in result.candidates],
                 }
@@ -168,8 +169,68 @@ async def csv_preview(request: Request, file: UploadFile, broker: str = Form(...
             "errors": result.errors,
             "uid": uid,
             "insertable": sum(1 for c in result.candidates if c.status != "duplicate"),
+            "unresolved": brokercsv.unresolved(result.candidates),
         },
     )
+
+
+@router.post("/imports-exports/csv/{uid}/resolve", response_class=HTMLResponse)
+async def csv_resolve(request: Request, uid: str):
+    """Apply corrected tickers and exchanges, then re-check against the database.
+
+    The same preview page comes back, so a correction that resolves to an
+    instrument already held reads as such before anything is written — which is
+    the point when one ticker exists on two exchanges.
+    """
+    templates, settings, _ = _ctx(request)
+    if not _UID.match(uid):
+        raise HTTPException(400, "bad staging id")
+    staged_path = STAGING / f"{uid}.json"
+    if not staged_path.is_file():
+        raise HTTPException(404, "that preview has expired — upload the file again")
+    staged = json.loads(staged_path.read_text())
+    candidates = [brokercsv.CandidateTrade.from_dict(d) for d in staged["rows"]]
+
+    with auth.scoped_session(request) as (ctx, s):
+        await auth.verify_csrf(request, s)
+        _require_write(ctx)
+        if staged.get("user_id") != ctx.user.id:
+            raise HTTPException(403, "that staged upload belongs to another account")
+
+        form = await request.form()
+        moves: dict[tuple[str, str], tuple[str, str]] = {}
+        for key in form:
+            if not key.startswith("ticker__"):
+                continue
+            was_ticker, _, was_exchange = key[len("ticker__"):].partition("__")
+            new_ticker = str(form.get(key, "")).strip().upper()
+            new_exchange = str(
+                form.get(f"exchange__{was_ticker}__{was_exchange}", "")).strip().upper()
+            if new_ticker and new_exchange:
+                moves[(was_ticker, was_exchange)] = (new_ticker, new_exchange)
+        brokercsv.relabel(candidates, moves)
+        brokercsv.annotate(s, candidates, settings.imports)
+        staged["rows"] = [c.as_dict() for c in candidates]
+        staged_path.write_text(json.dumps(staged))
+
+        return templates.TemplateResponse(
+            request,
+            "csv_preview.html",
+            {
+                "auth": ctx,
+                "nav": navigation.nav_for(ctx, settings),
+                "active_nav": "imports",
+                "broker": staged["broker"],
+                "filename": staged.get("filename", ""),
+                "candidates": candidates,
+                "skipped": [],
+                "errors": [],
+                "uid": uid,
+                "insertable": sum(1 for c in candidates if c.status != "duplicate"),
+                "unresolved": brokercsv.unresolved(candidates),
+                "rechecked": True,
+            },
+        )
 
 
 @router.post("/imports-exports/csv/{uid}/commit")

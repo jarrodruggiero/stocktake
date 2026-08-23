@@ -230,6 +230,14 @@ def render_all() -> None:
         files={"file": ("movements.csv", designer_csv, "text/csv")},
         headers=HTML).text)
 
+    # The CSV preview, with instruments the install has never seen — the resolve
+    # step only renders when there are some, so a default screenshot misses it.
+    save("18d-csv-preview", client.post(
+        "/imports-exports/csv",
+        data={"_csrf": token("/imports-exports"), "broker": "selfwealth"},
+        files={"file": ("movements.csv", designer_csv, "text/csv")},
+        headers=HTML).text)
+
     save("19-plan-empty", client.get("/schedule", headers=HTML).text)
     client.post("/schedule/save",
                 data={"_csrf": token("/schedule"), "name": "Regular buys",

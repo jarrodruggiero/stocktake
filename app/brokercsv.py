@@ -252,17 +252,52 @@ def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
     return result
 
 
-def annotate(session: Session, candidates: list[CandidateTrade], imports: ImportSettings) -> None:
-    """Mark each candidate as new / duplicate / unknown-instrument."""
+def unresolved(candidates: list[CandidateTrade]) -> list[tuple[str, str, int]]:
+    """The distinct (ticker, exchange) pairs that would be created, with counts.
+
+    Grouped rather than per row: a file with ninety trades in six instruments
+    asks six questions, not ninety.
+    """
+    seen: dict[tuple[str, str], int] = {}
     for c in candidates:
+        if c.status == "unknown-instrument":
+            seen[(c.ticker, c.exchange)] = seen.get((c.ticker, c.exchange), 0) + 1
+    return [(t, e, n) for (t, e), n in sorted(seen.items())]
+
+
+def relabel(candidates: list[CandidateTrade], moves: dict[tuple[str, str], tuple[str, str]]) -> int:
+    """Apply corrected tickers and exchanges to every row that carried the old.
+
+    Returns how many rows moved. A correction is per instrument, so fixing
+    ALPHA on the wrong exchange fixes every trade of it at once.
+    """
+    changed = 0
+    for c in candidates:
+        new = moves.get((c.ticker, c.exchange))
+        if new and new != (c.ticker, c.exchange):
+            c.ticker, c.exchange = new
+            changed += 1
+    return changed
+
+
+def annotate(session: Session, candidates: list[CandidateTrade], imports: ImportSettings) -> None:
+    """Mark each candidate as new / duplicate / unknown-instrument.
+
+    Re-entrant: status and detail are reset first, because the resolve step
+    calls this again after a correction and a stale "unknown-instrument" would
+    keep refusing a ticker that now resolves.
+    """
+    for c in candidates:
+        c.status, c.detail = "new", ""
         inst = session.scalars(
             select(Instrument).where(Instrument.ticker == c.ticker, Instrument.exchange == c.exchange)
         ).first()
         if inst is None:
             c.status = "unknown-instrument"
             c.detail = (
-                "will be created on commit" if imports.allow_new_instruments
-                else "not in the instrument list; set imports.allow_new_instruments or add it first"
+                "will be created"
+                if imports.allow_new_instruments
+                else "not in the instrument list; imports.allow_new_instruments is off"
             )
             continue
         dupe = session.scalars(
