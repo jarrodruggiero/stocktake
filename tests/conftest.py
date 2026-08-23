@@ -7,7 +7,9 @@
    has.
 3. **Cache clearing.** `queries` caches by portfolio id against a fingerprint,
    every test gets id 1, and two tests can share a fingerprint — so
-   `_clear_caches` is autouse. Do not remove it.
+   `_clear_caches` is autouse. Do not remove it. `_discard_wizard_draft` is
+   autouse for the same reason: the draft is process-global, and the app
+   refuses pages while one is in progress.
 
 SQLite by default; Postgres is an untested claim otherwise:
 
@@ -139,6 +141,22 @@ def _clear_caches():
     yield
     for cache in (queries._series_cache, queries._holdings_cache, queries._grouped_cache):
         cache.clear()
+
+
+@pytest.fixture(autouse=True)
+def _discard_wizard_draft():
+    """A wizard draft is process-global, so one test's leaks into the next.
+
+    It never showed until the app started REFUSING pages while a wizard is in
+    progress: before that nothing outside /setup consulted it, and a stale
+    draft was invisible. Now a test that walks the wizard makes every later
+    test's request redirect.
+    """
+    from app import setupwizard
+
+    setupwizard.discard()
+    yield
+    setupwizard.discard()
 
 
 @pytest.fixture(autouse=True)

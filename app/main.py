@@ -672,6 +672,18 @@ async def require_login(request: Request, call_next):
     # A temporary password must be replaced before anything else is reachable.
     if must_change and path not in ("/profile", "/profile/password", "/logout"):
         return _redirect("/profile")
+    # The wizard creates the database and the account BEFORE it has finished —
+    # step 3 has to write the account somewhere — so from there on a session
+    # exists and every page answers. Leaving mid-wizard then means a
+    # half-configured app with no timezone, no portfolio and no config file
+    # written, reached by deleting `/setup` from the address bar. Setup is
+    # finished when the draft is discarded, so this closes the gap without the
+    # wizard needing to know about it. `/logout` stays open: abandoning it is a
+    # legitimate thing to want.
+    if setupwizard.in_progress() and path != "/logout":
+        if "text/html" not in request.headers.get("accept", ""):
+            return PlainTextResponse("setup is not finished", status_code=503)
+        return _redirect(_wizard_url())
     return await call_next(request)
 
 
@@ -708,6 +720,25 @@ class _WizardRefused(Exception):
         self.response = response
 
 
+# Which step URL the wizard is actually on. NOT `/setup`: welcome closes the
+# moment an account exists, so redirecting there sends somebody to /login, which
+# sends them to /, which arrives back here — a loop.
+_WIZARD_URLS = {
+    "welcome": "/setup", "database": "/setup/database", "account": "/setup/profile",
+    "recovery": "/setup/recovery", "2fa": "/setup/2fa", "portfolio": "/setup/portfolio",
+    "features": "/setup/features", "environment": "/setup/environment",
+    "finish": "/setup/finish",
+}
+
+
+def _wizard_url() -> str:
+    step = setupwizard.next_step(
+        database_configured=database.source(settings).configured,
+        account_exists=_accounts_exist(),
+    )
+    return _WIZARD_URLS.get(step, "/setup/finish")
+
+
 def _wizard_step(request: Request, step: str):
     """Gate one wizard step, returning the auth context for the later ones.
 
@@ -740,6 +771,22 @@ def _wizard_step(request: Request, step: str):
     return ctx
 
 
+def _previous_step_url(rail: list[dict]) -> str | None:
+    """The step before the active one, as a URL, or None at the start.
+
+    A wizard whose only way back is the browser button is one where noticing a
+    mistake on the summary means starting again. Steps the deployment skips are
+    not offered: they have nothing to go back TO.
+    """
+    seen: list[str] = []
+    for entry in rail:
+        if entry.get("state") == "active":
+            return _WIZARD_URLS.get(seen[-1]) if seen else None
+        if entry.get("state") != "skipped":
+            seen.append(entry.get("key") or entry.get("name") or "")
+    return None
+
+
 def _wizard_page(request: Request, step: str, extra: dict, *,
                  ctx=None, skip: set[str] | None = None,
                  rail: str | None = None) -> HTMLResponse:
@@ -758,6 +805,10 @@ def _wizard_page(request: Request, step: str, extra: dict, *,
             "csrf": token,
             "step": step,
             "steps": setupwizard.progress(rail or step, skip=skip),
+            # The previous step somebody can actually return to. Derived from
+            # the rail rather than a fixed order, so a step this deployment
+            # skips is skipped going backwards too.
+            "wizard_back": _previous_step_url(setupwizard.progress(rail or step, skip=skip)),
             "error": None,
             **extra,
         },

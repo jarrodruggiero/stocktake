@@ -538,7 +538,9 @@ def test_the_codes_page_is_honest_about_what_they_are(client, session_factory):
                        data={"_csrf": session_factory and session_csrf(session_factory)},
                        headers=HTML)
 
-    lowered = page.text.lower()
+    # Whitespace-normalised: the claim is what matters, and a reflow that puts
+    # a line break inside the sentence does not stop the page making it.
+    lowered = " ".join(page.text.lower().split())
     # The claim, not a keyword. This asserted `"safe" or "secure"` appeared
     # somewhere, which a condensing pass can break while the page still makes
     # the point — a word-presence check was standing in for the sentence.

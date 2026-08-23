@@ -5,19 +5,25 @@
    explaining what somebody holding them can do. #}
 <section class="panel warn">
   <p><strong>Save these now. They are shown once.</strong> Each one works a
-  single time.</p>
+  single time.
+  {#- What somebody holding this list can do belongs WITH the list, but above
+      it rather than under it: read after the codes, it arrives once they have
+      already been copied somewhere. #}
+  {%- set codes_tip %}
+  {% if not totp_on %}
+  <p><strong>Two-factor authentication is not on for this account</strong>, so
+  this list is the only thing besides your password that can reach it —
+  treat it exactly like a password.</p>
+  {% endif %}
+  <p>Each code works once. Using one does not disable the others.</p>
+  <p><a href="{{ docs_url }}/guides/recovery-codes/">Learn more about recovery codes</a></p>
+  {% endset %}
+  {% with body = codes_tip, label = "What these are for" %}
+    {% include "_tip.html" %}
+  {% endwith %}
+  </p>
 
   <ul class="codes">
     {% for code in codes %}<li><code>{{ code }}</code></li>{% endfor %}
   </ul>
-
 </section>
-
-<p class="note">
-  {# The one thing that cannot wait for the docs: with no second factor, this
-     list is the whole of the account's second line of defence. #}
-  {% if not totp_on %}<strong>Two-factor authentication is not on for this
-  account, so this list is the only thing besides your password that can reach
-  it — treat it exactly like a password.</strong>{% endif %}
-  <a href="{{ docs_url }}/guides/recovery-codes/">Learn more about recovery codes</a>
-</p>

@@ -6,22 +6,31 @@
   <input type="hidden" name="_csrf" value="{{ csrf }}">
 
   <label>Portfolio name
+  {%- set name_tip %}
+  <p>You can have more than one later — a family member's, or a separate
+  strategy. This is just the first.</p>
+  {% endset %}
+  {% with body = name_tip, label = "About portfolios" %}
+    {% include "_tip.html" %}
+  {% endwith %}
     <input name="name" value="{{ name }}" required autofocus maxlength="80">
   </label>
-  <p class="note">You can have more than one later — a family member's, or a
-  separate strategy. This is just the first.</p>
 
   <label class="check">
     <input type="checkbox" name="price_feed" value="on" {% if price_feed %}checked{% endif %}>
     <span>Automatically refresh market data</span>
+  {%- set feed_tip %}
+  <p>Once a day the app asks Yahoo Finance for closing prices and exchange
+  rates.</p>
+  <p><strong>It sends ticker symbols and nothing else</strong> — no holdings,
+  no quantities, no account.</p>
+  {% endset %}
+  {% with body = feed_tip, label = "What this sends" %}
+    {% include "_tip.html" %}
+  {% endwith %}
   </label>
-  <p class="note">Once a day the app asks Yahoo Finance for closing prices and exchange rates.
-  <strong>It sends ticker symbols and nothing else</strong> — no holdings, no
-  quantities, no account.</p>
 
   <label for="tzinput">Location and timezone</label>
-  <p class="note">Decides what "today" means — the current financial year, and when the daily
-  refresh runs.</p>
   <div class="row">
     <input id="tzinput" name="timezone" list="zones" value="{{ timezone }}"
            required autocomplete="off" spellcheck="false">
