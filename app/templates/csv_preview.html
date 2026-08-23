@@ -2,6 +2,8 @@
 {% block title %}CSV preview — Stocktake{% endblock %}
 {% block content %}
 
+<a class="backlink" href="{{ return_to }}"><button type="button" class="secondary">&larr; {{ back_label }}</button></a>
+
 <h1>CSV preview <small>{{ filename }} ({{ broker }})</small></h1>
 
 {% if errors %}

@@ -1837,8 +1837,14 @@ button.swatchwheel:hover { border-color: var(--accent); filter: none; }
 .fieldtray { display: flex; flex-wrap: wrap; align-items: center;
   gap: var(--sp-2); margin: var(--sp-3) 0; }
 .fieldtray > .sub { margin-right: var(--sp-1); }
+/* Centred by flex with an explicit line-height, for the reason the setup
+   rail's circles need it: a button's default `line-height: normal` centres the
+   LINE BOX, and the font's ascent and descent are not symmetric about the ink,
+   so the word renders low inside it. The `optional` span at a smaller size
+   makes that line box taller still. */
 .fieldchip { cursor: grab; font: inherit; font-size: var(--fs-sm);
-  padding: 0.2rem 0.6rem; border-radius: 999px; background: var(--sunken);
+  display: inline-flex; align-items: center; gap: 0.3rem; line-height: 1;
+  padding: 0.35rem 0.6rem; border-radius: 999px; background: var(--sunken);
   border: 1px solid var(--line); color: var(--ink); margin: 0; }
 .fieldchip .sub { font-size: var(--fs-label); }
 .fieldchip:hover { border-color: var(--accent); }
@@ -1853,8 +1859,9 @@ button.swatchwheel:hover { border-color: var(--accent); filter: none; }
 .chipwrap { display: inline-flex; align-items: stretch; }
 .chipwrap .fieldchip.assigned { border-top-right-radius: 0; border-bottom-right-radius: 0;
   border-right: none; }
-.chipclear { font: inherit; font-size: var(--fs-sm); line-height: 1; cursor: pointer;
-  margin: 0; padding: 0.2rem 0.5rem; border-radius: 0 999px 999px 0;
+.chipclear { font: inherit; font-size: var(--fs-sm); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; line-height: 1;
+  margin: 0; padding: 0.35rem 0.55rem; border-radius: 0 999px 999px 0;
   background: var(--accent); color: var(--on-accent);
   border: 1px solid var(--accent); border-left: 1px solid rgb(255 255 255 / 0.35); }
 .chipclear:hover { background: var(--down); border-color: var(--down); }

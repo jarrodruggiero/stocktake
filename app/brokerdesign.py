@@ -202,6 +202,15 @@ def dates_are_ambiguous(values: list[str]) -> bool:
     return _parse_all(usable, "%d/%m/%Y") and _parse_all(usable, "%m/%d/%Y")
 
 
+def drp_skipped(skipped: list[str]) -> int:
+    """How many rows were left out for having no price.
+
+    The reason is per row in `skipped`, which is where it belongs when you are
+    reading one; above the table it wants saying once.
+    """
+    return sum(1 for s in skipped if "no price" in s)
+
+
 def action_words(rows: list[dict], header: str | None) -> list[str]:
     """The distinct words this file uses in its action column, commonest first.
 

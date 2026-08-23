@@ -136,3 +136,34 @@ def resolve_layout(layout: dict | None) -> tuple[list[ChartDef], list[ChartDef]]
         [CHART_BY_KEY[k] for k in order if k not in hidden],
         [CHART_BY_KEY[k] for k in order if k in hidden],
     )
+
+
+# --------------------------------------------------------------------------- #
+# Getting back to where you came from
+# --------------------------------------------------------------------------- #
+
+# Where a `?return=` can lead, and what to call it. The NAME is decided with
+# the path rather than in a template: a `?return=` is an arbitrary path, and a
+# template turning one into a name is guessing.
+BACK_LABELS = {"/": "Portfolio", "/holdings": "Holdings",
+               "/imports-exports": "Imports", "/charts": "Charts",
+               "/schedule": "DCA Schedule"}
+
+
+def safe_path(where: str | None, fallback: str) -> str:
+    """A path on this site, or the fallback. The open-redirect guard.
+
+    "Starts with a slash" is not enough: `//evil.test` is a protocol-relative
+    URL a browser follows straight off this site, and `/\\evil.test` is treated
+    the same way by some. Both look like paths and neither is one.
+    """
+    if not where or not where.startswith("/"):
+        return fallback
+    if where.startswith("//") or where.startswith("/\\"):
+        return fallback
+    return where
+
+
+def back_label(path: str, fallback: str) -> str:
+    """The name of the page `path` leads to."""
+    return BACK_LABELS.get(path, fallback)

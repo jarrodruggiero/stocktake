@@ -725,3 +725,12 @@ column parses without complaint and produces trades whose price is their
 brokerage, so taking a column takes it from whoever had it. `guess()` already
 worked this way; assigning by hand now does too.
 
+**105. The import pages carry the origin in a hidden field, not a query
+string.** They are reached by POSTing a file, so there is no `?return=` to
+read. The value goes through the same `navigation.safe_path` guard as every
+other back link, because it ends up in an href — `//evil.test` and
+`/\\evil.test` both look like paths and neither is one. `safe_path` and
+`BACK_LABELS` live in `navigation` rather than `main` so the imports router can
+reach them: a guard that is copied is one that will eventually be copied
+slightly wrong.
+
