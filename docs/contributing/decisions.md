@@ -132,15 +132,12 @@ stale.
 **22. Scratch files live in `/scratch`, never in the data directory.** The
 statement mapper renders page images of a document somebody is mapping — their
 name, address and holder number — kept 0700 and deleted 30 minutes after last
-use. They were under `/data` until 2026-08-12 on the reasoning that it has to be
-writable anyway, which was wrong twice: `/data` is the directory the deploy docs
-tell you to back up, so a retention policy would have kept exactly what the page
-promises to throw away; and it broke backups outright, because a backup mover
-that drops capabilities loses `DAC_OVERRIDE` and cannot traverse a 0700
-directory it does not own. `/scratch` exists in the image, so this works with no
-volume at all; mount an `emptyDir` over it if you want a size limit. Losing a
-mapping session on restart is intended.
-
+use. `/data` is wrong for them twice over: it is the directory the deploy docs
+tell you to back up, so a retention policy would keep exactly what the page
+promises to throw away, and a backup mover that drops capabilities loses
+`DAC_OVERRIDE` and cannot traverse a 0700 directory it does not own. `/scratch`
+exists in the image, so this needs no volume; mount an `emptyDir` for a size
+limit. Losing a mapping session on restart is intended.
 **23. `user.public_id` exists ahead of need, and must never be reissued.** An
 auto-increment `id` cannot be an OIDC `sub`: it leaks how many accounts exist
 and when this one was made, and every app's "user 1" collides. Adding it later
@@ -155,15 +152,12 @@ schema comparison reports. Applies to `user.public_id` and
 `webauthn_credential.credential_id`.
 
 **25. A sortable header may cycle through four states, not two.** Gain and
-Today show an amount with its percentage underneath, and both are worth
-ordering by — "what made me the most money" and "what grew the fastest" are
-different questions, and a $2 gain on $10 beats a $200 gain on $100,000. The
-header cycles value ↑, % ↑, value ↓, % ↓ rather than growing a second control,
-because the percentage is already a sort key in its own right; nothing extra is
-stored and the URL still says what it is sorted by. The state has to be
-*rendered*, not just explained: after two clicks nobody can tell which of four
-they are in, and a tooltip helps discovery but not orientation.
-
+Today show an amount with its percentage underneath, and both are worth ordering
+by: a $2 gain on $10 beats a $200 gain on $100,000, and "what made the most" and
+"what grew fastest" are different questions. The header cycles value ↑, % ↑,
+value ↓, % ↓ rather than growing a second control. The state must be *rendered*,
+not just explained — after two clicks nobody can tell which of four they are
+in.
 **26. The CGT module refuses financial years it does not understand.** From
 1 July 2027 the 50% discount is replaced by cost-base indexation plus a 30%
 minimum tax, and an asset held across that date is apportioned on its market
@@ -195,15 +189,14 @@ only whether the cookie already presented is still live. `/metrics` has no
 cookie to present; it is off unless enabled and 404s when off, and **that check
 is the whole access control** — read `metrics.py` before adding a series.
 
-**30. Sixteen recovery codes, not eight and not a passphrase.** They now stand
-in for a forgotten password as well as a missing second factor, and an
-authenticator-less sign-in burns one *every time* until the person re-enrols, so
-the list drains faster than eight anticipated. Sixteen single-use codes beat one
+**30. Sixteen recovery codes, not eight and not a passphrase.** They stand in
+for a forgotten password as well as a missing second factor, and an
+authenticator-less sign-in burns one every time until the person re-enrols, so
+the list drains faster than eight allows for. Sixteen single-use codes beat one
 long secret: a spent one is worthless to a shoulder-surfer and the list survives
-being partly used. A 12/24-word phrase is the other shape of this idea and the
-wrong one here — those are offline-derived master keys held by their owner;
-these are server-issued, stored hashed and revocable one at a time.
-
+being partly used. A 12/24-word phrase is the wrong shape here — those are
+offline-derived master keys held by their owner; these are server-issued, stored
+hashed, and revocable one at a time.
 **31. Many columns carry both `default=` and `server_default=`, on purpose.**
 `default=` is Python-side and covers rows this app inserts; `server_default=` is
 DDL and covers everything else, including a migration adding a NOT NULL column
@@ -237,14 +230,11 @@ interface says "Site admin" and "Portfolio admin". The stored values stay
 `owner`/`member`/`viewer`.
 
 **35. Annualise on the window asked for, not the span it snapped to.** `start`
-is the first price date on or after the cutoff, so with a weekday-only feed the
-cutoff lands on a weekend about two days in seven — the span comes to 363–364
-days and the "1 year" row's annualised figure silently vanished for the rest of
-the week. The window is still a year, which is what the row is labelled, and
-annualising a 364-day one moves it by ~0.1%. The arithmetic still uses the real
-span. "All time" passes no window and is judged on its actual span, which is
-right: it is only a year old when it is a year old.
-
+is the first price date on or after the cutoff, so a weekday-only feed lands on
+a weekend about two days in seven and the span comes to 363–364 days. The window
+is still the year the row is labelled, and annualising a 364-day one moves it by
+~0.1%. The arithmetic still uses the real span. "All time" passes no window and
+is judged on its actual span: it is only a year old when it is a year old.
 ## Imports, and the documents they read
 
 **36. A recovery code substitutes for the password, never for the second
@@ -293,15 +283,12 @@ once somebody has chosen. When one *is* configured, migrations run here before
 any traffic is served.
 
 **42. Recovery codes are 15 characters, and the throttle stays regardless.**
-NIST SP 800-63B wants a look-up secret to carry at least 64 bits, or 20 if
-failed attempts are throttled. At log2(31) = 4.95 bits a character, 13 would
-clear 64; 15 is used because it groups evenly into three blocks of five, which
-is the difference between a code somebody transcribes correctly and one they do
-not — 74 bits. The earlier 10-character codes were 49.5 bits: legal, but only
-*because* of the throttle. **The throttle is not removed when the arithmetic
-stops needing it** — it is what turns a wrong guess into one wrong guess rather
-than the first of millions.
-
+NIST SP 800-63B wants a look-up secret to carry 64 bits, or 20 if failed
+attempts are throttled. At log2(31) = 4.95 bits a character, 13 clears 64; 15 is
+used because it groups into three blocks of five, which is the difference
+between a code transcribed correctly and one that is not — 74 bits. **The
+throttle is not removed when the arithmetic stops needing it**: it turns a wrong
+guess into one wrong guess rather than the first of millions.
 **43. A stale login form gets the login page back, not a 403.** Nobody is
 signed in without a valid token, so this changes only how a refusal is
 presented. A cross-site POST carries no `SameSite=Lax` cookie, has nothing to
@@ -420,13 +407,10 @@ by any test above it.
 
 **60. The setup rail leaves out steps that do not apply, and `done` beats
 `skipped`.** An install with its database and config supplied should not be
-looking at nine steps it will never visit. Greying them was tried first and
-reversed — but the reversal is only safe because of the bug underneath it:
-`_skipped_steps()` asks whether a database is *configured*, and after the
-database step there is one, so a step just completed was reclassified as "not
-needed" and vanished from the rail. **Completing something is the strongest fact
-about it**; nothing done is ever skipped, so the shape stays put.
-
+looking at nine steps it will never visit. `_skipped_steps()` asks whether a
+database is *configured*, and after the database step there is one — so without
+this rule a step just completed is reclassified as "not needed" and vanishes
+from the rail. **Completing something is the strongest fact about it.**
 **61. `python -m app.recover` clears the second factor and forces a password
 change.** It is the last resort — for somebody who has lost both their password
 and their recovery codes — so leaving 2FA on would hand back an account they
@@ -444,4 +428,256 @@ because a stored preference outlives the column it names and a saved choice must
 never be what stops the dashboard rendering; duplicates collapse for the same
 reason. A locked column keeps its position — locked means it cannot be turned
 off, not that it must come first.
+
+## Boundaries
+
+**63. Tenancy is a boundary inside the app, not against the database.**
+`tenancy.py` stops a bug in a route or query serving one person's portfolio to
+another. It is no defence against anyone holding the file: the importer CLI,
+`sqlite3 /data/stocktake.db`, a copy of the PVC or a restic snapshot all read
+every account, and no login check could change that — it would run in the
+process that already has the file. The boundary is "can reach the volume", not
+"has an account". Real separation needs per-user encryption keyed on their
+password, which would also lock out the price feed, the FY reports and the
+backups.
+**64. Formats are data because nobody can test a format they have no document
+for.** Whoever maintains this holds accounts at almost none of these
+registries, so a parser per document is code the merger cannot verify. A
+template plus a redacted sample inverts that: the person with the statement
+authors it, and CI checks it forever on hardware that has never seen the real
+document.
+
+**65. The setup draft lives in memory, and nothing is written until it works.**
+One uvicorn worker means no second process to disagree; a restart mid-wizard
+should lose a draft nothing was written from; and persisting it would mean
+writing setup state into the database the wizard has not chosen yet. The
+database is probed before it is connected and connected before it reaches
+config.yaml, which is written once, at the end — so an abandoned wizard leaves
+no file, which is what makes starting again safe.
+
+**66. Recovery codes come before two-factor enrolment.** They are what makes
+skipping the next step survivable. Shown once.
+
+**67. A provider falls back on error or empty, never on "fewer rows than
+asked for".** Three days when five were requested is normal — markets close.
+Treating it as failure flaps between sources and rewrites the same rows with a
+different `source` every run.
+
+**68. Equities have no fallback provider, deliberately.** Stooq answers with a
+JavaScript proof-of-work challenge and publishes no API, so using it would mean
+defeating an anti-bot measure. Alpha Vantage does not document ASX coverage;
+Twelve Data lists ASX only on a paid add-on. A provider whose coverage of the
+actual holdings cannot be verified is worse than none — it fails silently while
+`source` claims the numbers came from somewhere real. The seam works:
+`PROVIDERS["equity"]` is a list, and adding one is a function plus a config
+entry.
+
+**69. Redaction masks what has a mechanical shape and says plainly what it
+cannot.** Long digit runs, TFNs, emails, phone numbers and money are masked; a
+name and a street address are just words, and no pattern separates
+"MR JOHN SMITH" from "ACME REGISTRY PTY LIMITED". The result is shown in an
+editable box before anything leaves the machine. A redaction that misses a line
+is worse than none, because somebody trusting it publishes their address.
+
+**70. Redacted amounts are shifted, not zeroed.** Zeroing makes every expected
+value `0.00`, so the file whose job is proving the template read the right
+fields cannot tell `net_amount` from `franking_credits`. Each figure keeps its
+shape — digit count, grouping, decimals — with different digits derived from
+the original, so the same amount appearing twice stays the same amount.
+
+**71. Account recovery is a command, not documented SQL.** Setting a password
+by hand means generating an argon2id hash by hand, and pasting a plaintext
+string produces an account that can never log in and an error explaining
+nothing. The command runs the same hashing, validation and session invalidation
+the web UI does. It is not a backdoor: it needs shell access to the machine
+holding the database, and anyone with that can already read every holding,
+session hash and TOTP secret (#63).
+**72. The portfolio is the tenant, not the person.** Several people can
+contribute to one (`portfolio_member`, roles owner/member/viewer), so trades,
+dividends, plan history and per-holding notes carry `portfolio_id`, and that is
+what `tenancy.py` filters on. `user_id` survives as *who recorded it* — an
+audit trail once a portfolio has several contributors — and must never be
+filtered on. Market data (`instrument`, `price`, `fx_rate`) is deliberately
+shared: one person adding ALPHA gives everyone its price history, and nothing
+about a holding is inferable from a ticker existing.
+
+**73. Rendered statement pages are never held between requests.** They go to
+disk and are served from there, so a pod that has run the visual mapper once is
+not carrying bitmaps until its next restart. The session token is random and
+the directory records who created it, so another signed-in user presenting the
+token gets nothing. Thirty idle minutes ends a session, and ending it deletes
+the files rather than refusing to serve them — swept on the next upload, and by
+the daily maintenance job for the install where nobody uses the feature again.
+
+**74. The restart button says what the deployment can actually do.**
+Kubernetes replaces a stopped container immediately. Docker only restarts when
+the container was created with a restart policy, and nothing inside can see
+whether it was. A bare `uvicorn` will not come back at all, and an unqualified
+"Restart" there would be offering to take the application down. So
+`supervision()` reports which of the three it is and the page words the button
+accordingly.
+
+**75. "Configured but failed" is a different state from "not configured".** The
+answer to the first is "fix this" and to the second "choose one". Silently
+falling back to an empty SQLite file would be the worst response available: it
+looks like it worked and the data is gone.
+
+**76. The OFX reader never hands an upload to a general XML parser.** External
+entity expansion and entity-expansion denial of service both live in Python's
+stdlib parsers unless deliberately disabled. A reader that understands only
+tags and text has no entity machinery to abuse.
+
+**77. The CGT discount is applied per parcel in the export, and after losses in
+the FY report.** The ATO allows the 50% discount on a parcel held over twelve
+months, and applies capital LOSSES before it. The export shows the per-parcel
+figure because it is the working; the FY report nets losses first because that
+is the number to lodge. Both are right for their job, so the caveat travels
+inside the exported file rather than living only in the interface.
+
+**78. config.yaml is edited in the app, under three constraints.** It may not
+be writable — mounted from a ConfigMap or baked into an image — which is a
+deployment choice, not a fault, so the page shows every value and explains why
+it cannot save rather than failing when tried. Comments must survive, because
+the shipped file documents every option and a plain YAML dump would strip it on
+the first save. And `database` and `app_name` are read-only: changing where the
+data lives, or the file's own name, from a web form is a way to lose a
+database.
+
+**79. Four things the second factor gets right that are commonly got wrong.**
+The secret is stored as issued, in the clear — encrypting it needs a key in the
+process that reads it, and anyone who can read that column can already read
+every holding (#63). The QR is rendered locally, because the obvious shortcut
+sends the secret to a third party in a URL. One step of clock drift is accepted:
+stricter generates support requests, looser widens replay for no gain. Recovery
+codes are hashed like session tokens and marked used rather than deleted, so a
+replay is distinguishable from a code never issued.
+**80. A currency symbol is part of the value, not decoration.** Templates once
+wrote a literal `$` before `{{ x | money }}`, which produced `$-4.00` and left
+the symbol outside the privacy blur, sharp beside a smudge. Headline numbers
+carry the symbol because no column header can carry it for them; table columns
+carry it in the header, because a `$` repeated down two hundred right-aligned
+cells is noise that fights the alignment making the column scannable; a column
+that can hold more than one currency names it per row.
+
+**81. Which column a table is sorted by lives in the URL.** It survives a
+reload, can be linked and bookmarked, and two people looking at one portfolio
+do not fight over it — the honest scope, since sorting is something you do
+while reading, unlike which columns exist. Sorting is server-side because the
+values are Decimals and some are None: in the browser "1,234.50" sorts as text
+and an em dash sorts wherever the browser feels like. Blanks sort last in both
+directions, since `reverse=True` would otherwise put the rows with no data on
+top.
+
+**82. The timezone is process-wide configuration, not an argument.** Threading
+it through `queries`, `fyreport`, `plans` and `calendarview` would put a
+parameter on two dozen functions with nothing else to say about it, and every
+signature would be a chance to forget. Set once at startup from
+`settings.timezone`.
+
+**83. The price feed commits per instrument, not once at the end.** SQLite
+takes a single writer and this job is mostly network latency, so one
+transaction spanning every fetch starves page loads until they fail on
+`busy_timeout`.
+
+**84. OCR is local or it does not happen.** A dividend statement carries a
+name, an address, a holder number and an amount. That rules out every hosted
+OCR API and every "just send it to a model" shortcut, and leaves Tesseract — a
+local binary with no network of its own. Measured, not estimated: it adds 107
+MB to the image, 37 MB of that `libicu` via leptonica and 15 MB language data.
+That cost was weighed and accepted; the alternative was the promise that only
+ticker symbols leave.
+
+**85. The metrics endpoint is off by default and has no client library.**
+Every other route needs a session, so an upgrade that quietly began answering
+an anonymous caller would be a surprise — the answer being harmless is not the
+same as the change being expected. Six series in a fixed format is also less
+code than wiring up a registry, and the memory budget is the reason not to pull
+in a library that costs more than it saves.
+
+**86. The date format is guessed from the values, not the header.** `%d/%m/%Y`
+against `%m/%d/%Y` cannot be told apart by a column name, and the wrong choice
+is silently correct for eleven rows in twelve — only the first twelve days of a
+month disagree, which is the worst kind of wrong. `dates_are_ambiguous()`
+exists so the interface can say when the samples genuinely cannot decide, rather
+than guessing more confidently.
+
+**87. Switching a feature off hides it; it never deletes anything.** The nav
+entry, the calendar and the editor go, and the route says so rather than 404 —
+a 404 for a page that exists and is switched off is a lie. The plan, its
+rotation and every `planned_purchase` row stay, so turning it back on restores
+what was there. Somebody switches a feature off to tidy the nav, not to throw
+away two years of schedule.
+
+**88. The API is append-only.** The web UI can edit and delete a trade; the API
+cannot, and there is no PATCH or DELETE to find. A key is a long-lived
+credential held by another program, and the blast radius of a loop with a bug in
+it is very different for "wrote a duplicate trade" than for "rewrote the last
+three years". Corrections are a human sitting in front of the ledger.
+
+**89. The theme designer exposes six colours, not every token.** Exposing all
+of them lets somebody set their page background to the colour of their text. The
+six are the ones carrying meaning rather than structure — the accent, the two
+directions money can go, and the three chart series — so a bad choice is ugly,
+never unusable. One value applies to both light and dark, because a colour
+legible on white rarely is on near-black, so contrast is reported against both
+surfaces and the weaker one shown. Advice, not a veto.
+**90. The in-app log is WARNING and above, in memory, and never written to
+disk.** Error-only says something broke and nothing about what led there; INFO
+is every HTTP request, which buries the line that matters. The band between
+carries a feed falling back, a statement that parsed with fields missing, a job
+that skipped. It stays in memory because these lines can quote a ticker or a
+filename, and a log file is one more thing to reason about when the promise is
+that the data stays in the deployment. A restart clears it, so the real logs
+remain the source of truth for anything historical.
+**91. The ledger is not append-only, which is why `trade.updated_at` exists.**
+The series cache fingerprints on it; without that an edit changes no row count
+and every chart goes on serving pre-edit numbers. A DRP trade is not editable
+directly — its units and its dividend's cash are one statement event, so it is
+edited through the dividend or not at all.
+
+**92. Every /setup route opens with `_wizard_step()`.** The prefix is public,
+because the early steps run before there is a database to hold a session, so
+the login middleware cannot gate them. A route under /setup without that call
+is one anybody can post to.
+
+**93. Sale proceeds are apportioned across parcels by running-total
+differencing.** Per-unit-then-round gives each parcel its own rounding error:
+three one-unit parcels out of 14.00 each came to 4.6666…, rounded to 4.67, and
+the schedule reported 14.01 of proceeds against 14.00 of money. Carrying the
+total forward and taking differences makes the parts sum to the whole by
+construction, and the leftover cent lands on a parcel instead of on nobody.
+
+**94. The pre-auth CSRF cookie outlives the session idle window by a wide
+margin.** If it lapses first, the login page somebody was just sent to fails its
+own double-submit check, with a message that reads as their fault. Twelve hours:
+long enough that a login page left open overnight still works, short enough to
+stay a bounded credential-free token.
+
+**95. Two returns are reported, never one.** `on_money_in` is growth over what
+was at work — the familiar figure, and the one that stays low while somebody is
+still buying in. `twr` chains each day's return with contributions removed, so
+it says how the investments performed rather than how much was fed in; it runs
+higher for a portfolio built by regular buying, because the early money has
+compounded for years. Quoting either alone invites the wrong conclusion. A
+simple "gain / invested" across two windows divides by different denominators,
+so a 5-year and an all-time figure are not comparable.
+
+**96. `rp_id` is declared in config and never read off a request header.** Host
+and X-Forwarded-Host are client-controlled, and the rp_id is the anchor every
+WebAuthn credential is permanently bound to — taking it from a request would
+let a caller choose which domain their credential counts for.
+
+**97. The CSP carries `unsafe-inline`, and that is stated rather than hidden.**
+The templates still carry inline blocks and `onclick`/`onchange` handlers, so
+dropping it breaks the pages. With it present the CSP is not the XSS backstop
+it looks like: the real defence is Jinja's autoescaping plus `|tojson` for data
+blocks. Extracting those fragments is what earns the strict version.
+
+**98. The OCR end-to-end document is generated at test time, not committed.**
+It is drawn from the redacted sample already shipped for the `generic-au`
+template and saved with no text layer. A committed PDF cannot be read in a
+diff, carries metadata and embedded fonts nobody reviews, and raises a
+licensing question about somebody else's document in an AGPL repository.
+Generating it also tests the layout that actually ships, since the sample is
+the layout.
 

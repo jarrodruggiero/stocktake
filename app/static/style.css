@@ -442,6 +442,11 @@ form.inline button { margin-top: 0; }
    three controls on the export form sitting at three different heights. */
 .panel .row { display: flex; gap: var(--sp-3); flex-wrap: wrap; align-items: end; }
 .panel .row label { flex: 1; min-width: 8rem; }
+/* An <input> carries its own intrinsic width (and some here set `size`), which
+   the flex item does not constrain — so on a phone the field ran past the panel
+   and was CLIPPED rather than scrolled, i.e. unreachable. max-width rather than
+   width, so the deliberate narrow ones stay narrow on a wide screen. */
+.panel .row label input, .panel .row label select { max-width: 100%; }
 /* `[hidden]` must win over any display rule below, or an element the markup
    says is hidden shows up anyway — which is exactly what `.panel textarea`
    did to the broker mapper's form field carrying the uploaded CSV. Caught by
@@ -910,11 +915,34 @@ th[aria-sort="ascending"], th[aria-sort="descending"] { color: var(--text); }
 /* The broker column mapper: field name, its dropdown, and what is actually in
    the column you picked. The samples are the point — choosing "Price" over
    "Value" is obvious once you can see 89.50 next to 8950.00. */
-.mapper { width: 100%; }
+/* table-layout: fixed so the columns keep their share of a narrow screen
+   rather than being sized by their longest cell. */
+.mapper { width: 100%; table-layout: fixed; }
 .mapper td, .mapper th { padding: 0.3rem 0.5rem; vertical-align: middle; }
-.mapper td:first-child { white-space: nowrap; }
-.mapper select { width: 100%; margin: 0; }
-.mapper .samples { max-width: 22rem; overflow-wrap: anywhere; }
+.mapper td:first-child, .mapper th:first-child { width: 22%; white-space: nowrap; }
+.mapper td:nth-child(2), .mapper th:nth-child(2) { width: 30%; }
+.mapper select { width: 100%; max-width: 100%; margin: 0; }
+/* `th, td` are nowrap globally — right for a figure, wrong for a run of ten
+   dates. The max-width here could never bite while that held, so this row grew
+   to 590px inside a 397px phone and took the document sideways with it. */
+.mapper .samples { white-space: normal; max-width: 22rem; overflow-wrap: anywhere; }
+
+/* On a phone the three columns have nowhere to go: a select and a run of dates
+   cannot share 412px, and the overflow is CLIPPED rather than scrolled, so the
+   sample values are simply unreachable. Stack instead — each field becomes a
+   block with its dropdown under it and its samples under that. */
+@media (max-width: 700px) {
+  .mapper, .mapper tbody, .mapper tr, .mapper td { display: block; width: auto; }
+  .mapper thead { display: none; }
+  .mapper tr { padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); }
+  .mapper tr:last-child { border-bottom: none; }
+  .mapper td { border: none; padding: 0.15rem 0; }
+  .mapper td:first-child { width: auto; }
+  .mapper .samples { max-width: none; }
+  /* The field name and its required/optional note read as one line. */
+  .mapper td:first-child label { font-weight: 600; }
+  .mapper td:first-child .sub { margin-left: var(--sp-2); }
+}
 form.inline { display: inline; margin: 0; }
 
 /* Column order. A list rather than a property of the checkboxes above them:
@@ -1753,3 +1781,49 @@ button.swatchwheel:hover { border-color: var(--accent); filter: none; }
      hid the brand on the one page that is nothing but the brand. */
   .topbar .brandword { display: none; }
 }
+
+/* ── The broker CSV sheet ─────────────────────────────────────────────────
+   A spreadsheet, deliberately: column letters, a row-number gutter, gridlines
+   both ways. The affordance does the explaining — somebody who has used Excel
+   knows what a cell is without a paragraph telling them.
+
+   Built rather than pulled in: the grid libraries that give this look are
+   sized for virtualisation, sorting and editing, and ten read-only rows need
+   none of it. What they would bring is a second theme to override. */
+.sheet { overflow: auto; max-height: 26rem; border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--panel-solid);
+  box-shadow: var(--shadow-sm);
+  /* max-width, not just overflow. The table inside is `width: max-content`, and
+     without a ceiling this box grows to fit it and takes the document sideways
+     with it — 452px past a phone's viewport, which the visual check caught. */
+  max-width: 100%; }
+.sheet table { border-collapse: separate; border-spacing: 0; width: max-content;
+  min-width: 100%; font-variant-numeric: tabular-nums; }
+
+/* Both header rows stay put, so a column stays identifiable however far down
+   or across you are. */
+.sheet thead th { position: sticky; top: 0; z-index: 2;
+  background: var(--sunken); border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line); }
+.sheet thead tr.letters th { z-index: 3; font-size: var(--fs-label);
+  color: var(--muted); text-align: center; text-transform: none;
+  letter-spacing: 0.08em; padding: 2px var(--sp-3); font-weight: 500; }
+.sheet thead tr.headings th { top: 1.35rem; text-transform: none;
+  letter-spacing: 0; font-weight: 600; color: var(--ink); }
+
+.sheet td { border-bottom: 1px solid var(--line); border-right: 1px solid var(--line);
+  padding: var(--sp-1) var(--sp-3); font-size: var(--fs-sm); }
+.sheet tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--sunken) 45%, transparent); }
+.sheet tbody tr:hover td { background: var(--accent-soft); }
+
+/* The row-number gutter: frozen, so the first data column is never mistaken
+   for it while scrolling sideways. */
+.sheet .rownum { position: sticky; left: 0; z-index: 1; width: 1%;
+  background: var(--sunken); color: var(--muted); text-align: right;
+  font-size: var(--fs-label); font-variant-numeric: tabular-nums;
+  border-right: 1px solid var(--line); user-select: none; }
+.sheet thead .rownum { z-index: 4; }
+.sheet tbody tr:hover .rownum { background: var(--accent-soft); }
+
+/* An empty cell should read as empty, not as a rendering fault. */
+.sheet td:empty::after { content: "·"; color: var(--muted); opacity: 0.4; }

@@ -188,10 +188,8 @@ SERIES_GAIN_IF_DRP_DOUBLE_COUNTED = Decimal("-122.50")
 #   50% discount applies to what survives                → 77.50
 #   net capital gain = (91.67 − 91.67) + 155.00 − 77.50   = 77.50
 #
-# Applying losses the other way round absorbs 220.00 of the discountable gains
-# instead: 283.33 − 220.00 = 63.33 survives, discount 31.665, and the net comes
-# to 91.67 + 63.33 − 31.665 = 123.335. Verified by mutating the source
-# 2026-08-02 — this fixture proves the ORDER, not just the arithmetic.
+# The other order absorbs 220.00 of the discountable gains instead and nets
+# 123.335, so this fixture pins the ORDER, not just the arithmetic.
 FY2024 = 2024
 FY2024_GAINS_DISCOUNTABLE = Decimal("283.33")
 FY2024_GAINS_OTHER = Decimal("91.67")

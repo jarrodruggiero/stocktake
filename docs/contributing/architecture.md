@@ -64,6 +64,7 @@ Two consequences worth internalising:
 | `main.py` | Routes. Big, and deliberately flat. |
 | `settings.py`, `configfile.py`, `features.py` | Configuration, editing it from inside, and the parts an install can switch off. |
 | `db.py`, `clock.py` | The connection, and the app's idea of "today". |
+| `markettime.py` | Which clock a trade time is read on. Stored on the exchange's, shown on whichever the account asked for. |
 | `columns.py`, `sorting.py`, `navigation.py`, `theming.py`, `branding.py` | What the tables show, how they sort, and how it all looks. |
 | `setupwizard.py` | First run: what each step needs and what it writes. |
 | `maintenance.py`, `memory.py`, `metrics.py`, `logbuffer.py`, `lifecycle.py` | Housekeeping, the memory the feed gives back, Prometheus, the in-app log, and restarting from inside. |

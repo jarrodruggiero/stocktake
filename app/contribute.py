@@ -1,31 +1,14 @@
 """Turning a designed template into a pull request somebody can merge.
 
-`tests/test_format_samples.py` needs **three** files — the template, a redacted
-sample of the extracted text, and what that sample should produce — because
-nobody maintaining this project holds an account at most registries, so a format
-cannot be checked by the person merging it. Those three let CI check it forever
-on hardware that has never seen the real statement. The designer emits one; this
-makes all three.
+`tests/test_format_samples.py` needs three files — the template, a redacted
+sample of the extracted text, and what that sample should produce. The designer
+emits one; this makes all three.
 
-**Redaction does not pretend.** One that misses a line is worse than none,
-because somebody trusting it publishes their address. So: mask what has a
-mechanical shape (long digit runs, TFNs, emails, phone numbers, money), say
-plainly what cannot be masked — a name and a street address are just words, and
-no pattern separates "MR JOHN SMITH" from "ACME REGISTRY PTY LIMITED" — and show
-the result in an editable box before anything leaves the machine. Nothing here
-uploads.
+Expected values are read from the REDACTED text, never the original, so a field
+redaction ate shows up before the pull request rather than after.
 
-**Amounts are shifted, not zeroed.** Zeroing makes every expected value
-`0.00`, so the file whose job is proving the template read the right fields
-cannot tell `net_amount` from `franking_credits`. Each
-figure keeps its shape — digit count, grouping, decimals — with different digits
-derived from the original, so the same amount appearing twice stays the same
-amount. The real figures are shown on screen beside the redacted ones, which is
-what the contributor actually needed; publishing them was never the way to get
-it.
-
-**Expected values come from the redacted text, never the original**, so a field
-that redaction ate shows up wrong before the pull request rather than after.
+What redaction does and does not claim: decisions.md #69. Why amounts are
+shifted rather than zeroed: decisions.md #70.
 """
 
 from __future__ import annotations

@@ -14,13 +14,9 @@ NAME = "Stocktake"
 
 TAGLINE = "Know what you hold, what it cost, and what the tax will be."
 
-# The geometry, and the ONLY copy of it. The mark once lived inline in
-# base.html, again in static/icon.svg and again as a PNG — three chances to
-# change two of them. `tools/render_brand.py` generates all of it from here and
-# tests/test_branding.py fails on any drift.
-#
-# Units: a 24-grid for the mark, matching every nav icon. The wordmark uses
-# embedded IBM Plex Sans Condensed SemiBold outlines.
+# The geometry, and the ONLY copy of it: `tools/render_brand.py` generates the
+# partial, the favicon and the banners from here, and test_branding.py fails on
+# drift. A 24-grid, matching every nav icon.
 
 # Crates stacked one higher each column. The flag marks the accent crate.
 MARK_RECTS = (

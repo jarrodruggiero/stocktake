@@ -1,30 +1,19 @@
 """Keeping the heavyweight imports out of a pod that is only serving pages.
 
-Measured inside the container: a bare interpreter is 8.9 MiB, and importing
-yfinance takes it to 116.6 MiB — pandas and numpy come with it. The app used to
-pay that at startup, every start, whether or not the feed ever ran. It is more
-than half the pod's idle footprint and the reason the memory limit is 512 Mi.
+Measured in the container: a bare interpreter is 8.9 MiB, and importing
+yfinance takes it to 116.6 MiB. So `pricefeed` imports yfinance on first use and
+`statements` imports pdfplumber on first use, and these tests stop either
+drifting back to module scope — an invisible regression, because the app works
+either way and only the memory graph changes.
 
-So `pricefeed` imports yfinance on first use and `statements` imports pdfplumber
-on first use, and the tests below are what stop either drifting back to module
-scope — an easy, invisible regression, because the app works perfectly either
-way. Only the memory graph changes.
+What that buys in a running deployment with the feed on: nothing, since the
+startup catch-up run imports it anyway (decisions.md #17). It protects the
+install that turns the feed off, every CLI entry point, and the suite itself —
+which is why these spawn fresh interpreters rather than trusting `sys.modules`
+in a process the suite has already dirtied.
 
-**Be honest about what this buys in a running deployment: nothing, when the
-feed is on.** `main._feed_loop` does a catch-up run at startup, so the import
-these tests defer happens ~6 seconds after boot anyway and stays for the life
-of the process (measured 2026-08-12: `/proc/1/maps` in the live pod has numpy
-and pandas mapped). What laziness genuinely protects is the install that turns
-the feed off, plus every CLI entry point and the test suite itself — which is
-why these tests spawn fresh interpreters rather than trusting `sys.modules` in
-a process the suite has already dirtied. The deployed pod's footprint is a
-separate question, and the answer there is the price of yfinance, not the
-placement of its import.
-
-`memory.release()` is the other half: freeing pandas' frames is not the same as
-returning their pages, and glibc keeps them unless asked. It is tested for
-honesty about what it could not do rather than for a number, because the number
-depends on the allocator and the platform.
+`memory.release()` is tested for honesty about what it could not do rather than
+for a number, because the number depends on the allocator and the platform.
 """
 
 from __future__ import annotations

@@ -1,23 +1,13 @@
 """What the holdings table can show, declared once.
 
-A column is one entry — what it is called, how to get it, how to render it —
-rather than a `<th>` and a `<td>` in a template that have to agree. That is what
-makes adding one a single change, and what makes letting people choose possible
-at all.
+A column is one entry — name, accessor, renderer — rather than a `<th>` and a
+`<td>` in a template that have to agree, so adding one is a single change and
+the header cannot drift from the cell.
 
-Two things this buys beyond the chooser:
-
-  * **Adding a column is a small pull request** against one list, which is what
-    `docs/contributing/recipe-column.md` promises.
-  * **Header and cell cannot drift apart**, because they are the same entry.
-
-## Choosing
-
-Choices are per **user**, not per portfolio: two people sharing a portfolio
-each get their own. Stored like theme and accent, for the same reason.
-
-`DEFAULTS` is exactly what the page showed before any of this existed, so
-nobody's dashboard changes until they touch it.
+Choices are per USER, not per portfolio: two people sharing a portfolio each
+get their own, stored like theme and accent. `DEFAULTS` is exactly what the page
+showed before the chooser existed, so nobody's dashboard changes until they
+touch it.
 """
 
 from __future__ import annotations
@@ -46,13 +36,9 @@ class Column:
     # How to ORDER by this column when that differs from what it displays.
     # Only `ticker` and `drp` need it — decisions.md #52. See `sort_key()`.
     sort: Callable | None = None
-    # Which currency this column's figures are in, when they are money:
-    #   "reporting" — converted to the portfolio's reporting currency (AUD today)
-    #   "native"    — the instrument's own currency, which VARIES BY ROW
-    #   None        — not money (units, percentages, text)
-    # The header renders the code from this rather than carrying it in `label`,
-    # so that T28b's per-portfolio reporting currency is a change in ONE place
-    # instead of a search for the string "AUD" across twenty labels.
+    # "reporting" (converted), "native" (varies by row) or None (not money).
+    # The header renders the code from this rather than baking it into `label`,
+    # so a per-portfolio reporting currency stays a one-place change.
     currency: str | None = None
     # A header that cycles through more than one sort key, with the mark each
     # one shows. Gain and Today display an amount AND a percentage in one cell,

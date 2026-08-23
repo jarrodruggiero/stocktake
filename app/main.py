@@ -45,6 +45,7 @@ from appkit.config import DatabaseSettings
 from . import (
     auth,
     branding,
+    brokerdesign,
     calendarview,
     chart_templates,
     charts_build,
@@ -58,6 +59,7 @@ from . import (
     lifecycle,
     logbuffer,
     maintenance,
+    markettime,
     memory,
     metrics,
     money,
@@ -83,6 +85,7 @@ from .models import (
     ROLE_BLURBS,
     ROLE_LABELS,
     THEMES,
+    TIME_ZONES_SHOWN,
     ApiKey,
     Dividend,
     HoldingPref,
@@ -271,19 +274,12 @@ def _live_exchanges(open_positions: list) -> list[str]:
 def _anyone_signed_in(db: DbSession) -> bool:
     """Whether ANY account currently has a live session.
 
-    Deliberately "anyone", not "this person" and not "recently active": one
-    user signing out while another is still signed in must not stop the polling
-    Logging out deletes the row, so a session that is
-    still here and still inside its timeouts is somebody who is still logged in.
+    "Anyone", not "this person": one user signing out while another is still
+    signed in must not stop the polling. Logging out deletes the row.
 
-    The timeouts are recomputed the way `auth` does rather than trusting
-    `expires_at` alone, because that column carries the sliding cap and the idle
-    window is the shorter of the two. Comparison happens in Python through
-    `ensure_utc`: SQLite hands back naive datetimes, and comparing those against
-    an aware `now` in SQL is the bug that pattern exists to prevent.
-
-    Rows are few — `maintenance` sweeps expired sessions daily — so reading them
-    is cheaper than getting the timezone handling subtly wrong in a WHERE.
+    Timeouts are recomputed the way `auth` does rather than trusting
+    `expires_at`, which carries only the sliding cap. Compared in Python via
+    `ensure_utc` because SQLite returns naive datetimes.
     """
     now = dt.datetime.now(dt.timezone.utc)
     idle = dt.timedelta(minutes=settings.auth.session_idle_minutes)
@@ -485,6 +481,14 @@ templates.env.globals["reporting_ccy"] = money.REPORTING
 templates.env.globals["docs_url"] = DOCS_URL
 templates.env.globals["role_labels"] = ROLE_LABELS
 templates.env.globals["role_blurbs"] = ROLE_BLURBS
+# Spreadsheet column letters: A..Z, AA, AB. Nobody counts to the 29th column.
+templates.env.globals["column_letter"] = brokerdesign.column_letter
+# A trade's moment on the exchange's clock, offset attached, for a <time
+# datetime="...">. localtime.js rewrites those to the viewer's clock when the
+# account asked for it; without JS the exchange's own time still renders.
+templates.env.globals["market_stamp"] = lambda d, t, ex: (
+    markettime.aware(d, t, ex).isoformat() if markettime.aware(d, t, ex) else ""
+)
 
 templates.env.filters["money"] = _money
 templates.env.filters["cash"] = _cash
@@ -542,13 +546,8 @@ def _set_session_cookie(resp: Response, raw_token: str) -> None:
     )
 
 
-# The pre-auth CSRF cookie's life. It MUST comfortably outlive the session
-# idle window, and at 3600 it did not — the window is 60 minutes, so the cookie
-# lapsed at almost exactly the moment somebody was timed out and sent back to
-# log in. The login form was then showing a token whose cookie no longer
-# existed, and the double-submit check failed with a message that read as the
-# user's fault. Twelve hours: long enough that a login page left open overnight
-# still works, short enough to be a bounded credential-free token.
+# MUST comfortably outlive the session idle window, or the login page you were
+# just sent to fails its own CSRF check — decisions.md #94.
 PRE_AUTH_CSRF_SECONDS = 12 * 3600
 
 
@@ -580,13 +579,8 @@ def _render(request: Request, ctx, name: str, extra: dict) -> HTMLResponse:
             # The idle overlay reads this off <body> so the warning lead time is
             # configurable without templating JavaScript.
             "idle_warning_seconds": settings.auth.idle_warning_seconds,
-            # This person's colour overrides, as a `style` attribute for
-            # <body>. Set HERE rather than per route: it belongs to every page,
-            # and the last appearance-shaped value passed per route went
-            # missing from exactly one of them (`role_labels`, on
-            # /profile/2fa). An inline style beats both `:root` and
-            # `body[data-theme="dark"]`, which is the precedence a personal
-            # override should have.
+            # Set here rather than per route: it belongs to every page, and an
+            # inline style outranks both `:root` and `body[data-theme=...]`.
             "theme_style": theming.css_variables(
                 getattr(ctx.user, "theme_colors", None) if ctx else None),
             **extra,
@@ -623,23 +617,11 @@ async def optional_features(request: Request, call_next):
 async def security_headers(request: Request, call_next):
     """Headers every response carries.
 
-    Each closes a specific hole rather than ticking a box: `nosniff` stops a
-    browser second-guessing a Content-Type, which is how an uploaded file gets
-    executed as script; `DENY` on framing removes clickjacking; `same-origin`
-    on the referrer keeps the path — which can name a ticker — out of the
-    Referer header on outbound links.
+    Nothing loads from a CDN, so every CSP source is `'self'`.
 
-    The CSP is measured against what the pages do rather than copied from a
-    checklist. Nothing loads from a CDN, so every source is `'self'`;
-    `form-action 'self'` stops an injected form posting credentials elsewhere;
-    `base-uri 'self'` stops an injected `<base>` re-pointing every relative URL.
-
-    **`'unsafe-inline'` is present, and it is the weak part.** The templates
-    still carry a handful of inline blocks and `onclick`/`onchange` handlers, so
-    dropping it today breaks the pages. Said here rather than quietly omitted:
-    with it, the CSP is not the XSS backstop it looks like, and the real defence
-    is the escaping — Jinja's autoescaping plus `|tojson` for data blocks.
-    Extracting those fragments is what earns the strict version.
+    **`'unsafe-inline'` is present and is the weak part** — the templates still
+    carry inline blocks and handlers, so the real XSS defence is the escaping,
+    not this: decisions.md #97.
     """
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -698,16 +680,10 @@ app.include_router(api_router)
 
 
 # --------------------------------------------------------------------------- #
-# First run: the setup wizard
+# First run: the setup wizard — the HTTP half of app/setupwizard.py.
 #
-# The HTTP half of app/setupwizard.py: which step is reachable, what each one
-# writes, and the two things only the wizard may do — connect a database and
-# create the first account.
-#
-# **Every route under /setup must open with `_wizard_step()`.** /setup/ is in
-# PUBLIC_PREFIXES because the early steps run before there is a database to
-# hold a session, so the login middleware cannot gate them. A route here
-# without that call is a route anybody can post to.
+# EVERY route under /setup must open with `_wizard_step()`: /setup/ is public,
+# so one without that call is a route anybody can post to (decisions.md #92).
 # --------------------------------------------------------------------------- #
 
 def _accounts_exist() -> bool:
@@ -1300,13 +1276,8 @@ async def login_submit(
             _set_pre_auth_csrf(resp, token)
             return resp
 
-        # A stale token here hands back a FRESH LOGIN FORM, not a 403 error
-        # page. The login page is the one form in the app that routinely sits
-        # open long enough for its token to go stale — while you are timed out,
-        # in a second tab, or restored from history — and "Invalid or missing
-        # CSRF token" on a page you were told to use reads as your fault.
-        #
-        # Presentation only, not a weaker check — decisions.md #43.
+        # A stale token hands back a fresh login form, not a 403: presentation
+        # only, not a weaker check — decisions.md #43.
         try:
             await auth.verify_csrf(request, db)
         except HTTPException as exc:
@@ -2532,6 +2503,7 @@ async def account_appearance(
     request: Request,
     theme: str = Form("auto"),
     nav_style: str = Form("both"),
+    times_in: str = Form("market"),
 ):
     """Theme, menu style and which nav entries to show.
 
@@ -2543,10 +2515,12 @@ async def account_appearance(
     """
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
-        if theme not in THEMES or nav_style not in NAV_STYLES:
+        if (theme not in THEMES or nav_style not in NAV_STYLES
+                or times_in not in TIME_ZONES_SHOWN):
             raise HTTPException(400, "unknown appearance option")
         ctx.user.theme = theme
         ctx.user.nav_style = nav_style
+        ctx.user.times_in = times_in
         # Checkboxes say what to SHOW; what gets stored is what to hide. An
         # unticked box submits nothing, so "shown" cannot be read from absence —
         # and storing the hidden set means a nav entry added to the app later
@@ -3536,13 +3510,7 @@ async def trade_create(
 
 
 # --------------------------------------------------------------------------- #
-# Editing and removing what's already recorded. The ledger is not append-only,
-# which is why `trade.updated_at` exists: the series cache fingerprints on it,
-# and without that an edit would change no row count and every chart would go on
-# serving pre-edit numbers.
-#
-# A DRP trade is not editable here — its units and its dividend's cash are one
-# statement event, so it is edited through the dividend or not at all.
+# Editing and removing what's already recorded — decisions.md #91.
 # --------------------------------------------------------------------------- #
 
 def _owning_dividend(db: DbSession, trade_id: int) -> Dividend | None:

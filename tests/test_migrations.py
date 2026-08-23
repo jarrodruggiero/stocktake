@@ -61,14 +61,19 @@ def seeded(tmp_path: Path) -> Path:
     return path
 
 
-def test_a_fresh_install_builds_from_0001_alone(tmp_path: Path):
-    """The entire point of the squash.
+def test_a_fresh_install_builds_the_whole_schema_from_0001(tmp_path: Path):
+    """0001 is the base and stays the base.
 
-    One revision, no chain, every table present. If `versions/` ever regrows a
-    second file before v1.0.0 ships, this is where to notice.
+    It was written to say "head is 0001", to notice a chain regrowing before
+    v1.0.0. That window shut the moment a database was deployed on 0001 with
+    real data in it: alembic never re-runs an applied revision, so folding a
+    change back into 0001 reaches new installs and silently misses every
+    existing one. From here a schema change is a new revision, and this checks
+    what still has to hold — 0001 is the base of the chain, and the schema it
+    builds is complete.
     """
     path = tmp_path / "fresh.db"
-    command.upgrade(_config(path), "head")
+    command.upgrade(_config(path), "0001")
 
     conn = sqlite3.connect(path)
     tables = {r[0] for r in conn.execute(
@@ -78,6 +83,19 @@ def test_a_fresh_install_builds_from_0001_alone(tmp_path: Path):
     for expected in ("trade", "dividend", "instrument", "user", "portfolio",
                      "saved_chart", "holding_pref", "price", "fx_rate"):
         assert expected in tables
+    assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    conn.close()
+
+
+def test_the_whole_chain_runs_from_nothing_to_head(tmp_path: Path):
+    """A fresh install runs every revision in order, not just the base."""
+    path = tmp_path / "chain.db"
+    command.upgrade(_config(path), "head")
+
+    conn = sqlite3.connect(path)
+    tables = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {"trade", "dividend", "instrument", "user"} <= tables
     assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     conn.close()
 

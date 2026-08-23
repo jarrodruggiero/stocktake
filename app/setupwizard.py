@@ -1,35 +1,17 @@
-"""First-run setup: the steps, what each one needs, and what it writes.
+"""First-run setup: the steps, what each needs, and what it writes.
 
-A fresh install boots with nothing, notices, and asks. Requiring a config.yaml
-before the container will start is the instruction people skip, and it is
-against the convention on platforms where an app writes its own defaults.
+  1. welcome     — what was detected: database, config file, restartability.
+  2. database    — only when nothing configured one.
+  3. account     — the security gate. Everything after runs in a session.
+  4. recovery    — codes shown once, before 2FA (decisions.md #66).
+  5. 2fa         — TOTP now, or later from the account page.
+  6. portfolio   — first portfolio, market data, timezone.
+  7. environment — trusted proxies and the external URL. All optional.
+  8. finish      — write config.yaml; restart if anything needs one.
 
-Steps, each gated on what the one before established:
-
-  1. **welcome**     — what was detected: database, config file, restartability.
-  2. **database**    — only when nothing configured one. Nothing is written
-                       until it connects.
-  3. **account**     — the security gate. Everything after runs in a session.
-  4. **recovery**    — codes shown once. Before 2FA on purpose: they are what
-                       makes skipping the next step survivable.
-  5. **2fa**         — TOTP now, or later from the account page.
-  6. **portfolio**   — first portfolio, market data, timezone.
-  7. **environment** — trusted proxies and the external URL. All optional.
-  8. **finish**      — write config.yaml; restart if anything needs one.
-
-The gates are real: step 3 cannot run before step 2 (no database to write an
-account to), and steps 4–6 cannot run before step 3 (no session to attribute
-them to).
-
-**The draft lives in memory, here.** The app runs one uvicorn worker, so there
-is no second process to disagree; a restart mid-wizard *should* lose a draft
-nothing was written from; and persisting it would mean writing setup state into
-the database the wizard has not chosen yet.
-
-**Nothing is written until it has been shown to work.** The database is probed
-before it is connected and connected before it reaches the config file, which is
-written once, at the end. An abandoned wizard leaves no config file — which is
-what makes starting again safe.
+Each step is gated on what the one before established: 3 cannot run before 2,
+and 4-6 cannot run before 3. The draft lives in memory and nothing is written
+until it has been shown to work — decisions.md #65.
 """
 
 from __future__ import annotations

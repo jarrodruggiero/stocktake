@@ -1,35 +1,18 @@
-"""Automatic per-portfolio filtering of the tables that hold personal data.
+"""Automatic per-portfolio filtering of the tables holding personal data.
 
-Every `select()` issued through a session carrying a portfolio id gets an extra
-`WHERE portfolio_id = :pid` on the models listed in `SCOPED_MODELS` — top-level
-queries, eager loads (`selectinload(Instrument.trades)`) and later lazy loads
-alike. That is deliberately belt-and-braces: the read model in queries.py and
-fyreport.py walks `instrument.trades` in a dozen places, and one forgotten
-filter would show somebody else's portfolio.
+Every `select()` on a session carrying a portfolio id gets a
+`WHERE portfolio_id = :pid` on the models in `SCOPED_MODELS` — top-level
+queries, eager loads and lazy loads alike.
 
-Two rules make it fail closed:
-  * a select touching a scoped model with NO portfolio id on the session
-    raises, rather than quietly returning every portfolio's rows;
-  * the only way to opt out is `unscoped_session()`, which is greppable and
-    used for exactly one thing — the price feed's FX repair pass, which fixes
-    market data across all users.
+It fails closed: a select touching a scoped model with no portfolio id on the
+session raises. `unscoped_session()` is the only opt-out, and is greppable.
 
-Writes are NOT covered (SQLAlchemy applies loader criteria to selects only), so
-inserts must set `portfolio_id` themselves; `owned()` is the helper (plus a
-before_flush net in `install()`, which also stamps `user_id` as "recorded by"
-where the model has that column).
+Writes are not covered — SQLAlchemy applies loader criteria to selects only —
+so inserts set `portfolio_id` via `owned()`, with a before_flush net in
+`install()`.
 
-TRUST BOUNDARY — read this before assuming more than it gives you. This module
-separates users *within the application*: it stops a bug in a route or query
-from serving one person's portfolio to another. It is NOT a defence against
-anyone holding the database. `python -m app.importer --user someone@else`,
-`sqlite3 /data/portfolio.db`, a copy of the PVC or a restic snapshot all read
-and write every account's data, and no CLI login could change that — the check
-would run in the same process that already has the file. The boundary is
-"can exec into the pod / reach the volume" (i.e. cluster admin), not "has an
-account". Real separation between users would need per-user encryption keyed on
-their password, which would also lock out the price feed, the FY reports and
-the backups; not worth it here.
+This separates users *within the application*, not from anyone holding the
+database: see decisions.md #63 (Trust boundary).
 """
 
 from __future__ import annotations

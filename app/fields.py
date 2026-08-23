@@ -1,24 +1,18 @@
-"""The fields a custom chart can be built from — the "spreadsheet columns".
+"""The fields a custom chart can be built from.
 
-A chart spec is four choices: what goes along the X axis (a DIMENSION), what is
-measured (one or more MEASURES), optionally what splits it into series (a second
-dimension), and what to filter to. This module declares the vocabulary; `charts_build.py`
-executes a spec against it.
+A chart spec is four choices: a dimension for the X axis, one or more measures,
+optionally a second dimension to split into series, and a filter. This declares
+the vocabulary; `charts_build.py` executes a spec against it.
 
-Two grains exist and they can't be mixed, because they answer different
-questions and a chart that silently joined them would be nonsense:
+Three grains, which cannot be mixed because they answer different questions:
 
-  timeseries — one row per day, from the cached daily portfolio series. Value,
-               invested, net gain, contributions, income. X is always the date.
-  positions  — one row per holding, as it stands now. Units, cost, value, gain,
-               dividends, weight. X is a holding attribute (ticker, asset class,
-               currency), so these aggregate.
-  periods    — one row per performance window (1 day … all time). What was
-               there, what went in, what it made, and both returns. Fixed rows,
-               chosen columns.
+  timeseries — one row per day. X is always the date.
+  positions  — one row per holding, as it stands now. X is a holding attribute,
+               so these aggregate.
+  periods    — one row per performance window. Fixed rows, chosen columns.
 
-`grain` on every field is what stops a builder offering "market value by
-ticker over time" and then having to explain why it can't draw it.
+`grain` on every field is what stops the builder offering "market value by
+ticker over time" and then having to explain why it cannot draw it.
 """
 
 from __future__ import annotations

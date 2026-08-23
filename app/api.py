@@ -1,22 +1,16 @@
 """/api/v1 — machine access to one portfolio, authenticated by API key.
 
-Built for the other apps in the family (budgeting, retirement planning) rather
-than for a browser: JSON in, JSON out, no cookies, no CSRF (there is no ambient
-authority to abuse — a key is only ever sent deliberately).
+JSON in, JSON out, no cookies and no CSRF: a key is only ever sent
+deliberately, so there is no ambient authority to abuse.
 
-Auth: `Authorization: Bearer pfk_...` or `X-API-Key: pfk_...`. A key belongs to
-exactly ONE portfolio, so nothing here takes a portfolio parameter — the key
-decides what it can see, and `tenancy` enforces it on every query.
+`Authorization: Bearer pfk_...` or `X-API-Key: pfk_...`. A key belongs to
+exactly one portfolio, so nothing here takes a portfolio parameter — the key
+decides what it can see and `tenancy` enforces it.
 
 Amounts are AUD unless a `currency` field says otherwise; dates are ISO-8601.
-Everything is computed live from trades and stored closes, so a reader always
-sees the same numbers the web UI shows.
 
-**Append-only, deliberately.** The web UI can edit and delete a trade; this
-cannot, and there is no PATCH or DELETE here to find. A key is a long-lived
-credential held by another program, and the blast radius of a loop with a bug
-in it is very different for "wrote a duplicate trade" than for "rewrote the
-last three years". Corrections are a human sitting in front of the ledger.
+Append-only, deliberately — there is no PATCH or DELETE to find:
+decisions.md #88.
 """
 
 from __future__ import annotations

@@ -1,24 +1,17 @@
 """Session lifetime: idle timeout, absolute cap, and what counts as activity.
 
-Three clocks, and each stops something the others don't:
+Three clocks, each stopping something the others do not: `expires_at` slides on
+activity, the idle window ends an hour of nothing, and the absolute cap of
+seven days cannot be extended by renewal — without it a session used daily
+never expires and a stolen cookie stays valid indefinitely.
 
-  * **`expires_at`** — the stored expiry, slid forward on activity.
-  * **the idle window** — an hour with nothing happening, and you're out. This
-    is a finance app that gets left open on shared machines.
-  * **the absolute cap** — seven days from creation, which renewal *cannot*
-    extend. Without it a session used daily never expires at all, and a stolen
-    cookie stays valid indefinitely as long as it keeps being used. That is the
-    case the cap exists for, and it is the one a sliding-only design misses.
+The part most likely to be broken later is what counts as activity: the page
+polls itself during a feed refresh and the idle overlay polls to keep its
+countdown honest, and if either slid the window a tab left open would keep its
+session alive forever. `auth.SLIDING_EXEMPT` is the list; these tests are why
+it cannot quietly lose an entry.
 
-The subtle part, and the one most likely to be broken by a later change, is
-what counts as activity. The page polls itself while a feed refresh runs and
-the idle overlay polls to keep its countdown honest — if either slid the
-window, a tab left open on the dashboard would keep its own session alive
-forever and the timeout would be decoration. `auth.SLIDING_EXEMPT` is the list;
-these tests are the reason it can't quietly lose an entry.
-
-Everything time-dependent runs under `freeze_time`: this is all arithmetic on
-"now", and a test that reads the wall clock can only assert something vague.
+Everything time-dependent runs under `freeze_time`.
 """
 
 from __future__ import annotations

@@ -1,25 +1,14 @@
 """The coverage policy, enforced rather than documented.
 
-The target is 100% of `app/`, and the gate lives in `[tool.coverage.report]
-fail_under`. Two things keep that honest, and both are checked here rather than
-left to good intentions:
+Two things keep the gate honest, checked here rather than left to intention:
+every exclusion carries a written justification — a bare `# pragma: no cover`
+fails, as does an `omit` entry with no "Justification:" above it — and
+`fail_under` may only ever go up.
 
-* **Every exclusion carries a written justification.** A `# pragma: no cover`
-  with no reason beside it is how a coverage target quietly becomes a fiction —
-  the number stays green while the untested surface grows. So a bare pragma
-  fails this test, and so does an `omit` entry in pyproject.toml with no
-  "Justification:" comment above it.
-
-* **The gate only ever goes up.** `fail_under` is asserted to be at least the
-  recorded floor below. Lowering it to make a change fit is the failure mode
-  this exists to prevent; if a change drops coverage, the answer is a test.
-
-A caveat worth stating plainly, because a percentage invites more confidence
-than it earns: line coverage says every line *ran*, not that anything checked
-what it did. A test that calls a function and asserts nothing scores the same
-as one that pins its answer to a hand-computed figure. The value in this suite
-comes from the hand-computed ground truths and the mutation checks, not from
-this number. The gate stops coverage rotting; it does not measure quality.
+Worth stating plainly, because a percentage invites more confidence than it
+earns: line coverage says a line RAN, not that anything checked what it did.
+The value in this suite comes from the hand-computed ground truths and the
+mutation checks. This gate stops coverage rotting; it does not measure quality.
 """
 
 from __future__ import annotations

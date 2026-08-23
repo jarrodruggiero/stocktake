@@ -65,6 +65,21 @@
           <option value="dark" {% if auth.user.theme == 'dark' %}selected{% endif %}>Dark</option>
         </select>
       </label>
+      <label>Trade times
+        {%- set clock_tip %}
+        <p>Trades are stored on the exchange's clock, which is what orders a
+        day's buys and sells.</p>
+        <p><strong>This device</strong> shows them converted to wherever you
+        are. It changes nothing that is stored.</p>
+        {% endset %}
+        {% with body = clock_tip, label = "Which clock" %}
+          {% include "_tip.html" %}
+        {% endwith %}
+        <select name="times_in">
+          <option value="market" {% if auth.user.times_in == 'market' %}selected{% endif %}>Exchange time</option>
+          <option value="local" {% if auth.user.times_in == 'local' %}selected{% endif %}>This device</option>
+        </select>
+      </label>
       <label>Menu style
         <select name="nav_style">
           <option value="both" {% if auth.user.nav_style == 'both' %}selected{% endif %}>Icon + label</option>

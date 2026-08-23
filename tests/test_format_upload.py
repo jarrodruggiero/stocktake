@@ -1,27 +1,20 @@
 """Installing import templates through the interface, rather than by hand.
 
-The mapper can already *produce* a template. Until now the only way to use one
-was to put the file on the container's disk yourself, which is not something
-you can ask of anyone testing a change or trying a format somebody shared —
-and on Kubernetes the obvious place to put it (`/config`) is a read-only
-ConfigMap.
+Putting a file on the container's disk is not something you can ask of anyone
+trying a format somebody shared, and on Kubernetes `/config` is a read-only
+ConfigMap. So templates upload, list and delete from the imports page.
 
-So templates upload, list and delete from the imports page, and land in a
-directory the loaders actually read.
+Two things here are security properties, not conveniences:
 
-Two things here are security properties rather than conveniences:
+  * **The filename is attacker-controlled** — `../../etc/cron.d/x` is a
+    filename. Everything is slugged, re-joined, and checked to be inside the
+    target directory before anything touches the disk.
+  * **A template is validated before install**, not on first use, or a broken
+    one sits there until somebody uploads a statement and fails as "not
+    recognised".
 
-  * **The filename is attacker-controlled.** `../../etc/cron.d/x` is a filename.
-    Everything written is slugged and re-joined, and the result is checked to
-    be inside the target directory before anything touches the disk.
-  * **A template is validated before it is installed**, not on first use.
-    A broken file that parses as YAML but not as a template would otherwise sit
-    there until somebody uploaded a statement, and fail as "your statement is
-    not recognised".
-
-Templates are declarative and parsed with `YAML(typ="safe")`, so a hostile file
-is a parsing problem rather than a code-execution one. That is the reason this
-can be a feature at all.
+Templates are inert, which is what makes this a feature at all (decisions.md
+#38).
 """
 
 from __future__ import annotations

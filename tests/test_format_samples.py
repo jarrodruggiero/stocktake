@@ -1,20 +1,13 @@
 """Every shipped template, run against its own redacted sample.
 
-**This is the mechanism that makes contributed formats trustworthy.** Nobody
-maintaining this project holds accounts at most brokers and registries, so a
-format cannot be verified by the person merging it. The arrangement that does
-work: whoever has the document contributes the template *plus* a redacted
-sample of the extracted text *plus* what it should produce — and from then on
-CI checks it forever, on hardware that has never seen the real statement.
+**This is the mechanism that makes contributed formats trustworthy**
+(decisions.md #64): whoever has the document contributes the template plus a
+redacted sample plus what it should produce, and CI checks it forever on
+hardware that has never seen the real statement.
 
-The sample is **text, not a PDF**, on purpose:
-
-  * text is trivially redactable — you can read every character you are
-    publishing, which is not true of a PDF's metadata, embedded fonts and
-    revision history;
-  * a reviewer can see the whole thing in a diff;
-  * no binaries in the repository;
-  * the parser works on extracted text anyway, so nothing is lost.
+The sample is text, not a PDF, on purpose — every character being published can
+be read, a reviewer sees the whole thing in a diff, no binaries land in the
+repository, and the parser works on extracted text anyway.
 
 The tests below are generated from whatever is in `app/formats/samples/`, so a
 contributor adds two files and gets CI coverage without touching this module.
@@ -172,3 +165,65 @@ def _comparable(value):
     if isinstance(value, dt.date):
         return value
     return str(value) if value is not None else None
+
+
+# --------------------------------------------------------------------------- #
+# The same arrangement, for broker CSV formats
+# --------------------------------------------------------------------------- #
+# A broker format is as unverifiable by the maintainer as a statement template:
+# nobody here holds an account at most brokers (decisions.md #64).
+
+BROKERS = fmt.BUILTIN_DIR / "brokers"
+
+
+def _broker_samples() -> list[Path]:
+    return sorted(SAMPLES.glob("*.csv")) if SAMPLES.is_dir() else []
+
+
+def test_every_shipped_broker_format_has_a_sample():
+    formats = {p.stem for p in BROKERS.glob("*.yaml")}
+    samples = {p.stem for p in _broker_samples()}
+    assert formats - samples == set(), (
+        f"broker format(s) with no sample: {sorted(formats - samples)} — a format "
+        f"nobody can verify is the situation this design exists to escape"
+    )
+
+
+@pytest.mark.parametrize("sample", _broker_samples(), ids=_ids(_broker_samples()))
+def test_the_shipped_broker_format_reads_its_own_sample(sample: Path):
+    """Run the real format over the sample and compare every field.
+
+    Not "it parsed" — the actual numbers. A mapping that reads Consideration as
+    the unit price parses perfectly and overstates every holding by the number
+    of units, so only comparing values catches it.
+    """
+    from app import brokercsv
+    from app.settings import BrokerFormat
+
+    expected = _expected(sample)
+    broker = sample.stem
+    shipped = fmt.load_broker_formats()[broker]
+    result = brokercsv.parse_csv(sample.read_text(), broker,
+                                 BrokerFormat.model_validate(shipped))
+
+    assert not result.errors, f"{broker} could not read its own sample: {result.errors}"
+
+    got = [
+        {"date": c.date.isoformat(), "ticker": c.ticker, "type": c.type,
+         "quantity": str(c.quantity), "unit_price": str(c.unit_price),
+         "brokerage": str(c.brokerage)}
+        for c in result.candidates
+    ]
+    assert got == expected["trades"]
+
+    # Rows it must NOT import. A format that silently starts importing DRP
+    # allotments at a zero cost base is the failure this pins.
+    assert len(result.skipped) == len(expected.get("skipped", [])), (
+        f"expected {len(expected.get('skipped', []))} skipped row(s), "
+        f"got {len(result.skipped)}: {result.skipped}"
+    )
+
+    # A midnight time is padding and must not be stored — it would sort every
+    # imported trade ahead of every hand-entered one on the same day.
+    times = [c.time.isoformat() for c in result.candidates if c.time]
+    assert times == expected.get("times", [])

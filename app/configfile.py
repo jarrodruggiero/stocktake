@@ -1,26 +1,11 @@
 """Reading and writing config.yaml from inside the app.
 
-Most deployments hand the app a config file and never touch it again — fine if
-somebody edited it before first boot, unhelpful if they did not: the timezone,
-the feed's schedule and the lockout policy should all be changeable without
-learning where the file lives. So Admin → Settings edits it, under three
-constraints:
+Admin -> Settings edits it, under three constraints (decisions.md #78): the
+file may not be writable and that is normal; comments must survive, so this
+round-trips rather than dumps; and `database` and `app_name` are shown
+read-only because changing either from a web form is a way to lose a database.
 
-* **The file may not be writable, and that is normal.** Mounted from a
-  ConfigMap, a read-only volume or baked into an image, it cannot be changed by
-  the process reading it. A deployment choice, not a fault — so the page shows
-  every value and explains why it cannot save, rather than failing when tried.
-
-* **Comments must survive.** The shipped file documents every option, which is
-  what makes it editable by hand; a plain YAML dump would strip all of it on the
-  first save. Round-trip parsing preserves comments, ordering and formatting,
-  and only changed scalars are touched.
-
-* **Not everything belongs here.** `database` decides where the data lives and
-  `app_name` decides the file's own name — changing either from a web form is a
-  way to lose a database. Both are shown read-only. Everything editable records
-  whether it applies immediately or needs a restart, because saying "saved" for
-  a value that will not apply until somebody restarts the pod is a lie.
+Everything editable records whether it applies immediately or needs a restart.
 """
 
 from __future__ import annotations

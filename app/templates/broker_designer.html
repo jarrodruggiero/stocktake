@@ -19,7 +19,9 @@ anywhere; it is held in this form until you leave the page.</p>
   <textarea name="text" hidden>{{ text }}</textarea>
 
   <div class="row">
-    <label>Broker name <input name="name" value="{{ name }}" required></label>
+    <label>Broker name
+      <input name="name" value="{{ name }}" required autocomplete="off">
+    </label>
     <label>Exchange <input name="exchange" value="{{ exchange }}" size="6"></label>
     <label>Currency <input name="currency" value="{{ currency }}" size="4"></label>
     <label>Date format
@@ -91,13 +93,28 @@ anywhere; it is held in this form until you leave the page.</p>
 </form>
 
 <section>
-  <h2>Your file</h2>
-  <div class="tablewrap">
+  <h2>Your file <small>{{ read.rows | length }} of the first rows</small></h2>
+  {# A spreadsheet rather than a table: the shape is the instruction. #}
+  <div class="sheet">
   <table>
-    <thead><tr>{% for h in read.headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+    <thead>
+      <tr class="letters">
+        <th class="rownum"></th>
+        {% for h in read.headers %}<th>{{ column_letter(loop.index0) }}</th>{% endfor %}
+      </tr>
+      <tr class="headings">
+        <th class="rownum">#</th>
+        {% for h in read.headers %}<th data-header="{{ h }}">{{ h }}</th>{% endfor %}
+      </tr>
+    </thead>
     <tbody>
       {% for r in read.rows %}
-      <tr>{% for h in read.headers %}<td class="sub">{{ r.get(h, '') }}</td>{% endfor %}</tr>
+      <tr>
+        {# The header is line 1 of the file, so the first data row is line 2 —
+           the same number the parser reports in an error. #}
+        <td class="rownum">{{ loop.index + 1 }}</td>
+        {% for h in read.headers %}<td data-col="{{ h }}">{{ r.get(h, '') }}</td>{% endfor %}
+      </tr>
       {% endfor %}
     </tbody>
   </table>
@@ -126,6 +143,19 @@ anywhere; it is held in this form until you leave the page.</p>
   </table>
   </div>
   {% endif %}
+  {% if result.adjusted %}
+  <p class="note">{{ result.adjusted }} time(s) moved into {{ exchange }} trading hours
+    {%- set time_tip %}
+    <p>A time outside the session is not when a trade happened — it is a
+    settlement stamp, or a clock in another timezone.</p>
+    <p>Times only order trades within a day. No amount changes.</p>
+    {% endset %}
+    {% with body = time_tip, label = "Why times move" %}
+      {% include "_tip.html" %}
+    {% endwith %}
+  </p>
+  {% endif %}
+
   {% if result.skipped %}
   <p class="note">{{ result.skipped | length }} row(s) skipped (not a buy or a sell):
     {{ result.skipped[:3] | join('; ') }}{% if result.skipped | length > 3 %} …{% endif %}</p>

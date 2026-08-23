@@ -1,36 +1,19 @@
 """Document formats as data: how to read a statement or a broker export.
 
-Adding support for a registry or a broker should not need Python. The CSV side
-already worked this way — `kind: mapped` is a column mapping — and this gives
-statements the same treatment, in shipped, shareable files.
-
-The reason is not elegance. **Nobody can test a format they have no document
-for.** Whoever maintains this holds accounts at almost none of these registries,
-so a parser per document is code the merger cannot verify. Formats as data
-invert that: the person with the statement authors the template, ships a
-redacted text sample with it, and CI keeps it honest forever.
-
 A template is a label and a value of a known type:
 
     fields:
-      net_amount:
-        after: ["net amount", "amount paid"]
-        type: money
+      net_amount: {after: ["net amount", "amount paid"], type: money}
 
-and, for multi-fund advices, a row *shape* rather than a regex:
+and, for multi-fund advices, a row shape rather than a regex:
 
     rows:
       shape: "TICKER NUM INT NUM"
       columns: [ticker, price, units, amount]
 
-**No pattern in a template ever reaches `re.compile`.** A template arrives by
-pull request, which makes it untrusted input, and a raw regex from untrusted
-input is two problems: catastrophic backtracking is a denial of service, and a
-regex is unreviewable by anyone who does not read regex — which defeats the
-point of making formats contributable. Labels are `re.escape`d into a fixed,
-known-good expression for the declared type. Nothing was lost: every pattern
-that existed before this ports across unchanged, which is the test that proves
-it.
+Labels are `re.escape`d into a fixed expression for the declared type; no
+pattern here reaches `re.compile` (decisions.md #38). Why data rather than a
+parser per document: decisions.md #64.
 """
 
 from __future__ import annotations
@@ -59,13 +42,9 @@ TYPE_PATTERNS: dict[str, str] = {
     "text": r"(\S+)",
 }
 
-# What may separate a label from its value.
-#
-# Money may step over intervening digits — "Franking credits 2024 ... $420.00"
-# — because the cents requirement above stops the year being read as an amount.
-# An integer or a date has no such guard, so nothing may be skipped to reach
-# them. All bounded at 80 characters: wide enough for these documents' column
-# padding, narrow enough not to reach a value on an unrelated line.
+# What may separate a label from its value. Money may step over intervening
+# digits — the cents requirement stops a year reading as an amount — while an
+# integer or date has no such guard and may skip nothing. Bounded at 80 chars.
 TYPE_SEPARATORS: dict[str, str] = {
     "money": r".{0,80}?",
     "number": r"[^\d-]{0,80}",

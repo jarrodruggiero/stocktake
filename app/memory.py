@@ -1,23 +1,15 @@
 """Giving memory back to the operating system after the price feed runs.
 
-The feed is the only fat thing this app does. `yfinance` pulls in pandas and
-numpy (~108 MiB measured in the container) and a full backfill builds frames on
-top of that, while serving pages needs almost none of it. Python frees those
-objects when the run ends, but freeing is not returning: glibc keeps the pages
-in its per-thread arenas, so RSS stays at the high-water mark and the pod looks
-like it permanently needs its peak.
+Python frees the feed's pandas frames, but freeing is not returning: glibc
+keeps the pages in its arenas, so RSS stays at the high-water mark and the pod
+looks like it permanently needs its peak.
 
-Two steps, in order, because neither works alone:
+Two steps, in order, because neither works alone: `gc.collect()` first, since
+pandas leaves reference cycles a refcount drop will not release, then
+`malloc_trim(0)` to hand the free arena pages back. `malloc_trim` is a glibc
+extension — a no-op on musl and macOS, which is where the tests run.
 
-  * `gc.collect()` — pandas leaves reference cycles, so a plain refcount drop
-    doesn't release the frames at all;
-  * `malloc_trim(0)` — asks glibc to hand the now-free arena pages back. It is
-    a **glibc extension**: absent on musl (Alpine) and on macOS, where this is
-    a no-op rather than an error. The container is Debian-based, so it works
-    where it matters; the tests run on macOS, where it correctly does nothing.
-
-None of this changes what the app computes. It changes what the cgroup reports,
-which is what the memory limit is set against.
+None of this changes what the app computes, only what the cgroup reports.
 """
 
 from __future__ import annotations

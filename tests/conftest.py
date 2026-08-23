@@ -1,33 +1,22 @@
-"""Shared fixtures. Three things here are load-bearing and easy to get wrong.
+"""Shared fixtures. Three things here are load-bearing.
 
 1. **Environment before imports.** `appkit.config` reads `APP_CONFIG_FILE` at
-   *module import* time, baked into the settings class's `yaml_file` — so the
-   env vars are set at the top of this file, before anything imports appkit or
-   `app.*`.
+   module import time, so the env vars are set at the top of this file.
+2. **Schema from the real migration chain**, built once per session and copied
+   per test. `Base.metadata.create_all` would test a schema production never
+   has.
+3. **Cache clearing.** `queries` caches by portfolio id against a fingerprint,
+   every test gets id 1, and two tests can share a fingerprint — so
+   `_clear_caches` is autouse. Do not remove it.
 
-2. **Schema from the real migration chain.** The template database is built by
-   running Alembic to head once per session, then copied per test: fast, and it
-   proves the chain builds a working schema. `Base.metadata.create_all` would
-   test a schema production never has.
+SQLite by default; Postgres is an untested claim otherwise:
 
-3. **Cache clearing.** `queries` keeps module-level caches keyed by portfolio id
-   and validated against a fingerprint. Every test gets portfolio id 1, and two
-   tests can easily share a fingerprint — without clearing, one test is served
-   another's cached series. `_clear_caches` is autouse for that reason; do not
-   remove it.
-
-**Backend.** SQLite by default, because that is what the app ships on. It also
-claims to run on Postgres, and an untested claim is worth nothing:
-
-    STOCKTAKE_TEST_DB=postgres PGHOST=localhost PGPORT=5432 \\
-    PGDATABASE=stocktake_test PGUSER=postgres PGPASSWORD=postgres \\
+    STOCKTAKE_TEST_DB=postgres PGHOST=localhost PGPORT=5432 \
+    PGDATABASE=stocktake_test PGUSER=postgres PGPASSWORD=postgres \
     pytest tests/
 
-Isolation differs by necessity — SQLite copies a migrated template file per
-test, Postgres migrates once and truncates between tests. Nothing should depend
-on which it got: assert on answers, never on a backend's representation. A
-`DateTime(timezone=True)` reads back naive on SQLite and aware on Postgres,
-which is what `appkit.ensure_utc` exists to paper over.
+Isolation differs by backend, so assert on answers, never on a backend's
+representation — `appkit.ensure_utc` is what papers over the difference.
 """
 
 from __future__ import annotations

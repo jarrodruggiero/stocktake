@@ -18,6 +18,7 @@
    belongs on the document, and feedwatch.js reads it from here. #}
 <body data-theme="{{ auth.user.theme if auth else 'auto' }}"
       data-accent="{{ auth.user.accent if auth else 'blue' }}"
+      data-times="{{ auth.user.times_in if auth else 'market' }}"
       {% if feed is defined and feed.running %}data-feed-running="1"{% endif %}
       {# Always emitted where the feed is on the page, even before the first
          quote has landed — its absence is what switches the watcher off, and a
@@ -149,5 +150,6 @@
      opened ~200px off the left edge of a phone and stayed there. The file
      no-ops when there is no switcher and no menu to wire up. #}
   <script src="/static/topbar.js?v={{ asset_v }}" defer></script>
+  <script src="/static/localtime.js?v={{ asset_v }}" defer></script>
 </body>
 </html>

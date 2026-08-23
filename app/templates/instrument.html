@@ -63,7 +63,8 @@
         {# The time shows only when it says something: a trade left at the open
            has nothing to add, and a column of 10:00 would just be noise. #}
         <td>{{ e.date }}{% if e.time and e.time.strftime('%H:%M') != '10:00' %}
-          <span class="sub">{{ e.time.strftime('%H:%M') }}</span>{% endif %}</td>
+          <time class="sub" datetime="{{ market_stamp(e.date, e.time, inst.exchange) }}"
+                data-market="{{ inst.exchange }}">{{ e.time.strftime('%H:%M') }}</time>{% endif %}</td>
         <td><span class="event event-{{ e.kind }}">{{ e.kind }}</span></td>
         <td class="num">{{ e.quantity | qty }}</td>
         <td class="num">{{ e.unit_price | money }}</td>

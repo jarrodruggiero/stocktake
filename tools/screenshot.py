@@ -218,6 +218,18 @@ def render_all() -> None:
     save("18b-imports-templates",
          client.get("/imports-exports?templates=1", headers=HTML).text)
 
+    # The broker CSV mapper, which renders only after a file is posted to it —
+    # so it had no screenshot and no visual check at all. Its sheet is the one
+    # page here whose whole job is to look like something.
+    # The shipped sample, so this page is drawn from the same invented rows the
+    # format tests use rather than a second set to keep in step.
+    designer_csv = (APP_ROOT / "app" / "formats" / "samples" / "selfwealth.csv").read_text()
+    save("18c-broker-designer", client.post(
+        "/imports-exports/broker/design",
+        data={"_csrf": token("/imports-exports")},
+        files={"file": ("movements.csv", designer_csv, "text/csv")},
+        headers=HTML).text)
+
     save("19-plan-empty", client.get("/schedule", headers=HTML).text)
     client.post("/schedule/save",
                 data={"_csrf": token("/schedule"), "name": "Regular buys",

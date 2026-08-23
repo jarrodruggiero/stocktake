@@ -340,3 +340,110 @@ def test_a_candidate_survives_the_staging_file_unchanged():
     assert restored == original
     assert restored.quantity == Decimal("12.34567890")
     assert restored.unit_price == Decimal("1234.567890")
+
+
+# --------------------------------------------------------------------------- #
+# Times: what the export says, and what the day can mean
+# --------------------------------------------------------------------------- #
+
+def _one(csv_text: str, fmt: BrokerFormat = MAPPED):
+    result = brokercsv.parse_csv(csv_text, "b", fmt)
+    assert not result.errors, result.errors
+    return result
+
+
+def test_a_date_padded_with_midnight_parses_and_keeps_no_time():
+    """Almost every broker export writes "2024-02-13 00:00:00".
+
+    It must not fail (it used to: `unconverted data remains: 00:00:00`) and it
+    must not store midnight, which would sort the trade ahead of every
+    hand-entered one that day.
+    """
+    result = _one(
+        "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+        "06/01/2025 00:00:00,Buy,ACME,100,5.00,9.50\n"
+    )
+    assert result.candidates[0].time is None
+    # Not reported as an adjustment: no time was given to adjust.
+    assert result.adjusted == 0
+
+
+def test_a_real_intraday_time_is_kept():
+    result = _one(
+        "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+        "06/01/2025 14:32:05,Buy,ACME,100,5.00,9.50\n"
+    )
+    assert result.candidates[0].time == __import__("datetime").time(14, 32, 5)
+    assert result.adjusted == 0
+
+
+@pytest.mark.parametrize("stamp,expected", [
+    ("07:30:00", None),                 # before the open — another timezone, or settlement
+    ("17:30:00", "16:00:00"),           # after the close
+    ("10:00:00", None),                 # the open itself means "no time worth showing"
+])
+def test_a_time_outside_the_session_moves_into_it(stamp, expected):
+    """`time` feeds `trade_order` and nothing else, so an out-of-hours stamp
+    misorders a day rather than mis-stating an amount. Moving it to the
+    boundary keeps the ordering honest."""
+    import datetime as dt
+
+    result = _one(
+        "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+        f"06/01/2025 {stamp},Buy,ACME,100,5.00,9.50\n"
+    )
+    got = result.candidates[0].time
+    assert got == (dt.time.fromisoformat(expected) if expected else None)
+
+
+def test_moving_a_time_is_reported_but_the_open_is_not():
+    result = _one(
+        "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+        "06/01/2025 17:30:00,Buy,ACME,100,5.00,9.50\n"
+        "07/01/2025 10:00:00,Buy,ACME,100,5.00,9.50\n"
+        "08/01/2025 14:00:00,Buy,ACME,100,5.00,9.50\n"
+    )
+    assert result.adjusted == 1
+
+
+def test_a_market_that_never_closes_keeps_the_time_it_was_given():
+    """Crypto has no session to be outside of — decisions.md #14."""
+    import datetime as dt
+
+    crypto = MAPPED.model_copy(update={"exchange": "CRYPTO"})
+    result = _one(
+        "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+        "06/01/2025 03:00:00,Buy,ACME,1,5.00,0\n", crypto,
+    )
+    assert result.candidates[0].time == dt.time(3, 0)
+    assert result.adjusted == 0
+
+
+def test_an_export_stamped_in_another_zone_is_read_on_the_exchanges_clock():
+    """A Perth export of ASX trades is two hours behind the market in July.
+
+    08:30 in Perth is 10:30 in Sydney — inside the session. Read as market time
+    it is before the open and thrown away, so this also pins the ORDER of the
+    two steps: convert first, then judge the session. Judging first discards
+    the time before the conversion can rescue it.
+    """
+    import datetime as dt
+
+    perth = MAPPED.model_copy(update={"times_zone": "Australia/Perth"})
+    result = _one(
+        "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+        "15/07/2025 08:30:00,Buy,ACME,100,5.00,9.50\n", perth,
+    )
+    assert result.candidates[0].time == dt.time(10, 30)
+
+
+def test_times_are_left_alone_when_no_zone_is_declared():
+    """The default, and it must stay the default: a conversion applied to times
+    that never needed one moves every trade by hours."""
+    import datetime as dt
+
+    result = _one(
+        "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+        "15/07/2025 14:00:00,Buy,ACME,100,5.00,9.50\n"
+    )
+    assert result.candidates[0].time == dt.time(14, 0)

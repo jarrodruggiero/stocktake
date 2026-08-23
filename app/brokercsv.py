@@ -1,7 +1,7 @@
 """Broker CSV import: parse SelfWealth/CommSec exports into candidate trades.
 
-Neither broker has an API (checked 2026-07-16), so the flow is: download the
-CSV from the broker → upload it on /imports-exports → review the parsed preview
+Neither broker offers an API, so the flow is: download the CSV → upload it on
+/imports-exports → review the parsed preview
 (duplicates and unknown tickers are flagged) → commit. Column layouts live in
 config.yaml (`imports.brokers`), so a changed export format is a YAML fix.
 
@@ -22,7 +22,9 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .markettime import to_market
 from .models import Instrument, Trade, exchange_problem, ticker_problem
+from .pricefeed import MARKETS
 from .settings import BrokerFormat, ImportSettings
 from .tenancy import owned
 
@@ -31,6 +33,69 @@ from .tenancy import owned
 COMMSEC_DETAILS = re.compile(
     r"^\s*(?P<action>[BS])\s+(?P<units>[\d,]+)\s+(?P<ticker>[A-Z0-9]{2,6})\s+@\s+(?P<price>[\d,.]+)\s*$"
 )
+
+
+# Broker exports very commonly pad a date with a zero time —
+# "2024-02-13 00:00:00" — so a date-only format has to tolerate one.
+# The suffixes are tried in order after the bare format, longest first so
+# "%H:%M:%S" is not matched as "%H:%M" with seconds left over.
+TIME_SUFFIXES = (" %H:%M:%S", " %H:%M", "T%H:%M:%S", "T%H:%M")
+
+
+def strptime_any(text: str, date_format: str) -> dt.datetime:
+    """`date_format`, or it with a time on the end."""
+    try:
+        return dt.datetime.strptime(text, date_format)
+    except ValueError:
+        for suffix in TIME_SUFFIXES:
+            try:
+                return dt.datetime.strptime(text, date_format + suffix)
+            except ValueError:
+                continue
+        raise
+
+
+def in_trading_hours(clock: dt.time | None, exchange: str) -> tuple[dt.time | None, bool]:
+    """A trade time inside the exchange's session, and whether it had to move.
+
+    Before the open becomes the open, after the close becomes the close. A time
+    outside the session is not a trading time: it is a padded date ("00:00:00",
+    which is most exports), a settlement stamp, or a clock in another timezone.
+
+    Storing it as given would misorder the day. `time` feeds one thing —
+    `models.trade_order`, which sequences same-day trades for FIFO — so a
+    midnight stamp sorts an imported trade ahead of every hand-entered one on
+    that date, and picks a different parcel for a same-day sale.
+
+    The open comes back as None, which means exactly the same thing to
+    `trade_order` and keeps a column of "10:00" out of the interface.
+
+    Markets that never close (crypto) have no session to be outside of, so
+    their times are taken as given.
+    """
+    if clock is None:
+        return None, False
+    market = MARKETS.get(exchange.upper())
+    if market is None or market.open is None or market.close is None:
+        return clock, False
+    if clock < market.open:
+        return None, True
+    if clock > market.close:
+        return market.close, True
+    return (None, False) if clock == market.open else (clock, False)
+
+
+def parse_when(value: str, date_format: str) -> tuple[dt.date, dt.time | None]:
+    """The date, and the time if the cell carried a real one.
+
+    Midnight is no time at all: a broker writing "2024-02-13 00:00:00" is
+    padding a date, not claiming a trade at midnight. It is separated from a
+    stated out-of-hours time here — see `in_trading_hours` — so that a
+    date-only export does not report every one of its rows as adjusted.
+    """
+    stamp = strptime_any(value.strip(), date_format)  # raises for the caller
+    clock = stamp.time()
+    return stamp.date(), None if clock == dt.time(0) else clock
 
 
 @dataclass
@@ -43,12 +108,14 @@ class CandidateTrade:
     brokerage: Decimal
     currency: str
     exchange: str
+    time: dt.time | None = None  # only when the export carried a real one
     status: str = "new"  # new / duplicate / unknown-instrument
     detail: str = ""
 
     def as_dict(self) -> dict:
         return {
             "date": self.date.isoformat(),
+            "time": self.time.isoformat() if self.time else None,
             "ticker": self.ticker,
             "type": self.type,
             "quantity": str(self.quantity),
@@ -64,6 +131,7 @@ class CandidateTrade:
     def from_dict(cls, d: dict) -> CandidateTrade:
         return cls(
             date=dt.date.fromisoformat(d["date"]),
+            time=dt.time.fromisoformat(d["time"]) if d.get("time") else None,
             ticker=d["ticker"],
             type=d["type"],
             quantity=Decimal(d["quantity"]),
@@ -81,6 +149,7 @@ class ParseResult:
     candidates: list[CandidateTrade] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)  # non-trade rows (cash etc.)
     errors: list[str] = field(default_factory=list)
+    adjusted: int = 0  # times moved into trading hours; see `in_trading_hours`
 
 
 def _num(raw: str) -> Decimal:
@@ -109,9 +178,15 @@ def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
                 if action not in ("buy", "sell", "b", "s"):
                     result.skipped.append(f"line {i}: action {row[col['action']]!r}")
                     continue
+                when, clock = parse_when(row[col["date"]], fmt.date_format)
+                if clock and fmt.times_zone:
+                    clock = to_market(clock, when, fmt.times_zone, fmt.exchange)
+                clock, moved = in_trading_hours(clock, fmt.exchange)
+                result.adjusted += moved
                 result.candidates.append(
                     CandidateTrade(
-                        date=dt.datetime.strptime(row[col["date"]].strip(), fmt.date_format).date(),
+                        date=when,
+                        time=clock,
                         ticker=row[col["ticker"]].strip().upper(),
                         type="buy" if action.startswith("b") else "sell",
                         quantity=_num(row[col["units"]]),
@@ -145,6 +220,9 @@ def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
                 # Brokerage isn't a column: recover it from the cash movement.
                 # buy: debit = qty*price + brokerage; sell: credit = qty*price - brokerage.
                 gross = qty * price
+                when, clock = parse_when(row["Date"], fmt.date_format)
+                clock, moved = in_trading_hours(clock, fmt.exchange)
+                result.adjusted += moved
                 cash = _num(row.get("Debit($)") or "0") if is_buy else _num(row.get("Credit($)") or "0")
                 brokerage = (cash - gross) if is_buy else (gross - cash)
                 if brokerage < 0 or brokerage > max(Decimal("100"), gross / 10):
@@ -155,7 +233,8 @@ def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
                     continue
                 result.candidates.append(
                     CandidateTrade(
-                        date=dt.datetime.strptime(row["Date"].strip(), fmt.date_format).date(),
+                        date=when,
+                        time=clock,
                         ticker=m.group("ticker"),
                         type="buy" if is_buy else "sell",
                         quantity=qty,
@@ -234,6 +313,8 @@ def commit(session: Session, candidates: list[CandidateTrade], imports: ImportSe
                 Trade(
                     instrument=inst,
                     date=c.date,
+                    # Only when the export carried one; unset means MARKET_OPEN.
+                    **({"time": c.time} if c.time else {}),
                     type=c.type,
                     quantity=c.quantity,
                     unit_price=c.unit_price,

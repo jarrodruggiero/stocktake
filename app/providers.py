@@ -1,32 +1,18 @@
 """Where market data comes from, and what happens when a source is down.
 
-Yahoo is unofficial, breaks periodically, and is a single point of failure for
-prices, FX *and* crypto. This makes the source a list rather than an assumption:
-each kind has an ordered set, the first success wins, and the `source` column
-records who actually served each row.
+Each kind has an ordered list, the first success wins, and the `source` column
+records who served each row.
 
-**Fallback happens on error or empty, never on "fewer rows than I hoped".** A
-provider returning three days when five were asked for is normal — markets
-close. Treating that as failure would flap between sources and rewrite the same
-rows with a different `source` every run.
+| Kind | Primary | Fallback |
+| --- | --- | --- |
+| FX | Yahoo | Frankfurter |
+| Crypto | Yahoo | CoinGecko |
+| Equities | Yahoo | none — decisions.md #68 |
+| Dividends | Yahoo | none |
 
-| Kind | Primary | Fallback | Why |
-| --- | --- | --- | --- |
-| FX | Yahoo | **Frankfurter** | Keyless, documented, AUD covered, no quotas, central-bank sourced. |
-| Crypto | Yahoo | **CoinGecko** | Keyless, documented, prices natively in AUD. |
-| Equities | Yahoo | **none** | See below. |
-| Dividends | Yahoo | none | No free source publishes distribution history. |
-
-**There is no equity fallback, deliberately.** Stooq's CSV endpoint now answers
-with a JavaScript proof-of-work challenge and publishes no API, so using it
-would mean defeating an anti-bot measure. Alpha Vantage does not document ASX
-coverage. Twelve Data lists ASX only on a paid add-on. A provider whose coverage
-of the actual holdings cannot be verified is worse than none: it fails silently
-while `source` claims the numbers came from somewhere real.
-
-The seam works — `PROVIDERS["equity"]` is a list, and adding a keyed provider is
-one function plus a config entry. **Symbols only leave**: no provider is ever
-told a quantity, a holding or who is asking.
+Fallback happens on error or empty, never on "fewer rows than asked for":
+decisions.md #67. Symbols only ever leave — no provider is told a quantity, a
+holding, or who is asking.
 """
 
 from __future__ import annotations

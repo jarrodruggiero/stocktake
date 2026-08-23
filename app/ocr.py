@@ -1,24 +1,13 @@
 """Reading a scanned statement, entirely on this machine.
 
-Some registries post distribution advices as scans — a photograph of a page
-wrapped in a PDF, with no text in it. Before this they failed in the least
-helpful way available: no text, no template matched, and the app said the
-statement was not recognised — true, and it sends you to look at your templates
-when the problem is that there was nothing to match against.
+Some registries post distribution advices as scans, with no text in the PDF.
+Without this they failed unhelpfully: no text, no template matched, and the app
+said the statement was not recognised — which sends you to look at your
+templates when the problem is there was nothing to match against.
 
-**Local only, and not negotiable.** A dividend statement carries a name, an
-address, a holder number and an amount. It is read on this machine or not at
-all, which rules out every hosted OCR API and every "just send it to a model"
-shortcut and leaves **Tesseract**, a local binary with no network of its own.
-Same promise as the rest of the app: only ticker symbols ever leave.
-
-**Tesseract is optional at runtime.** The shipped image installs it; a source
-install may not have it. `available()` answers once, and the caller turns a
-missing binary into a sentence rather than a traceback. Only scanned PDFs stop
-working.
-
-Measured, not estimated: it adds **107 MB** to the image (37 MB of that
-`libicu`, pulled in by leptonica; 15 MB language data).
+Local only, which leaves Tesseract: decisions.md #84. It is optional at
+runtime, so `available()` answers once and the caller turns a missing binary
+into a sentence rather than a traceback.
 """
 
 from __future__ import annotations

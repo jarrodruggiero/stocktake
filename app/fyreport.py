@@ -227,13 +227,8 @@ def instrument_disposals(inst: Instrument, fx_book=None) -> list[Disposal]:
                 f"{inst.ticker}: sell of {t.quantity} on {t.date} exceeds held parcels"
             )
 
-        # Spread the money ACTUALLY RECEIVED across the parcels by units, in
-        # whole cents. Per-unit-then-round gave each parcel its own rounding
-        # error: three one-unit parcels out of 14.00 each came to 4.6666… and
-        # rounded to 4.67, so the schedule reported 14.01 of proceeds against
-        # 14.00 of money. Running the total forward and taking differences
-        # means the parts sum to the whole by construction, and the leftover
-        # cent lands on a parcel instead of on nobody.
+        # Running-total differencing, so the parts sum to the whole by
+        # construction. Per-unit-then-round does not — decisions.md #93.
         sold = ZERO
         allotted = ZERO
         for use in uses:
@@ -519,12 +514,7 @@ def available_fys(session: Session) -> list[int]:
 # --------------------------------------------------------------------------- #
 # Sorting the report's tables
 # --------------------------------------------------------------------------- #
-#
-# Three fixed tables of three different row shapes, so they share only the
-# ordering (`app/sorting.py`) rather than the holdings table's column registry.
-#
-# The key names appear in the URL (`?snapshot_sort=units`), so this table is an
-# allow-list as well as a lookup: nothing outside it can be sorted by.
+# The key names appear in the URL, so this is an allow-list as well as a lookup.
 
 SORTABLE: dict[str, dict[str, object]] = {
     "snapshot": {
@@ -536,12 +526,9 @@ SORTABLE: dict[str, dict[str, object]] = {
         "gain_aud": lambda r: r.gain_aud,
         "gain_pct": lambda r: r.gain_pct,
     },
-    # Franking and grossed_up are NOT here, and the omission is deliberate:
-    # the FY page stopped showing those two columns (see dashboard_fy.html).
-    # This dict is an allow-list as much as a lookup, so leaving them in would
-    # let `?income_sort=franking` reorder the table by a column nobody can see
-    # — a page whose rows move for no visible reason. `IncomeRow` still CARRIES
-    # both figures, and the API still publishes them.
+    # Franking and grossed_up are deliberately absent: the FY page no longer
+    # shows those columns, and this is an allow-list, so leaving them would let
+    # a query reorder the table by a column nobody can see.
     "income": {
         "ticker": lambda r: r.instrument.ticker,
         "cash": lambda r: r.cash,

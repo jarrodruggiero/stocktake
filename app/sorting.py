@@ -1,24 +1,11 @@
 """Click a column header to sort. Shared by every table that wants it.
 
-The holdings table has a registry behind it (`app/columns.py`) because its
-columns are chosen and reordered. The FY report has three tables of three
-different shapes and wants only the ordering — so ordering lives here and the
-registry stays about columns.
+Ordering lives here rather than in `columns.py`, which is about which columns
+exist; the FY report has three tables of three shapes and wants only this.
 
-**Sorting is server-side.** The values are `Decimal`s and some are `None`; in
-the browser they are already strings, where "1,234.50" sorts as text and an em
-dash sorts wherever the browser feels like.
-
-**Blanks last, in both directions.** `sorted(reverse=True)` reverses the blanks
-too, so descending would put the rows with no data on top. They are the least
-interesting rows either way.
-
-**Which column a table is sorted by lives in the URL**, not the user record. It
-survives a reload, can be linked and bookmarked, and two people looking at one
-portfolio do not fight over it — and it is the honest scope, since sorting is
-something you do while reading, unlike *which columns exist*. Parameters carry a
-table-name prefix because the FY report puts three sortable tables on one page.
-Natural order is one click on the nav link, which carries no query.
+Sorting is server-side, blanks sort last in both directions, and the sort lives
+in the URL rather than the user record — decisions.md #81. Parameters carry a
+table-name prefix because the FY report puts three sortable tables on a page.
 """
 
 from __future__ import annotations

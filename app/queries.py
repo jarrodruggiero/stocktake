@@ -537,22 +537,15 @@ class _Stepper:
 class FxBook:
     """Every stored exchange rate, and an honest answer for any date.
 
-    For a pair we have rows for: the nearest rate **on or before** the date,
-    and failing that the **earliest rate there is**. That second clause is the
-    point. A portfolio seeded from a spreadsheet routinely predates the FX
-    feed's backfill, and falling back to a rate of 1 would book a foreign
-    holding as though the currency did not exist — a phantom gain or loss the
-    size of the exchange rate, across the whole early history. A rate from a few
-    days either side is a rounding error; 1:1 is a fabrication.
+    For a pair with rows: the nearest rate on or before the date, and failing
+    that the earliest there is — a rate a few days out is a rounding error,
+    where 1:1 would be a fabrication (decisions.md #5).
 
-    For a pair we have NO rows for, `rate()` returns None and the caller must
-    leave the AUD figure out rather than invent one — the same refusal the
-    dashboard already makes via `totals.excluded`. `known()` is how a caller
-    decides that once per instrument instead of per day.
+    For a pair with none, `rate()` returns None and the caller leaves the AUD
+    figure out. `known()` decides that once per instrument rather than per day.
 
-    Random-access by design (`bisect`, not a forward-only cursor): trade dates
-    and price dates interleave, and a cursor would quietly return a stale rate
-    the first time it was asked to look backwards.
+    Random-access by `bisect`, not a cursor: trade and price dates interleave,
+    and a cursor returns a stale rate the first time it looks backwards.
     """
 
     def __init__(self, session: Session):
@@ -949,27 +942,14 @@ PERIODS = (
 def period_summary(session: Session, series: dict | None = None) -> list[dict]:
     """How the portfolio actually performed over each window.
 
-    The measure is a **time-weighted return**: chain each day's return with
-    that day's contributions removed. That is the only honest answer when you
-    are still buying in — a simple "gain / invested" comparison across two
-    windows divides by different denominators, so a 5-year figure and an
-    all-time figure aren't comparable and the small early balance dominates.
+    Two returns, because they answer different questions (decisions.md #95):
 
-    Two returns are reported because they answer different questions, and
-    quoting only one invites the wrong conclusion:
-      * `on_money_in` — growth over what was at work (opening value plus
-        contributions). "My money is worth X% more", the familiar figure, and
-        the one that stays low while you are still buying in.
-      * `twr` — how the *investments* performed, contributions removed. Higher
-        for a portfolio built by regular buying, because the early money has
-        compounded for years while the recent money hasn't.
-    Neither is wrong; a fund quotes the second, a bank balance feels the first.
-    `twr_annual` restates the long windows per year so they stay legible.
+      * `on_money_in` — growth over what was at work. The familiar figure.
+      * `twr` — time-weighted, contributions removed: how the investments
+        performed. `twr_annual` restates long windows per year.
 
-    `growth` is the money the market and income actually made over the window
-    (value change less what you put in, plus cash income) — separating the
-    portfolio getting bigger because you fed it from it getting bigger by
-    itself.
+    `growth` is what the market and income actually made — value change less
+    what you put in, plus cash income.
     """
     P = series if series is not None else portfolio_series(session)
     dates = P["dates"]
