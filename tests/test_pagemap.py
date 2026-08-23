@@ -1,26 +1,13 @@
 """The visual statement mapper: clicking a place on the page, not a word in a
 wall of text.
 
-The text designer works on extracted text, so you point at a word that has been
-lifted out of its layout. For a PDF that came through OCR that is a real
-problem: OCR output reads as a jumble, and somebody who cannot see *where* on
-the page a number came from cannot be confident they mapped the right one. This
-renders the page and puts the word boxes back where they belong.
+Two constraints shape the design, both about what it holds on to (decisions.md
+#73): nothing lives in memory between requests, and a session belongs to one
+person — another signed-in user presenting the token gets a 404, not somebody
+else's dividend statement.
 
-Two constraints shape the whole design, and both came from the same worry —
-what this holds on to.
-
-**Nothing lives in memory between requests.** Page images are written to disk
-under a per-session directory and served from there. A pod that has run the
-mapper once is not carrying page bitmaps around until its next restart, which
-is exactly the failure a naive in-memory cache produces.
-
-**A session belongs to one person.** The token is random and the directory
-records who made it; another signed-in user presenting the token gets a 404,
-not somebody else's dividend statement.
-
-Sessions expire 30 minutes after they were last touched, and are swept from
-disk both lazily (on the next upload) and by the daily maintenance job.
+Sessions expire 30 minutes after last use and are swept lazily and by the daily
+maintenance job.
 """
 
 from __future__ import annotations

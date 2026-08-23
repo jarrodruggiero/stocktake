@@ -23,25 +23,12 @@ class RateLimitSettings(BaseModel):
 class WebauthnSettings(BaseModel):
     """Passkeys and security keys. RESERVED — nothing reads this yet.
 
-    The keys exist now so the shape is settled before anyone enrols, because a
-    WebAuthn credential binds permanently to the `rp_id` it was created under:
-    change the domain later and every registered passkey stops working.
+    A credential binds permanently to the `rp_id` it was created under, so the
+    shape is settled before anyone enrols. Needs HTTPS (a browser rule) and a
+    canonical domain; public reachability is not required.
 
-    Two hard requirements before this can be turned on:
-
-      * **HTTPS.** WebAuthn needs a secure context. A plain-HTTP host
-        cannot do it — not a limitation of this app, a browser rule.
-      * **A settled canonical domain.** `rp_id` is the registrable domain
-        (`portfolio.example.com`), `origins` the full origins allowed to speak
-        to it (`https://portfolio.example.com`).
-
-    Public reachability is NOT required: an internal-only name with DNS-01
-    certificates works fine.
-
-    `rp_id` is declared HERE and never derived from the Host or
-    X-Forwarded-Host header. Those are client-controlled, and the rp_id is the
-    security anchor every credential is bound to — reading it off a request
-    would let a caller pick which domain their credential counts for.
+    `rp_id` is declared HERE and never read off Host or X-Forwarded-Host —
+    decisions.md #96.
     """
 
     enabled: bool = False
@@ -128,12 +115,9 @@ class PriceFeedSettings(BaseModel):
     # requests an hour — cheap enough that the interval is set by what feels
     # live rather than by what the provider will tolerate.
     quote_interval_minutes: int = 5
-    # …and only when it can tell anyone anything: the poll runs while ANY
-    # account has a live session AND at least one exchange holding something is
-    # in session. With nobody signed in, or every market shut, the app stops
-    # calling out until the evening close run. Trading hours live in
-    # `pricefeed.MARKETS` beside the close times, not here — they are a fact
-    # about an exchange, not a preference.
+    # Only while ANY account has a live session AND an exchange holding
+    # something is open. Trading hours live in `pricefeed.MARKETS` beside the
+    # close times — a fact about an exchange, not a preference.
 
 
 class BrokerFormat(BaseModel):
@@ -142,6 +126,12 @@ class BrokerFormat(BaseModel):
     currency: str = "AUD"
     date_format: str = "%d/%m/%Y"
     columns: dict[str, str] = {}  # logical field -> CSV header (kind: mapped)
+    # The zone a time in this export is written in, where it is NOT the
+    # exchange's. An IANA name ("Australia/Perth"). Left empty the times are
+    # taken as the market's own, which is what every export checked so far
+    # does — set it only for one that demonstrably does not, because a
+    # conversion applied to times that never needed it moves them by hours.
+    times_zone: str = ""
 
 
 class OcrSettings(BaseModel):
@@ -171,13 +161,8 @@ class ImportSettings(BaseModel):
     # a few hundred kilobytes; the cap is there so a large file cannot be read
     # into memory on a container with a few hundred megabytes to its name.
     max_upload_mb: int = 10
-    # Where templates installed through the interface are kept, as
-    # `<dir>/statements/*.yaml` and `<dir>/brokers/*.yaml`.
-    #
-    # Under /data, NOT /config: in Kubernetes /config is a read-only ConfigMap,
-    # so anything written there would fail on exactly the deployment where
-    # editing files by hand is hardest. /data is the volume that already has to
-    # be writable and backed up.
+    # Installed templates, as `<dir>/statements/*.yaml` and `<dir>/brokers/*.yaml`.
+    # Under /data, not /config: /config is a read-only ConfigMap on Kubernetes.
     templates_dir: str = "/data/formats"
     # Rendered page images of a statement somebody is mapping: 0700, deleted
     # 30 minutes after last use (app/pagemap.py). `/scratch`, deliberately NOT

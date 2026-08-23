@@ -1,25 +1,11 @@
 """Rendering an amount of money so it says which money it is.
 
-The app had no currency formatting: templates wrote a literal `$` in front of
-`{{ x | money }}`. That produced `$-4.00` — the sign belongs to the number and
-the symbol in front of the whole thing — and it put the symbol *outside* the
-privacy blur, since `money` wraps its output in `<span class="m">` and a `$`
-written outside stayed sharp next to a smudge. Both are the same mistake:
-treating the symbol as decoration rather than part of the value.
+`REPORTING` is a constant today and becomes `portfolio.reporting_currency`
+later, so nothing outside this module hard-codes "AUD".
 
-`REPORTING` is a constant today and becomes `portfolio.reporting_currency` in
-T28b. Nothing outside this module should hard-code `"AUD"`, so that the later
-change is a change *here*.
-
-Where the symbol goes:
-
-  * **Headline numbers** (tiles, hero figures) always carry it — there is no
-    column header to carry it for them.
-  * **Table columns carry their currency in the HEADER.** A `$` repeated down
-    two hundred right-aligned cells is noise and fights the alignment that
-    makes a numeric column scannable.
-  * **A column that can hold more than one currency** names the currency per
-    row instead — see `columns.py`. An AUD-only portfolio never sees this.
+Where the symbol goes: headline numbers carry it, table columns carry it in the
+HEADER, and a column that can hold more than one currency names the currency
+per row (see `columns.py`). Why: decisions.md #80.
 """
 
 from __future__ import annotations

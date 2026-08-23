@@ -1,27 +1,13 @@
 """Restarting the application from inside it.
 
-A process cannot restart itself. What it can do is *stop*, and rely on whatever
-started it to start it again — which is exactly how a container works, and
-exactly why this has to be honest about the deployment it finds itself in:
+A process cannot restart itself; it can stop and rely on whatever started it.
+`supervision()` reports which of three situations this is — Kubernetes, Docker
+with a restart policy, or neither — and the page words the button accordingly
+rather than pretending they are the same (decisions.md #74).
 
-  * **Kubernetes** replaces a stopped container immediately (any restartPolicy
-    except `Never`). Stopping is safe and the app comes back in seconds.
-  * **Docker / Compose** only restarts when the container was created with a
-    restart policy, and nothing inside the container can see whether it was.
-    `restart: unless-stopped` in a compose file is the usual case, so this is
-    probably fine — but "probably" is what the page says.
-  * **Anything else** — a bare `uvicorn` in a terminal, a dev server — will not
-    come back at all. Offering an unqualified "Restart" button there would be
-    offering to take the application down.
-
-So `supervision()` reports which of those three it is, and the page words the
-button accordingly rather than pretending they are the same.
-
-The stop itself is a SIGTERM to our own process, sent from a background thread
-a moment after the response has gone out — uvicorn treats it as a graceful
-shutdown, so in-flight requests finish and the database is closed cleanly.
-Sending it inline would kill the connection before the browser had the page
-telling it what happened.
+The stop is a SIGTERM to our own process from a background thread, a moment
+after the response has gone out, so uvicorn shuts down gracefully and the
+browser has the page telling it what happened.
 """
 
 from __future__ import annotations

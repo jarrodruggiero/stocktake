@@ -1,25 +1,15 @@
 """Turning a designed template into a contribution somebody can merge.
 
-A template on its own is not a mergeable pull request. `test_format_samples.py`
-requires three files — the template, a **redacted** sample of the extracted
-text, and what that sample should produce — because nobody maintaining this
-project holds an account at most registries, so a format cannot be verified by
-the person merging it. The three-file arrangement is what lets CI check it
-forever on hardware that has never seen the real statement.
+`test_format_samples.py` requires three files — the template, a redacted sample
+of the extracted text, and what that sample should produce (decisions.md #64).
+The designer emits one; this makes all three.
 
-The designer emitted one of the three. This makes all three.
+**The redaction must not pretend** (decisions.md #69): mask what can be
+recognised mechanically, say exactly what was and was not masked, and put the
+result in front of the person before anything leaves the machine.
 
-**The redaction is the part that must not pretend.** An automatic redactor that
-misses a line is worse than none at all, because a contributor who trusts it
-publishes their address. So the rule here is: mask what can be recognised
-mechanically, say exactly what was masked and what was not, and put the result
-in front of the person to read before anything leaves the machine. The app never
-sends it anywhere by itself.
-
-**The expected values are computed from the REDACTED text**, never the original.
-That is not a detail: if redaction ate a field, the expected file comes out
-wrong or empty, and the contributor sees it before the pull request rather than
-a reviewer seeing it after.
+**Expected values are computed from the REDACTED text**, never the original, so
+a field redaction ate shows up before the pull request rather than after.
 """
 
 from __future__ import annotations

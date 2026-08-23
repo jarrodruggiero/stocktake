@@ -1,25 +1,12 @@
 """The broker CSV column mapper.
 
-Statements have had a click-to-map designer for a while; broker CSVs have not,
-and that was the genuinely missing half. Adding a broker meant hand-writing YAML
-into config.yaml from a recipe — "usually no code at all", which is true and
-still asks somebody to get indentation right in a file they cannot see the
-effect of.
+A CSV's fields are already delimited, so there is no pattern to infer — only
+which column is which. The interesting parts are guessing the mapping from the
+header names, and inferring the date format from the VALUES rather than the
+header (decisions.md #86).
 
-The CSV case is far easier than the PDF one, because the fields are already
-delimited: there is no pattern to infer, only a question of which column is
-which. So this is a form of dropdowns, and the interesting parts are the two
-things that make it feel like it read your file rather than interrogated you:
-
-  * **guessing** the mapping from the header names, so the common export is
-    already correct when the page loads;
-  * **inferring the date format** from the values, because `%d/%m/%Y` versus
-    `%m/%d/%Y` is unguessable from a header and silently wrong for the first
-    twelve days of every month.
-
-The output is exactly the YAML the shipped formats are written in, so what comes
-out of the mapper can be installed, reused, and sent as a pull request without
-being rewritten.
+The output is exactly the YAML the shipped formats are written in, so it can be
+installed, reused, or sent as a pull request unchanged.
 """
 
 from __future__ import annotations

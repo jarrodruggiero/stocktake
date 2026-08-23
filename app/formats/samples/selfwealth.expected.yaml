@@ -1,0 +1,41 @@
+# What app/formats/brokers/selfwealth.yaml must produce from selfwealth.csv.
+#
+# Every value here is invented. The file's SHAPE is what a format needs pinned
+# — the headings, the midnight-padded dates, an action column carrying words
+# this app does not use, a row with no brokerage.
+#
+# The two `In` rows are DRP allotments. They carry units and no price, so they
+# are skipped rather than booked at a zero cost base: their cost base lives in
+# the DRP statement, not this export.
+trades:
+  - date: "2024-02-13"
+    ticker: ALPHA
+    type: buy
+    quantity: "100"
+    unit_price: "12.500000"
+    brokerage: "9.50"
+  - date: "2024-06-11"
+    ticker: BETAX
+    type: buy
+    quantity: "40"
+    unit_price: "25.000000"
+    brokerage: "9.50"
+  - date: "2024-08-06"
+    ticker: GAMMA
+    type: sell
+    quantity: "8"
+    unit_price: "150.000000"
+    brokerage: "9.50"
+  - date: "2021-11-23"
+    ticker: OMEGA
+    type: buy
+    quantity: "20"
+    unit_price: "44.250000"
+    brokerage: "0"
+
+# Rows the format must NOT import, by 1-based line number in the file.
+skipped: [3, 6]
+
+# Every Trade Date here is midnight-padded, so no trade carries a time — an
+# unset time means MARKET_OPEN, which is the honest reading.
+times: []

@@ -1,23 +1,15 @@
 """Intra-day trade ordering.
 
-A trade carries an OPTIONAL time. Left blank it is treated as **10:00, market
-open**, so nothing about a trade recorded before times existed changes meaning,
-and the field only appears when someone ticks the box to set one. Ordering
-within a day is (date, time, id), with an unsaved trade — the one being entered
-right now — sorting after every saved trade sharing its date and time.
+A trade carries an optional time; left blank it is market open, so nothing
+recorded before times existed changes meaning. Ordering within a day is
+(date, time, id), with an UNSAVED trade sorting after every saved trade sharing
+its date and time — otherwise selling on the day you bought is refused, because
+the sell is checked as though it preceded its own buy.
 
-That last rule is the whole point. Before it, an unsaved candidate had `id
-None`, `t.id or 0` sorted it before everything, and selling on the day you
-bought was refused because the sell was checked as though it preceded its own
-buy.
-
-The tests below are split deliberately:
-
-  * the first group is the behaviour this bought (written as `xfail(strict)`
-    before it existed, in the session that agreed the design — 2026-08-02);
-  * the second is the invariants that held before and must still hold. They are
-    the guard rail: it would be easy to "fix" same-day selling by dropping the
-    balance check altogether, and these would catch it.
+The tests are split deliberately: the first group is the behaviour that bought,
+the second the invariants that held before and must still hold. The second is
+the guard rail — it would be easy to "fix" same-day selling by dropping the
+balance check altogether.
 """
 
 from __future__ import annotations

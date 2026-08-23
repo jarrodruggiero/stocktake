@@ -1,8 +1,10 @@
-# SelfWealth — trade confirmation CSV export.
+# SelfWealth — the "Movements" CSV export.
 #
-# Verified against a real export (2026). One row per trade with named columns,
-# which is the common shape and needs no code: `kind: mapped` reads the columns
-# named below straight into trades.
+# Pinned by app/formats/samples/selfwealth.csv, which is synthetic: same
+# headings and shapes as a real export, invented tickers and amounts. The
+# previous version of this file named columns SelfWealth does not use, and said
+# it had been verified — nothing checked that claim, which is why the sample
+# now exists.
 #
 # If SelfWealth changes its headings, fix them HERE and open a pull request —
 # the fix then reaches everyone rather than living in one person's config.
@@ -10,11 +12,13 @@ name: SelfWealth
 kind: mapped
 exchange: ASX
 currency: AUD
-date_format: "%d/%m/%Y"
+# Dates arrive as "2024-02-13 00:00:00". A time on the end is tolerated by the
+# importer, and a midnight one is discarded as the padding it is.
+date_format: "%Y-%m-%d"
 columns:
   date: Trade Date
-  action: Buy/Sell        # values read case-insensitively as buy / sell
+  action: Action          # values read case-insensitively as buy / sell
   ticker: Code
   units: Units
-  price: Price
+  price: Average Price    # NOT "Consideration", which is units x price
   brokerage: Brokerage

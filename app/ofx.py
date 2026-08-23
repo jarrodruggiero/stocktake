@@ -1,27 +1,16 @@
 """OFX import: one reader for every broker that offers the format.
 
-The closest thing to a standard in this space. A broker that exports OFX needs
-no template and no column mapping, which makes this the highest-leverage
-importer here and the one most likely to work for somebody in a country nobody
-has written a broker format for.
+OFX 1.x is SGML with unclosed tags, so an XML parser rejects it outright; 2.x
+is XML. The reader treats both as tag soup, which is what they are.
 
-**OFX 1.x is not XML.** It is SGML with unclosed tags, so an XML parser rejects
-it outright and every OFX library does its own tokenising anyway. 2.x *is* XML;
-the reader below handles both by treating the whole thing as tag soup, which is
-what it is.
-
-**Parsing untrusted XML is a security decision, and this reads an upload.**
-Handing that to a general XML parser opens external entity expansion (reading
-`/etc/passwd` into the document) and entity-expansion denial of service — both
-live in Python's stdlib parsers unless deliberately disabled. A reader that
-understands only tags and text has no entity machinery to abuse. **Please do not
-"improve" this by swapping in ElementTree.**
+**Do not "improve" this by swapping in ElementTree** — this reads an upload,
+and a parser that understands only tags and text has no entity machinery to
+abuse: decisions.md #76.
 
 `SECLIST` maps a security id to its ticker; `INVTRANLIST` holds the
-transactions. Buys and sells become candidate trades; everything else —
-dividends, interest, transfers, fees — is reported as skipped rather than
-silently dropped, because a statement whose cash movements vanish looks like a
-successful import until the numbers stop matching.
+transactions. Buys and sells become candidates; everything else is reported as
+skipped rather than dropped, because a statement whose cash movements vanish
+looks like a successful import until the numbers stop matching.
 """
 
 from __future__ import annotations

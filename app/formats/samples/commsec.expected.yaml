@@ -1,0 +1,28 @@
+# What app/formats/brokers/commsec.yaml must produce from commsec.csv.
+#
+# Every value here is invented. Brokerage is DERIVED rather than read: a buy
+# debits units x price plus the fee, a sell credits units x price minus it.
+# Row 2 is not a trade at all and must be skipped — Details is prose, and only
+# rows shaped like "B 50 ALPHA @ 94.50" are trades.
+trades:
+  - date: "2024-02-13"
+    ticker: ALPHA
+    type: buy
+    quantity: "50"
+    unit_price: "94.500000"
+    brokerage: "9.50"
+  - date: "2024-08-06"
+    ticker: ACME
+    type: sell
+    quantity: "174"
+    unit_price: "8.550000"
+    brokerage: "9.50"
+  - date: "2021-11-23"
+    ticker: OMEGA
+    type: buy
+    quantity: "20"
+    unit_price: "44.250000"
+    brokerage: "0.00"
+
+skipped: [3]
+times: []

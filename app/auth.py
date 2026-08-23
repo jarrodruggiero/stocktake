@@ -1,16 +1,13 @@
 """Authentication: password hashing, sessions, CSRF, login lockout.
 
-The tenant is the portfolio, and a user may belong to several:
-  * argon2id hashing, constant-time verify via the library.
-  * No account enumeration — unknown email and wrong password give the same
-    error, and an unknown email still pays a dummy verify so timing matches.
-  * Server-side sessions: 256-bit token in an HttpOnly SameSite=Lax cookie; the
-    DB stores only its SHA-256. Sliding expiry.
-  * Session-bound CSRF on every mutating request; pre-auth forms (login, setup)
-    use a double-submit cookie token instead.
-  * Lockout from the `login_attempt` table.
-  * API keys for machine access (the budgeting/retirement apps): same
-    hash-only storage, scoped to ONE portfolio, never to a login session.
+argon2id hashing with constant-time verify. No account enumeration — an unknown
+email and a wrong password give the same error, and an unknown email still pays
+a dummy verify so the timing matches. Sessions are server-side: a 256-bit token
+in an HttpOnly SameSite=Lax cookie, of which only the SHA-256 is stored, with
+sliding expiry. CSRF is session-bound, except pre-auth forms which double-submit
+a cookie token. API keys hash the same way and scope to one portfolio.
+
+Every refusal lives in `load_session`, never in a route (decisions.md #3).
 """
 
 from __future__ import annotations

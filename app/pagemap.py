@@ -1,27 +1,14 @@
 """Rendering a statement so it can be mapped by pointing at the page.
 
-The text designer works on extracted text: you pick a field, then click the word
-you want in a wall of words lifted out of its layout. For a PDF that came
-through OCR that is a real problem — OCR output reads as a jumble, and two
-amounts of similar size are indistinguishable in a text dump and obvious on the
-page.
+The text designer works on extracted text, which for an OCR'd PDF reads as a
+jumble — two amounts of similar size are indistinguishable in a text dump and
+obvious on the page. So this renders each page to an image and puts the word
+boxes back where they belong. Clicking one sends the same token index the text
+designer sends, into the same `docformats.infer_field`.
 
-So this renders each page to an image and puts the word boxes back where they
-belong. Clicking a box sends the same token index the text designer sends, into
-the same `docformats.infer_field`: the inference is not duplicated, only the way
-you point at it.
-
-**Nothing is held between requests.** Page images go to disk and are served from
-there, so a pod that has run the mapper once is not carrying bitmaps around
-until its next restart.
-
-**A session belongs to one person.** The token is random and the directory
-records who created it; another signed-in user presenting the token gets
-nothing. These are pictures of somebody's dividend statement.
-
-**Thirty minutes of idleness ends it**, and ending it deletes the files rather
-than refusing to serve them — swept lazily on the next upload, and by the daily
-maintenance job for the install where nobody uses the feature again.
+These are pictures of somebody's dividend statement: nothing is held between
+requests, a session belongs to one person, and idleness deletes the files
+rather than refusing to serve them — decisions.md #73.
 """
 
 from __future__ import annotations

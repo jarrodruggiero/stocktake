@@ -1,26 +1,21 @@
 """Recovery codes: getting back in without an email reset.
 
 A self-hosted app has no mailbox it can trust, and a reset link is only as
-strong as the account it is sent to. So recovery is a list of codes handed over
-up front, with the CLI behind it for when those are gone too.
+strong as the account it is sent to.
 
 **The rule everything here protects: a single sign-in may spend at most ONE
-recovery code** (decisions.md #45). Without it, somebody holding only the list
-spends one for the password and a second for the second factor, and the list
-alone is the whole account — silently turning a 2FA-protected account into a
-single-secret one.
-
-Each case resolves to exactly the factor that was lost:
+recovery code** (decisions.md #45). Otherwise somebody holding the list spends
+one for the password and a second for the second factor, and the list alone is
+the whole account.
 
     lost authenticator   password + code            -> in; password and 2FA intact
     forgot password      email + code, then 2FA     -> new password; 2FA intact
     lost both            refused                    -> `python -m app.recover`
 
-**The caveat that cannot be designed away:** for an account with *no* second
-factor, email + code is full access, so the list is password-equivalent. That is
-true of email reset too — whoever holds the mailbox holds the account — but it
-has to be said on the page rather than left implied, which
-`test_the_codes_page_is_honest_about_what_they_are` pins.
+For an account with no second factor, email + code is full access, so the list
+is password-equivalent. True of email reset too, but it has to be said on the
+page rather than implied — `test_the_codes_page_is_honest_about_what_they_are`
+pins that.
 """
 
 from __future__ import annotations

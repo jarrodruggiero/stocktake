@@ -1,22 +1,14 @@
 """Optional features: the ones an install can switch off.
 
-There is one today — the DCA Schedule — and the temptation is
-`if settings.features.dca_schedule` in the four places that care. "The four
-places" is the problem: a nav entry, a route guard, a wizard tickbox and a
-settings row all have to agree what the feature is called and what it does, and
-the fourth always gets missed. So a feature is one entry here — key, name,
-description, what it hides — and all four read this list. The same bargain
-`columns.py` and `navigation.py` make.
+A feature is one entry here — key, name, description, what it hides — and the
+nav entry, route guard, wizard tickbox and settings row all read this list.
+Four places that must agree on what a feature is called is how the fourth gets
+missed.
 
-**Off means hidden, not deleted.** The nav entry, the calendar and the editor go,
-and `/schedule` says so rather than 404 — a 404 for a page that exists and is
-switched off is a lie. **Nothing stored is touched**: the plan, its rotation and
-every `planned_purchase` row stay, so switching it back on restores what was
-there. Somebody will turn it off to tidy the nav, not to throw away two years of
-schedule.
-
-Trades recorded *through* the schedule are ordinary trades and are never
-affected — they belong to the ledger, not to this feature.
+Off means hidden, not deleted: `/schedule` says so rather than 404, and nothing
+stored is touched, so switching it back on restores what was there
+(decisions.md #87). Trades recorded through a feature are ordinary trades and
+are never affected.
 """
 
 from __future__ import annotations

@@ -12,26 +12,20 @@
   var picks = Array.prototype.slice.call(form.querySelectorAll(".colpick"));
   if (!picks.length) { return; }
 
-  /* The file's rows, read off the table the server already rendered, so there
-     is no second copy of the data and nothing to fetch. */
-  var table = document.querySelector("section table");
-  var headers = [];
-  var rows = [];
-  if (table) {
-    table.querySelectorAll("thead th").forEach(function (th) {
-      headers.push(th.textContent.trim());
-    });
-    table.querySelectorAll("tbody tr").forEach(function (tr) {
-      var cells = [];
-      tr.querySelectorAll("td").forEach(function (td) { cells.push(td.textContent.trim()); });
-      rows.push(cells);
-    });
-  }
+  /* The file's rows, read off the sheet the server already rendered, so there
+     is no second copy of the data and nothing to fetch.
 
+     BY ATTRIBUTE, not by position. Reading `thead th` in order and counting
+     `td`s broke the moment the sheet grew a column-letter row and a row-number
+     gutter: every header was off by one and every sample came back blank. The
+     cells now say which column they are. */
   function samplesFor(header) {
-    var at = headers.indexOf(header);
-    if (at < 0) { return ""; }
-    return rows.map(function (r) { return r[at] || ""; }).join(" · ");
+    var cells = document.querySelectorAll(
+      '.sheet td[data-col="' + (window.CSS && CSS.escape ? CSS.escape(header) : header) + '"]');
+    if (!cells.length) { return ""; }
+    return Array.prototype.map.call(cells, function (td) {
+      return td.textContent.trim();
+    }).join(" · ");
   }
 
   function sync() {

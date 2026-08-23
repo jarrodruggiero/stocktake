@@ -1,29 +1,14 @@
 """Stocktake data model.
 
-Design:
-  * `trade` is the single source of truth — buys, sells and DRP allocations for
-    every instrument. All valuations/snapshots are computed, never stored.
-  * Prices/brokerage are stored in the instrument's NATIVE currency with the
-    reporting-currency fx rate captured at trade date (NULL = unknown,
-    backfillable) — ATO CGT wants AUD at transaction date, and it separates FX
-    from asset performance.
-  * `dividend` records cash at distribution date; a DRP dividend additionally
-    links to the trade holding the reinvested units. `franking_credits` stays
-    NULL until the v2 tax work feeds it from statement PDFs.
-  * `price` / `fx_rate` are daily closes (sheet-seeded now, yfinance job later).
+`trade` is the single source of truth (decisions.md #1). Prices and brokerage
+are stored in the instrument's native currency with the reporting-currency FX
+rate captured at trade date; NULL means unknown and backfillable.
 
-Tenancy — the PORTFOLIO is the tenant:
-  * The unit of ownership is a `portfolio`, not a person — several people can
-    contribute to one (`portfolio_member`, roles owner/member/viewer). Trades,
-    dividends, plan history, the plan itself and per-holding notes all carry
-    `portfolio_id`, and `app/tenancy.py` filters those tables to the session's
-    active portfolio on EVERY select, so a missed `where` can't leak another.
-  * `user_id` on trade/dividend survives as **who recorded it** — an audit
-    trail once a portfolio has several contributors. It is NOT what scoping
-    keys off; never filter on it.
-  * Market data (`instrument`, `price`, `fx_rate`) is deliberately SHARED: one
-    person adding ALPHA gives everyone its price history, and nothing about a
-    holding is inferable from a ticker's existence.
+`dividend` records cash at distribution date, and a DRP dividend also links the
+trade holding the reinvested units.
+
+The PORTFOLIO is the tenant, not the person — decisions.md #72. `user_id` on
+trade and dividend is "who recorded it" and is never what scoping keys off.
 """
 
 from __future__ import annotations
@@ -103,6 +88,8 @@ WRITE_ROLES = ("owner", "member")
 THEMES = ("auto", "light", "dark")
 ACCENTS = ("blue", "teal", "violet", "amber")
 NAV_STYLES = ("both", "text", "icon")
+# Which clock a trade time is shown on. Storage is always "market".
+TIME_ZONES_SHOWN = ("market", "local")
 
 
 def _utcnow() -> dt.datetime:
@@ -224,6 +211,12 @@ class User(Base):
     # This person's own currency preference. **NULL means "the portfolio's"**
     # and must stay that way — decisions.md #47. Read by T28b, not yet.
     display_currency: Mapped[str | None] = mapped_column(String(3))
+    # Which clock trade times are SHOWN on: the exchange's, or this device's.
+    # Storage is always the exchange's — see `trade_order`, which sequences a
+    # day's trades for FIFO and would reorder them under a moving clock.
+    times_in: Mapped[str] = mapped_column(
+        String(6), default="market", server_default="market"
+    )
     # When this person was last shown their recovery codes. NULL means never,
     # which is the state every account upgrading to this version starts in —
     # and the state a fresh one is in for the few seconds before the wizard
@@ -584,12 +577,9 @@ class Dividend(Base):
     cash_amount: Mapped[Decimal] = mapped_column(Numeric(14, 4))  # native ccy
     fx_rate: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))  # see Trade.fx_rate
     franking_credits: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))  # v2
-    # The DRP residual: what the registry kept because it can only allot whole
-    # units, carried into the next distribution. Native currency, and the
-    # balance AFTER this distribution. **NULL means unknown, 0 means the
-    # registry kept nothing** — see migration 0018 for why that difference has
-    # to survive. It is a balance, never income: the full distribution is
-    # already assessable through `cash_amount`.
+    # What the registry kept because it allots whole units only, carried into
+    # the next distribution. Native currency, balance AFTER this one. NULL means
+    # unknown and 0 means it kept nothing; a balance, never income.
     residual_carried: Mapped[Decimal | None] = mapped_column(Numeric(14, 4))
     reinvest_trade_id: Mapped[int | None] = mapped_column(
         ForeignKey("trade.id"), unique=True

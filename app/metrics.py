@@ -1,24 +1,11 @@
 """Prometheus metrics — about the machine, never about the money.
 
-This is the only endpoint in the app that reads the database without a session,
-which makes the choice of *what* to publish the important part and the
-exposition format the easy part.
+The only endpoint that reads the database without a session, so *what* is
+published matters more than the format. Every series describes the app's own
+health: when prices were last fetched, whether that worked, whether the
+database answers. `tests/test_metrics.py` pins the list closed.
 
-**The rule: every series here describes the app's own health.** When prices were
-last fetched, whether the last fetch worked, whether the database answers. There
-is deliberately nothing about holdings, values, trade counts or even how many
-instruments are tracked — those describe the person using it, and this app's
-whole promise is that they stay on the machine. `tests/test_metrics.py` pins the
-name list closed so that adding one is a decision rather than an accident.
-
-**Why it is off by default.** Every other route needs a session. An upgrade that
-quietly started answering an anonymous caller would be a surprise, and the
-answer being harmless is not the same as the change being expected. Turn it on
-with `metrics.enabled: true` when something is there to scrape it.
-
-No `prometheus_client` dependency. Six series in a fixed format is less code
-than wiring up a registry, and the app's memory budget is the reason
-to avoid a library that pulls in more than it saves.
+Off by default, and no `prometheus_client` dependency: decisions.md #85.
 """
 
 from __future__ import annotations

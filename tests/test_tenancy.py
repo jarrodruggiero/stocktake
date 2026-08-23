@@ -1,24 +1,17 @@
-"""app/tenancy.py — the fail-closed filter that keeps one portfolio out of another.
+"""app/tenancy.py — the fail-closed filter keeping one portfolio out of another.
 
-This is a security boundary, so it is tested like one. Two guarantees matter and
-each is covered on its own:
+A security boundary, so two guarantees are covered separately: a session with NO
+portfolio must refuse rather than return every portfolio's rows, and a bound
+session must return only its own down every load path — top-level select, eager
+load and lazy load each get their own test, because a miss in any one serves
+somebody else's holdings.
 
-  * a session with NO portfolio must refuse to load personal data rather than
-    quietly return every portfolio's rows;
-  * a session bound to a portfolio must return only that portfolio's rows down
-    EVERY load path — top-level select, eager load and lazy load. A miss in any
-    one of the three serves somebody else's holdings, so all three get their own
-    test rather than being folded into one.
+Expectations are structural, not arithmetic: "these rows and no others". The
+neighbouring portfolio's rows carry unmistakable values (999 units, $99
+dividends) so a leak reads as a leak rather than an off-by-one.
 
-Expectations here are structural rather than arithmetic: every assertion is
-"these rows and no others", derived by hand from exactly what each fixture
-plants. The neighbouring portfolio's rows are deliberately given unmistakable
-values (999 units, $99 dividends) so a leak reads as a leak in the failure
-message rather than as a subtle off-by-one.
-
-Three tests at the bottom are xfail — holes in the fail-closed guarantee found
-while writing this file. They assert the behaviour the module documents, not the
-behaviour it currently has.
+Three xfail tests at the bottom assert the behaviour the module documents, not
+what it currently does.
 """
 
 from __future__ import annotations

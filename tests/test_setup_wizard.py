@@ -1,22 +1,19 @@
 """The first-run wizard: what it asks, what it writes, and when it closes.
 
-Two guarantees run through everything here, and both are the kind that a green
-suite can hide:
+Two guarantees run through everything here, both the kind a green suite can
+hide:
 
-  * **Nothing is written until it has been shown to work.** A failed connection
-    test, an abandoned wizard, a browser closed halfway: none of them may leave
-    a config file behind, because a half-written one is worse than none — the
-    app boots into it and the wizard never runs again.
-  * **The wizard closes behind itself.** Its early steps are in
-    `PUBLIC_PREFIXES` (they run before there is a database to hold a session),
-    so the only thing stopping `/setup/environment` from being an open endpoint
-    for setting trusted proxies is the per-step gate. That is tested here from
-    both sides.
+  * **Nothing is written until it has been shown to work** (decisions.md #65).
+    A half-written config file is worse than none: the app boots into it and the
+    wizard never runs again.
+  * **The wizard closes behind itself.** Its early steps are public, so the only
+    thing stopping `/setup/environment` being an open endpoint for setting
+    trusted proxies is the per-step gate (decisions.md #92). Tested from both
+    sides.
 
-The state the wizard actually exists for — no config file and no database at
-all — cannot be reached from this suite: conftest builds a configured database
-before `app.main` is importable. `test_a_completely_unconfigured_install_boots_
-into_the_wizard` reaches it the only honest way, in a fresh interpreter.
+The state the wizard exists for — no config and no database — cannot be reached
+from this suite, because conftest builds a configured database before
+`app.main` is importable. One test reaches it in a fresh interpreter.
 """
 
 from __future__ import annotations

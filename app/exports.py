@@ -1,26 +1,17 @@
 """CSV / Excel exports.
 
-The report set follows what Sharesight offers, cut down to what this app can
-compute honestly from its own data:
-
-  transactions      every buy/sell/DRP — the raw ledger, for a new tool or an
-                    accountant who wants the source rows
+  transactions      every buy/sell/DRP — the raw ledger
   holdings          current valuation per open position
   dividends         income by payment, with franking credits and the gross-up
-  realised_cgt      DISPOSALS matched FIFO to their parcels: cost base,
-                    proceeds, gross gain, and the gain after the 50% discount
+  realised_cgt      disposals matched FIFO to their parcels
   unrealised_cgt    what a sale today would look like, per parcel still held
-  performance       per-FY invested / value / gain, the annual summary
+  performance       per-FY invested / value / gain
   closed_positions  one row per instrument fully exited
 
-Every money column is AUD (converted at each row's own FX rate) unless the
-header says "native", so a spreadsheet can total a column without thinking.
-
-The discount columns are the honest-but-careful bit: the 50% CGT discount is
-applied per parcel where it was held over twelve months, which is what the ATO
-allows *before* losses are netted off. The FY report nets losses first (the
-taxpayer-favourable order), so its bottom line is the number to lodge — that
-caveat travels with the file.
+Every money column is AUD at each row's own FX rate unless the header says
+"native". The discount columns apply the 50% CGT discount per parcel, before
+losses are netted — the FY report nets losses first and is the number to lodge,
+and that caveat travels with the file (decisions.md #77).
 """
 
 from __future__ import annotations

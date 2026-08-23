@@ -53,7 +53,7 @@ PAGES = [
     "8-finish", "9-restarting", "10-dashboard", "11-profile", "12-charts",
     "12b-chart-builder", "13-login", "14-recover", "15-instruments",
     "16-dashboard-holdings", "17-dashboard-sorted", "17b-holdings-blocked",
-    "17c-dashboard-gain-pct", "18-imports", "18b-imports-templates",
+    "17c-dashboard-gain-pct", "18-imports", "18b-imports-templates", "18c-broker-designer",
     "19-plan-empty", "20-plan", "21-plan-editing", "22-admin",
     "23-admin-settings",
 ]

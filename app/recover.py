@@ -5,26 +5,11 @@
     python -m app.recover --email you@example.com --clear-2fa
     python -m app.recover --email you@example.com --make-admin
 
-An admin can already reset another person's password and clear their second
-factor from the web UI. This exists for the case that has no web answer: the
-**only** admin loses their password or their authenticator. On a self-hosted
-single-user install — the common case for this app — that is otherwise the end
-of the account.
+For the case with no web answer: the only admin loses their password or their
+authenticator. Every run is logged and invalidates that account's sessions.
 
-**Why a command and not documented SQL.** Setting a password by hand means
-generating an argon2id hash by hand, and the first thing anyone tries is
-pasting in a plaintext string, which produces an account that can never log in
-and an error message that explains nothing. This runs the same hashing, the
-same validation and the same session invalidation the web UI does.
-
-**Why this is not a backdoor.** It requires shell access to the machine or
-container holding the database. Anyone with that can already read every
-holding, every session token hash and the TOTP secrets directly — see the
-trust boundary note in tenancy.py. This adds no capability that access didn't
-already confer; it just makes the legitimate use of it survivable.
-
-Every run is logged and invalidates the account's sessions, so a recovery is
-visible afterwards rather than silent.
+Why a command rather than documented SQL, and why it is not a backdoor:
+decisions.md #71.
 """
 
 from __future__ import annotations

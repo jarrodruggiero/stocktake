@@ -1,25 +1,15 @@
 """Reading a scanned statement: when OCR runs, and when it must not.
 
-Registries do post statements as scans, and without this they fail in the least
-helpful way available — `extract_text` returned nothing, no template matched,
-and the app said the statement was not recognised, which sends you to your
-templates when the problem is that the PDF has no text at all.
-
 Three rules shape everything here:
 
-**Local only, and not negotiable.** A statement carries a name, an address, a
-holder number and an amount. There is no cloud OCR path and there must never be
-one, which leaves Tesseract — a subprocess with no network of its own.
+  * **Local only, and not negotiable** — decisions.md #84.
+  * **Only when there is no text layer.** OCR on a PDF that has one re-derives
+    from pixels what the file already states exactly.
+  * **Say so afterwards.** OCR misreads digits and these are money, so a
+    statement read this way is flagged through to the preview.
 
-**Only when there is no text layer.** OCR on a PDF that has one is slower and
-strictly worse: it re-derives from pixels what the file already states exactly.
-
-**Say so afterwards.** OCR misreads digits, and these are money — so a statement
-read this way is flagged through to the preview, because whoever checks it needs
-to know to check harder.
-
-No real PDFs: rasterising and Tesseract are stubbed. What is tested is the
-decision. `test_ocr_endtoend.py` is the half that proves a scan is readable.
+No real PDFs: rasterising and Tesseract are stubbed, and what is tested is the
+decision. `test_ocr_endtoend.py` proves a scan is actually readable.
 """
 
 from __future__ import annotations

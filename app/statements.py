@@ -1,23 +1,17 @@
 """Dividend-statement PDF reader.
 
-Parses registry dividend/distribution statements (Computershare, Link/MUFG,
-Vanguard AMMA-style layouts) with pdfplumber — ENTIRELY locally, no cloud
-OCR/LLM, so statements never leave the cluster. Extraction is best-effort by
-design: the preview form shows every parsed field for correction before
-anything is committed, so an unrecognised layout costs a minute of typing,
-not a bad row.
+Parses registry statements with pdfplumber, entirely locally. Extraction is
+best-effort by design: the preview form shows every parsed field for correction
+before anything is committed, so an unrecognised layout costs a minute of
+typing rather than a bad row.
 
-**Layouts are data, not code.** What to look for lives in template files under
-app/formats/statements/, read by app/docformats.py — adding a registry needs
-no Python. That is deliberate: nobody can write a parser for a document they do
-not have, so the person holding the statement has to be able to author the
-format. The shipped templates say everything a hand-written parser said — the
-tests here are the same ones either way, which is what proves it.
+Layouts are data, not code — the templates live in `app/formats/statements/`
+and are read by `docformats.py`, so adding a registry needs no Python
+(decisions.md #64).
 
-Captured per statement: instrument, payment date, net cash amount, franked
-amount + franking credits (feeds the v2 tax work), and DRP reinvestment
-(units + price) when present → committed as a Dividend row, plus a linked
-DRP Trade when units were allotted.
+Captured per statement: instrument, payment date, net cash, franked amount and
+franking credits, and DRP units and price where present — committed as a
+Dividend, plus a linked DRP Trade when units were allotted.
 """
 
 from __future__ import annotations
@@ -229,13 +223,9 @@ def parse_statement(data: bytes, session: Session,
                 parsed.ticker = inst.ticker
                 break
 
-    # Which layout this is, and what it says, both come from a template file
-    # rather than from patterns in this module — see app/docformats.py for why
-    # formats have to be data if anyone but the author is to add one.
-    # `wanted_template` is somebody choosing on the upload form. Guessing is
-    # the fallback, not the only option — an installed template with no marker
-    # could never beat the generic fallback, so a template you built for your
-    # own statement silently never ran.
+    # `wanted_template` is somebody choosing on the upload form; guessing is the
+    # fallback. Without the choice, an installed template with no marker could
+    # never beat the generic one, so it silently never ran.
     template = docformats.pick(
         docformats.load_statement_templates(templates_dir), text,
         wanted=wanted_template)

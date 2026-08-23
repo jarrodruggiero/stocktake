@@ -1,24 +1,15 @@
 """Price/FX feed: daily closes from Yahoo Finance.
 
-Privacy: only ticker symbols are sent to Yahoo — never quantities or holdings.
+Only ticker symbols are sent — never quantities or holdings.
 
-What one run does:
-  1. For every instrument with a `yahoo_symbol`, fetch daily closes from the
-     later of (last stored date + 1) / `price_feed.backfill_start`, upsert into
-     `price` (source=yfinance; sheet-seeded rows get overwritten by real closes).
-  2. Same for FX pairs — one pair per non-AUD instrument currency (USDAUD via
-     Yahoo's "USDAUD=X").
-  3. Distribution history per instrument (market_dividend) — shared market
-     data that lets the calendar project payment dates for new holdings.
-  4. Repair pass: any trade with fx_rate IS NULL (e.g. NOVA, whose rate the
-     sheet never resolved) gets the stored FX rate nearest on-or-before its date.
+One run: daily closes per instrument from the later of (last stored date + 1)
+and `price_feed.backfill_start`; the same for one FX pair per non-AUD currency;
+distribution history per instrument; then a repair pass giving any trade with a
+null `fx_rate` the stored rate nearest on-or-before its date.
 
-Run ad hoc with `python -m app.pricefeed`; the app also runs it in-process
-daily and at startup (see main.py).
-
-Writes commit per instrument rather than once at the end: SQLite takes a single
-writer, and this job is mostly network latency — one long transaction across
-every fetch starves page loads until they fail on `busy_timeout`.
+Run ad hoc with `python -m app.pricefeed`; the app also runs it daily and at
+startup. Writes commit per instrument rather than once at the end —
+decisions.md #83.
 """
 
 from __future__ import annotations
@@ -46,12 +37,9 @@ log = logging.getLogger(__name__)
 # — the same reason `main.feed_status` lives where it does.
 last_run_sources: dict[str, str] = {}
 
-# yfinance is imported on FIRST USE, not at module scope, and this module is
-# imported by main.py at startup.
-#
-# ~101 MiB of pandas and numpy, so it is imported on first use — decisions.md
-# #17, which also explains why that buys less than it looks. The module global
-# is the seam the tests stub, which is what keeps the suite off the network.
+# yfinance is imported on FIRST USE — ~101 MiB of pandas and numpy, and this
+# module is imported at startup (decisions.md #17). The module global is the
+# seam the tests stub, which keeps the suite off the network.
 _yf = None
 
 

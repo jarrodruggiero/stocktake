@@ -1,21 +1,11 @@
 """The last few hundred log lines, kept in memory for the Settings page.
 
-**Why this exists.** When something goes wrong in a self-hosted app the answer
-is in the container's stdout, and getting at that means knowing `kubectl logs`
-or `docker logs` and having access to the host. That is a reasonable thing to
-ask of the person who deployed it and an unreasonable thing to ask of them at
-the moment they are trying to work out why an import failed.
+When something goes wrong in a self-hosted app the answer is in the container's
+stdout, and reaching that means knowing `kubectl logs` and having host access —
+reasonable to ask of whoever deployed it, unreasonable at the moment they are
+working out why an import failed.
 
-**The level is the whole design.** Error-only says "something broke" and
-nothing about what led there; INFO is every HTTP request, which buries the one
-line that matters. WARNING and above is the band that carries the useful
-middle — a price feed falling back to its secondary source, a statement that
-parsed with missing fields, a scheduled job that skipped — without the noise.
-
-Memory only, and bounded. Nothing is written to disk: these lines can quote a
-ticker or a filename, and a log file is one more thing to think about when the
-promise is that the data stays in the deployment. A restart clears it, which is
-also why the real logs remain the source of truth for anything historical.
+WARNING and above, in memory only and bounded: decisions.md #90.
 """
 
 from __future__ import annotations

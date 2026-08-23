@@ -1,27 +1,13 @@
 """The database connection, made when it is known rather than at import.
 
-Connecting on import is fine when a deployment hands the app a configured
-database, and impossible when the point is to *ask* for one: a wizard cannot
-offer a choice the process has already made.
+A wizard cannot offer a choice the process has already made, so connecting is
+deferred. Three states: **not configured** (serve the wizard, refuse the rest),
+**connected**, and **failed** — which is deliberately distinct, because the
+answer is "fix this" rather than "choose one" (decisions.md #75).
 
-Three states:
-
-  * **not configured** — nothing was set anywhere. The app boots, serves the
-    wizard and refuses everything else. A fresh container starts here.
-  * **connected** — migrations have run and sessions can be made.
-  * **failed** — something was configured and did not work. Distinct from "not
-    configured" on purpose: the answer is "fix this", not "choose one", and
-    silently falling back to an empty SQLite file would be the worst possible
-    response — it looks like it worked and the data is gone.
-
-`connect()` is re-entrant; the wizard calls it after choosing.
-
-**Where a configured database came from.** `DatabaseSettings` defaults to
-SQLite, so "not configured" is not something the settings object can express —
-a defaulted path and one somebody typed are the same object. `source()` looks at
-the two places a value can come from: an `APP_DATABASE__*` variable or a
-`database:` key in config.yaml. `model_fields_set` cannot answer this: it
-reports which fields the loader populated, not which a human wrote down.
+`connect()` is re-entrant; the wizard calls it after choosing. `source()` reads
+the two places a value can come from, because `DatabaseSettings` defaults to
+SQLite and so cannot express "not configured" on its own.
 """
 
 from __future__ import annotations

@@ -1,25 +1,11 @@
 """The second factor: TOTP codes and single-use recovery codes.
 
-Kept out of auth.py because auth.py is already the biggest security surface in
-the app and this is a self-contained piece of it: everything here is about
-proving possession of a phone, and none of it knows about sessions or requests.
+Separate from auth.py because none of this knows about sessions or requests —
+it is only about proving possession of a phone.
 
-Design decisions worth stating, because each one is a place this is commonly
-got wrong:
-
-  * **The secret is stored as issued.** Base32, in the clear. Encrypting it
-    would need a key in the same process that reads it, and anyone who can read
-    this column can already read the session table and every holding — see the
-    trust boundary in tenancy.py. Pretending otherwise would be theatre.
-  * **The QR is rendered here, locally.** The obvious shortcut is a Google
-    Charts URL, which would send the TOTP secret to a third party as a query
-    string. The whole point of the secret is that only two parties know it.
-  * **One step of clock drift is accepted** (`valid_window=1`), which is 30
-    seconds either side. Phones drift; a stricter window generates support
-    requests, a looser one widens the replay window for no real gain.
-  * **Recovery codes are hashed** exactly like session tokens, and marked used
-    rather than deleted so a replay is distinguishable from a code that was
-    never issued.
+The secret is stored as issued, the QR is rendered locally, one step of clock
+drift is accepted, and recovery codes are hashed and marked used rather than
+deleted. Each of those is a place this is commonly got wrong: decisions.md #79.
 """
 
 from __future__ import annotations

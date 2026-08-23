@@ -1,24 +1,17 @@
 """OCR end to end: does a scanned statement actually come out readable?
 
-`test_ocr.py` stubs the rasteriser and Tesseract, which proves the decision
-logic — when OCR runs and when it must not — and nothing about whether a scan is
-readable. This is the other half.
+`test_ocr.py` stubs the rasteriser and Tesseract, so it proves the decision
+logic and nothing about readability. This is the other half.
 
-**The document is generated at test time** from
-`app/formats/samples/generic-au.txt`, the redacted sample already shipped for
-the `generic-au` template, drawn onto a bitmap and saved as a PDF **with no text
-layer** — which is what a registry that posts scans sends. That beats fetching a
-real PDF three ways: no binaries in the repository (a PDF cannot be read in a
-diff and carries metadata and embedded fonts nobody reviews), no licensing
-question about somebody else's document in an AGPL repository, and it tests the
-claim that matters, since the shipped sample *is* the layout.
+The document is generated at test time from the shipped `generic-au.txt`
+sample, drawn onto a bitmap and saved as a PDF with NO text layer — which is
+what a registry posting scans sends. No binaries in the repository, no
+licensing question about somebody else's document, and it tests the layout that
+actually ships (decisions.md #98).
 
-It asserts not "OCR produced some text" but that a scan of the layout yields
-exactly the values `generic-au.expected.yaml` records — so a regression in
-Tesseract, in the rasterising resolution or in the template breaks it.
-
-Skipped where Tesseract is absent; the shipped image has it, so this runs in the
-containerised suite even when a laptop skips it.
+It asserts the exact values `generic-au.expected.yaml` records, so a regression
+in Tesseract, in the rasterising resolution or in the template breaks it.
+Skipped where Tesseract is absent.
 """
 
 from __future__ import annotations

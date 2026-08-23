@@ -660,8 +660,12 @@ async def broker_designer(request: Request, file: UploadFile = None,
                 "fields": brokerdesign.FIELDS,
                 "required": brokerdesign.REQUIRED,
                 "chosen": chosen,
-                "name": name or (file.filename.rsplit(".", 1)[0] if file and file.filename
-                                 else "My broker"),
+                # NOT defaulted from the filename. A broker export is commonly
+                # named after the account holder — "Movements_Jane Smith_..." —
+                # and this value is written into the format file that the
+                # contribute flow attaches to a public pull request. The field
+                # is required, so an empty one asks rather than guesses.
+                "name": name,
                 "exchange": exchange,
                 "currency": currency,
                 "date_format": date_format,

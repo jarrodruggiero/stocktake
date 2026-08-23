@@ -1,39 +1,29 @@
 """Mapping a broker's CSV columns onto trades, without writing YAML by hand.
 
-Statements have had a click-to-map designer for a while. Broker CSVs have not,
-and that was the genuinely missing half: adding a broker meant hand-writing a
-block into config.yaml from a recipe. "Usually no code at all" is true and still
-asks somebody to get indentation right in a file whose effect they cannot see.
-
-The CSV case is much easier than the PDF one, because the fields are already
-delimited — there is no pattern to infer, only the question of which column is
-which. So the interface is a row of dropdowns, and the work here is the two
-things that make it feel like the app read the file rather than interrogating
-the person holding it:
-
-  * **`guess()`** maps the columns from their header names, so the common export
-    is already right when the page loads;
-  * **`guess_date_format()`** reads the *values*, because `%d/%m/%Y` against
-    `%m/%d/%Y` cannot be told from a header and is silently wrong for the first
-    twelve days of every month — the worst kind of wrong, because eleven of
-    twelve rows still import.
+The fields are already delimited, so there is no pattern to infer — only which
+column is which. `guess()` reads the header names; `guess_date_format()` reads
+the VALUES, because day-first and month-first cannot be told from a header and
+the wrong one is silently right for eleven rows in twelve (decisions.md #86).
 
 What comes out is exactly the YAML the shipped formats are written in, so it can
-be installed here, reused, and sent as a pull request without being rewritten.
+be installed, reused, or sent as a pull request unchanged.
 """
 
 from __future__ import annotations
 
 import csv
-import datetime as dt
 import io
 from dataclasses import dataclass, field
 
+from .brokercsv import strptime_any
 from .settings import BrokerFormat
 
 # Enough to see whether the mapping is right, few enough that a decade of
 # trading is not read into memory to render a preview table.
-SAMPLE_ROWS = 5
+# Enough rows to see a pattern rather than a coincidence — a column of five
+# identical values says nothing about the sixth, and the sheet below is
+# meant to be read like a spreadsheet.
+SAMPLE_ROWS = 10
 
 # Every field a `kind: mapped` format understands. `brokerage` is the only
 # optional one — plenty of exports have no fee column, and a missing fee is zero
@@ -41,12 +31,9 @@ SAMPLE_ROWS = 5
 FIELDS = ("date", "action", "ticker", "units", "price", "brokerage")
 REQUIRED = ("date", "action", "ticker", "units", "price")
 
-# Header vocabulary, most specific first. Brokers agree on nothing here, so this
-# is a list of the words the industry actually uses rather than one export's
-# spelling. Matching is case- and space-insensitive; see `guess()`.
-#
-# The ORDER inside each field matters: the first alias that matches an unused
-# column wins, so put the unambiguous names before the loose ones.
+# Header vocabulary, most specific first: the first alias matching an unused
+# column wins, so unambiguous names go before loose ones. Case- and
+# space-insensitive.
 ALIASES: dict[str, tuple[str, ...]] = {
     "date": ("trade date", "transaction date", "settlement date", "date"),
     "action": ("buy/sell", "buy or sell", "direction", "side", "action",
@@ -74,6 +61,17 @@ DATE_FORMATS = (
     "%d.%m.%Y", "%d %b %Y", "%d %B %Y", "%b %d, %Y", "%Y/%m/%d",
     "%d/%m/%y", "%m/%d/%y",
 )
+
+
+def column_letter(index: int) -> str:
+    """0 -> A, 25 -> Z, 26 -> AA. Spreadsheet convention, because that is what
+    the sheet is imitating and what a person will say out loud."""
+    letters = ""
+    index += 1
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        letters = chr(65 + remainder) + letters
+    return letters
 
 
 @dataclass
@@ -158,9 +156,17 @@ def guess(headers: list[str]) -> dict[str, str | None]:
 
 
 def _parse_all(values: list[str], fmt: str) -> bool:
+    """Whether every sample reads under this format.
+
+    Tolerant of a trailing time, exactly as the importer is: guessing a format
+    the importer would then reject is worse than not guessing. Most exports
+    write "2024-02-13 00:00:00", and every date-only candidate failed on the
+    time — so the guess fell through to the default and quietly claimed
+    day-first for an ISO file.
+    """
     for value in values:
         try:
-            dt.datetime.strptime(str(value).strip(), fmt)
+            strptime_any(str(value).strip(), fmt)
         except (ValueError, TypeError):
             return False
     return True

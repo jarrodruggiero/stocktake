@@ -1,21 +1,14 @@
 """Per-account colour overrides — the theme designer.
 
-**Why only six colours.** A theme designer that exposes every token lets
-somebody set their page background to the same colour as their text, and the
-first thing they will do afterwards is ask why the app is broken. The six here
-are the ones that carry meaning rather than structure — the accent, the two
-directions money can go, and the three chart series — so a bad choice makes
-something ugly, never unusable. Surfaces, lines and ink stay with the theme.
+Six colours: the accent, the two directions money can go, and the three chart
+series. Surfaces, lines and ink stay with the theme, so a bad choice makes
+something ugly rather than unusable (decisions.md #89).
 
-**One value, both modes.** The built-in palette declares a light and a dark step
-for each of these, because a colour legible on white rarely is on near-black. A
-person choosing their own picks ONE, and it applies to both — so the contrast of
-that choice is reported against both surfaces and the weaker one is what gets
-shown. It is advice, not a veto: this is their tracker.
+A person picks ONE value and it applies to both light and dark, so contrast is
+reported against both surfaces and the weaker one is shown — advice, not a veto.
 
-Storage is `user.theme_colors`, a dict of token → `#rrggbb`. Absent keys fall
-through to the stylesheet, so a partial choice is a partial override rather than
-an all-or-nothing switch.
+Storage is `user.theme_colors`, token -> `#rrggbb`. Absent keys fall through to
+the stylesheet, so a partial choice is a partial override.
 """
 
 from __future__ import annotations
@@ -55,13 +48,9 @@ SWATCHES: tuple[Swatch, ...] = (
 
 BY_TOKEN = {s.token: s for s in SWATCHES}
 
-# The built-in light-mode value for each, shown as the input's placeholder so an
-# empty box still says what you would get. Light rather than dark because the
-# stylesheet declares light in `:root` and dark as an override — this is the
-# base, and it is the one a person is choosing to replace.
-#
-# Kept in step with style.css by a test, because two lists of colours in two
-# files is exactly the arrangement that drifts.
+# The built-in LIGHT value for each, shown as the input's placeholder: the
+# stylesheet declares light in `:root` and dark as an override, so this is the
+# base a person is choosing to replace. A test keeps it in step with style.css.
 DEFAULTS = {
     "accent": "#4338ca",
     "up": "#1a7f37",
