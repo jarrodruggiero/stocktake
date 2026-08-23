@@ -2,6 +2,8 @@
 {% block title %}Map this statement — Stocktake{% endblock %}
 {% block content %}
 
+<a class="backlink" href="{{ return_to }}"><button type="button" class="secondary">&larr; {{ back_label }}</button></a>
+
 <h1>Map this statement <small>{{ filename }}</small></h1>
 <p class="note">Pick a field on the right, then click the value on the page.
 The pages are rendered on this machine and removed {{ idle_minutes }} minutes
