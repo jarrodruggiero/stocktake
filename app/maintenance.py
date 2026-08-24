@@ -52,6 +52,18 @@ def purge_old_login_attempts(session, settings) -> int:
     return result.rowcount or 0
 
 
+def purge_passkey_challenges(session, settings) -> int:
+    """Ceremonies nobody came back from.
+
+    A challenge is consumed on use, so these are only the abandoned ones — a
+    prompt dismissed, a tab closed. They expire in minutes and are useless
+    afterwards, but nothing deletes a row that is never presented again.
+    """
+    from . import passkeys  # noqa: PLC0415 - avoids a circular import
+
+    return passkeys.purge_expired_challenges(session)
+
+
 def sweep_staged_uploads(session, settings) -> int:
     """Remove half-finished CSV imports left in the staging area.
 
@@ -92,6 +104,7 @@ def sweep_visual_mapper(session, settings) -> int:
 # with the rest, inside the same error handling.
 STEPS = (
     ("expired sessions", purge_expired_sessions),
+    ("stale passkey challenges", purge_passkey_challenges),
     ("old login attempts", purge_old_login_attempts),
     ("staged uploads", sweep_staged_uploads),
     ("visual mapper pages", sweep_visual_mapper),

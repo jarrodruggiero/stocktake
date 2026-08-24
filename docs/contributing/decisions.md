@@ -808,3 +808,24 @@ by rendering the two-factor step and following its own back link.
 which made "Finish setup" able to mean "finish setup and ignore the settings I
 just chose" — the restart is what picks them up. It is now stated rather than
 offered, and only appears when there is something to pick up.
+
+**113. A passkey signs in on its own, with no password and no code.** The
+ceremony is run with user verification REQUIRED, so the authenticator proves
+both possession of the device and a fingerprint, face or PIN before it will
+sign anything. That is already two factors, and stopping to ask for a TOTP code
+would be asking for a third — while a password user is asked for two. The
+requirement is enforced on the assertion, not merely requested in the options:
+an authenticator that answers with User Present alone is refused, because
+without it the assertion would prove only that somebody was holding the phone.
+
+**114. Signing in with a passkey asks for no email.** The ceremony is
+discoverable — the authenticator names the account — so nothing is typed and
+nothing is confirmed. Sending `allowCredentials` would mean naming an account's
+keys before anyone had proved anything, which answers "does this address have
+an account here" to whoever asks.
+
+**115. The WebAuthn challenge lives in a row, not a cookie.** It is stored
+hashed and deleted as it is read, exactly like a session token: a ceremony is
+two requests, and the nonce between them is what stops a captured response
+being replayed. A challenge that survived being used would make the signature
+worth nothing.

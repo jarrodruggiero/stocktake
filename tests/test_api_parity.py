@@ -99,6 +99,7 @@ WITHHELD_TABLES: dict[str, str] = {
     "user_session": "Live sessions and their CSRF tokens. Credential material.",
     "recovery_code": "Hashed single-use codes stood in for a second factor.",
     "webauthn_credential": "Passkey public keys and their signature counters.",
+    "webauthn_challenge": "In-flight sign-in nonces. Credential material.",
     "login_attempt": "Lockout state, and a record of failed sign-ins.",
     "api_key": "The keys themselves. A key cannot enumerate its siblings.",
     "portfolio_member": "Who has access. A consumer app has no business with it.",

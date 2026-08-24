@@ -174,6 +174,8 @@
     <tbody>
       <tr>
         <th scope="row">Password</th>
+        {# Always on: there is no way to remove it, and a passkey is an
+           alternative to using it rather than a replacement for having one. #}
         <td><span class="badge badge-on">On</span></td>
         <td><a href="#password">Change</a></td>
       </tr>
@@ -185,6 +187,15 @@
             {% else %}<span class="badge badge-off">Off</span>{% endif %}</td>
         <td>{% if totp_enabled %}<a href="#twofactor">Turn off</a>
             {% elif not enrol %}<a href="/profile/2fa">Set up</a>{% endif %}</td>
+      </tr>
+      <tr>
+        <th scope="row">Passkeys</th>
+        <td>{% if passkeys %}<span class="badge badge-on">On</span>
+            {% elif passkeys_usable %}<span class="badge badge-off">Off</span>
+            {# Not "Off": the deployment cannot offer them at all, which is a
+               different answer and the reason is on the page it links to. #}
+            {% else %}<span class="badge badge-off">Unavailable</span>{% endif %}</td>
+        <td><a href="/profile/passkeys">{% if passkeys %}Manage{% else %}Set up{% endif %}</a></td>
       </tr>
     </tbody>
   </table>

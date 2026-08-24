@@ -58,7 +58,13 @@ that network. If that matters, put TLS in front of it and set
 `auth.cookie_secure: true` and `auth.trusted_proxies`.
 
 Passkeys and security keys additionally *require* HTTPS — a browser rule, not
-ours.
+ours. They are offered once `auth.webauthn` names your domain.
+
+A passkey signs you in **on its own**, with no password and no authenticator
+code. That is not a shortcut around the second factor: unlocking one requires a
+fingerprint, face or PIN, so the sign-in already proves both that you hold the
+device and that it is you. The app enforces that rather than trusting it — an
+authenticator that reports only "someone was present" is refused.
 
 ### An admin can reset anyone
 

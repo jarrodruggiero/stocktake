@@ -55,6 +55,7 @@ Two consequences worth internalising:
 | `auth.py` | Passwords, sessions, CSRF, lockout. The one choke point (below). |
 | `tenancy.py` | Per-portfolio filtering, applied automatically (below). |
 | `twofactor.py`, `recover.py` | TOTP, recovery codes, and getting back in. |
+| `passkeys.py` | WebAuthn: enrolling a passkey, and signing in with one. |
 | `api.py` | `/api/v1`, authenticated by key rather than cookie. |
 
 ### The application around it
