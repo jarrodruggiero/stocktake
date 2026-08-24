@@ -4,7 +4,7 @@
   2. database    — only when nothing configured one.
   3. account     — the security gate. Everything after runs in a session.
   4. recovery    — codes shown once, before 2FA (decisions.md #66).
-  5. 2fa         — TOTP now, or later from the account page.
+  5. 2fa         — only when the account step asked for it.
   6. portfolio   — first portfolio, market data, timezone.
   7. environment — trusted proxies and the external URL. All optional.
   8. finish      — write config.yaml; restart if anything needs one.
@@ -35,9 +35,10 @@ STEPS: tuple[tuple[str, str], ...] = (
     ("database", "Database"),
     ("account", "Your account"),
     ("recovery", "Recovery codes"),
-    # Two-factor is NOT a step: it lives on the account page. The cost — a
-    # step prompts and a toggle does not — is why the finish step mentions it.
-    # decisions.md #49.
+    # Offered only when the account step asked for it, so the rail leaves it
+    # out and renumbers otherwise. AFTER the codes on purpose — decisions.md
+    # #66 and #49.
+    ("2fa", "Two-factor"),
     ("portfolio", "First portfolio"),
     ("features", "Optional features"),
     ("environment", "Environment"),
@@ -58,6 +59,14 @@ class Draft:
     # Step 2 — set only when the wizard chose the database itself. When the
     # deployment configured it, this stays None and nothing is written for it.
     database: DatabaseSettings | None = None
+    # Step 4 — the codes as issued, so returning to the step re-shows THEM
+    # rather than minting a replacement set. Regenerating on a revisit is
+    # silent invalidation: somebody writes them down, presses back, and the
+    # list in their hand is dead with nothing on screen saying so.
+    recovery_codes: list[str] = field(default_factory=list)
+    # Step 3 — whether the account step asked to enrol a second factor. The
+    # step is left out of the rail entirely when it did not.
+    want_2fa: bool = False
     # Step 5
     portfolio_name: str = ""
     price_feed: bool = True
@@ -103,6 +112,14 @@ def in_progress() -> bool:
 # Which step is next
 # --------------------------------------------------------------------------- #
 
+def skipped() -> set[str]:
+    """Steps this run does not offer, so the rail and the routing cannot
+    disagree about what exists — which is how the loop in decisions.md #109
+    was built out of three individually reasonable answers.
+    """
+    return set() if draft().want_2fa else {"2fa"}
+
+
 def next_step(*, database_configured: bool, account_exists: bool) -> str:
     """The first step that still has something to do.
 
@@ -116,10 +133,15 @@ def next_step(*, database_configured: bool, account_exists: bool) -> str:
         return "database"
     if not account_exists:
         return "account"
-    for step in ("recovery", "2fa", "portfolio", "features", "environment"):
-        if not current.has(step):
+    # Derived from STEPS, not a second list. The hardcoded one still carried
+    # "2fa" after that stopped being a step (decisions.md #49), so this could
+    # name a step with no page — harmless while nothing turned the answer into
+    # a URL, and a 404 the moment something did.
+    skip = skipped()
+    for step in STEP_KEYS[STEP_KEYS.index("account") + 1:]:
+        if step not in skip and not current.has(step):
             return step
-    return "finish"
+    return STEP_KEYS[-1]
 
 
 def progress(active: str, *, skip: set[str] | None = None) -> list[dict]:

@@ -21,6 +21,7 @@ calls itself.
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 import pyotp
 import pytest
@@ -480,3 +481,27 @@ def test_a_non_admin_cannot_clear_anyone_elses_2fa(client, session_factory):
     assert resp.status_code == 403
     with session_factory() as s:
         assert twofactor.is_enabled(s.get(User, other_id))
+
+
+def _methods_table(client) -> str:
+    page = client.get("/profile", headers=HTML).text
+    return re.search(r'<table class="methods">.*?</table>', page, re.S).group(0)
+
+
+def test_the_account_page_lists_every_way_in_and_whether_it_is_on(client, session_factory):
+    """One place that answers "how can this account be signed into", rather
+    than a status somebody has to infer from which forms are on the page.
+
+    The status is a word, not only a colour: read as a hue alone it is not a
+    status at all for anybody who cannot separate the two.
+    """
+    make_login(client, session_factory)
+    methods = _methods_table(client)
+    assert "Password" in methods and "Two-factor authentication" in methods
+    assert ">Off<" in methods and "/profile/2fa" in methods
+
+    with session_factory() as s:
+        twofactor.enable(s, s.scalars(select(User)).one(), pyotp.random_base32())
+        s.commit()
+    methods = _methods_table(client)
+    assert ">On<" in methods and ">Off<" not in methods

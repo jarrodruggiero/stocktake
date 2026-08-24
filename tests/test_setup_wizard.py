@@ -27,9 +27,9 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from app import configfile, setupwizard
+from app import configfile, setupwizard, twofactor
 from app import db as database
-from app.models import Portfolio, User
+from app.models import Portfolio, RecoveryCode, User
 from appkit.config import DatabaseSettings
 
 APP_ROOT = Path(__file__).resolve().parent.parent
@@ -358,8 +358,9 @@ def test_the_settings_steps_follow_the_account():
     assert setupwizard.next_step(database_configured=True,
                                  account_exists=True) == "recovery"
     draft.completed("recovery")
-    assert setupwizard.next_step(database_configured=True, account_exists=True) == "2fa"
-    draft.completed("2fa")
+    # Not "2fa". This asserted it for a while after two-factor stopped being a
+    # step (decisions.md #49) — the expectation outlived the page, which is how
+    # `next_step` kept a key it could no longer turn into a URL.
     assert setupwizard.next_step(database_configured=True, account_exists=True) == "portfolio"
     draft.completed("portfolio")
     assert setupwizard.next_step(database_configured=True,
@@ -694,7 +695,7 @@ def _token(client, path: str = "/setup") -> str:
     return found.group(1) if found else client.cookies.get("pf_csrf")
 
 
-def _through_the_account(client) -> None:
+def _through_the_account(client, *, want_2fa: bool = False) -> None:
     """Welcome, create the account, and view the recovery codes.
 
     The codes page is a GET that issues them, so walking past it is part of
@@ -702,10 +703,11 @@ def _through_the_account(client) -> None:
     """
     token = _token(client)
     client.post("/setup", data={"_csrf": token}, headers=HTML, follow_redirects=False)
-    client.post("/setup/profile",
-                data={"name": "Owner", "email": "owner@example.test",
-                      "password": PASSWORD, "_csrf": token},
-                headers=HTML, follow_redirects=False)
+    data = {"name": "Owner", "email": "owner@example.test",
+            "password": PASSWORD, "_csrf": token}
+    if want_2fa:
+        data["want_2fa"] = "1"
+    client.post("/setup/profile", data=data, headers=HTML, follow_redirects=False)
     client.get("/setup/recovery", headers=HTML)
 
 
@@ -799,18 +801,18 @@ def test_the_account_step_goes_on_to_the_recovery_codes(client):
     assert resp.headers["location"] == "/setup/recovery"
 
 
-def test_two_factor_is_not_a_wizard_step_any_more(client):
-    """It moved to the account page, where it already lived — `/profile/2fa`
-    is the way to turn it on and off, so a wizard step would be a
-    second door to one room and a step in a flow somebody is trying to finish.
+def test_two_factor_is_a_step_again_but_only_when_chosen(client):
+    """The reversal of decisions.md #49, recorded there and in #111.
 
-    The equivalent behaviour is covered by `test_twofactor.py` against the
-    account page, which is now the only way in.
+    Removing it made the toggle on the account page the only way in, and the
+    cost was the one #49 predicted in the other direction: nobody enrolled,
+    because a step prompts and a toggle does not. It is a step again — but an
+    opted-into one, so the run that does not want it is not lengthened.
     """
     _through_the_account(client)
 
-    assert "2fa" not in setupwizard.STEP_KEYS
-    assert client.get("/setup/2fa", headers=HTML).status_code == 404
+    assert "2fa" in setupwizard.STEP_KEYS
+    assert setupwizard.skipped() == {"2fa"}
 
 
 def test_the_recovery_step_continues_straight_to_the_portfolio(client):
@@ -824,21 +826,18 @@ def test_the_recovery_step_continues_straight_to_the_portfolio(client):
     assert "/setup/2fa" not in page.text
 
 
-def test_the_finish_step_still_points_at_two_factor(client):
-    """Removing the step costs something real: a step is a PROMPT and an
-    account-page toggle is not. This is the nudge that keeps most of it."""
-    _through_the_account(client)
-    token = _token(client, "/setup/portfolio")
-    client.post("/setup/portfolio",
-                data={"_csrf": token, "name": "Mine", "timezone": "Australia/Melbourne"},
-                headers=HTML, follow_redirects=False)
-    client.post("/setup/features", data={"_csrf": _token(client, "/setup/features"),
-                                         "feature": "dca_schedule"},
-                headers=HTML, follow_redirects=False)
+def test_the_offer_to_do_it_later_sits_where_the_choice_is_made(client):
+    """It moved off the finish page and onto the tickbox it qualifies.
 
-    page = client.get("/setup/finish", headers=HTML)
+    On the last screen it was an afterthought about a decision three steps
+    back. Beside the tickbox it is the answer to the question being asked —
+    "what if I don't want this now" — which is where somebody is asking it.
+    """
+    _token(client)
+    page = client.get("/setup/profile", headers=HTML).text
 
-    assert "two-factor" in page.text.lower()
+    tip = re.search(r'<details class="tip menu">.*?</details>', page, re.S).group(0)
+    assert "account settings" in tip and "passkey" in tip
 
 
 def test_the_portfolio_step_renames_the_portfolio_and_records_the_zone(
@@ -1592,6 +1591,214 @@ def test_every_step_after_the_first_offers_a_way_back(client):
         page = client.get(path, headers=HTML)
         assert f'class="backlink" href="{expected}"' in page.text, path
 
-    # And the recovery page, which is part of a step rather than one of its
-    # own, goes back to the step it belongs to rather than to itself.
-    assert 'class="backlink"' in client.get("/setup/recovery", headers=HTML).text
+    # Recovery offers NO way back, and that is the point rather than an
+    # omission: everything before it — welcome, database, account — shuts the
+    # moment an account exists, so a link to one is a link into the loop.
+    assert 'class="backlink"' not in client.get("/setup/recovery", headers=HTML).text
+
+
+def test_login_does_not_explode_when_no_database_is_configured():
+    """The state a restarted container is in when its config never got written:
+    accounts on the disk, nothing configured to reach them with.
+
+    `/login` is public, so the middleware's "no database" guard used to be
+    skipped for it — and the route opens a session to look for the account, so
+    it answered `NotConfigured`. A 500 on the page every redirect lands on
+    reads as an app broken beyond recovery rather than one asking to be set up.
+    """
+    import os
+    import subprocess
+    import sys
+    import textwrap
+
+    script = textwrap.dedent('''
+        import os, tempfile
+        home = tempfile.mkdtemp()
+        os.environ["APP_CONFIG_FILE"] = os.path.join(home, "config.yaml")
+        from fastapi.testclient import TestClient
+        from app.main import app
+        c = TestClient(app)
+        for path in ("/login", "/"):
+            r = c.get(path, headers={"accept": "text/html"}, follow_redirects=False)
+            assert r.status_code == 303, (path, r.status_code)
+            assert r.headers["location"] == "/setup", (path, r.headers["location"])
+        print("OK")
+    ''')
+    # Every APP_ variable goes, not a list of the ones this test knows about:
+    # the Postgres CI leg exports host/name/user/password, and a denylist that
+    # missed them configured a database inside the test for "no database".
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith("APP_") and k != "STOCKTAKE_TEST_DB"}
+    out = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                         text=True, cwd=str(APP_ROOT), env=env)
+    assert "OK" in out.stdout, out.stdout + out.stderr
+
+
+def test_no_wizard_path_loops(client, session_factory):
+    """Every way into the wizard terminates, including the ones a bookmark or
+    the browser's back button can still reach.
+
+    The loop this pins: the early steps close once an account exists and send
+    you to /login, /login sends a signed-in user to /, and / sends a wizard in
+    progress back to the wizard. Three redirects that each look reasonable.
+    """
+    _through_the_account(client)
+
+    for path in ("/setup", "/setup/database", "/setup/profile", "/setup/recovery",
+                 "/setup/portfolio", "/setup/environment", "/", "/login"):
+        seen, cur = set(), path
+        for _ in range(10):
+            resp = client.get(cur, headers=HTML, follow_redirects=False)
+            if resp.status_code != 303:
+                break
+            assert cur not in seen, f"{path} loops at {cur}"
+            seen.add(cur)
+            cur = resp.headers["location"]
+        else:
+            raise AssertionError(f"{path} never settled")
+        assert resp.status_code == 200, (path, cur, resp.status_code)
+
+
+def test_a_back_button_never_points_at_a_step_that_has_closed(client):
+    """welcome, database and account shut the moment an account exists, so
+    offering one as a destination is offering the loop above."""
+    _through_the_account(client)
+
+    for path in ("/setup/portfolio", "/setup/features", "/setup/environment",
+                 "/setup/finish"):
+        page = client.get(path, headers=HTML)
+        for closed in ('href="/setup"', 'href="/setup/database"', 'href="/setup/profile"'):
+            assert f'class="backlink" {closed}' not in page.text, (path, closed)
+
+
+def test_next_step_never_names_a_step_with_no_page(client):
+    """It read from its own list, which still carried "2fa" after that stopped
+    being a step — so it could name a page that 404s."""
+    from app import setupwizard
+
+    _through_the_account(client)
+    for _ in range(len(setupwizard.STEPS) + 2):
+        step = setupwizard.next_step(database_configured=True, account_exists=True)
+        assert step in setupwizard.STEP_KEYS, step
+        setupwizard.draft().completed(step)
+
+
+# --- the two-factor step, which exists only when it was asked for ---------- #
+
+def _rail(html: str) -> list[str]:
+    """The step names the rail is showing, in order."""
+    return re.findall(r'<span class="wizlabel">([^<]+)</span>', html)
+
+
+def test_the_two_factor_step_is_absent_unless_the_account_step_asked_for_it(client):
+    """The tickbox is the whole of the decision. An unticked run must not see
+    the step in the rail, be counted in the numbering, or be routed through.
+    """
+    _through_the_account(client, want_2fa=False)
+    page = client.get("/setup/recovery", headers=HTML).text
+    assert "Two-factor" not in _rail(page)
+    assert 'href="/setup/portfolio"' in page
+
+    # Unreachable, not merely unlinked: typing the URL must not enter a step
+    # the rail is not showing.
+    resp = client.get("/setup/2fa", headers=HTML, follow_redirects=False)
+    assert resp.status_code == 303 and resp.headers["location"] == "/setup/portfolio"
+
+
+def test_ticking_it_puts_the_step_after_the_codes_and_renumbers(client):
+    """Ordering is the decision in decisions.md #66 and #111: the codes are
+    account recovery in an app with no reset email, so they are issued whether
+    or not this step happens — which is why they cannot come after it.
+    """
+    _through_the_account(client, want_2fa=True)
+    page = client.get("/setup/recovery", headers=HTML).text
+    rail = _rail(page)
+    assert rail.index("Recovery codes") < rail.index("Two-factor")
+    assert 'href="/setup/2fa"' in page
+
+    # Renumbered, not merely present: the steps after it all move down one.
+    plain = _rail(client.get("/setup/portfolio", headers=HTML).text)
+    assert plain.index("First portfolio") == rail.index("First portfolio")
+
+
+def test_enrolling_during_setup_turns_it_on(client, session_factory):
+    import pyotp
+
+    _through_the_account(client, want_2fa=True)
+    page = client.get("/setup/2fa", headers=HTML)
+    assert page.status_code == 200
+    secret = re.search(r'name="secret" value="([^"]+)"', page.text).group(1)
+    resp = client.post("/setup/2fa", headers=HTML, follow_redirects=False,
+                       data={"secret": secret, "code": pyotp.TOTP(secret).now(),
+                             "_csrf": _token(client)})
+    assert resp.headers["location"] == "/setup/portfolio"
+    with session_factory() as db:
+        assert twofactor.is_enabled(db.query(User).one())
+
+
+def test_a_wrong_code_does_not_enable_it(client, session_factory):
+    """The code is what proves the authenticator holds the secret. Accepting
+    enrolment without it is how somebody locks themselves out of their own app.
+    """
+    _through_the_account(client, want_2fa=True)
+    page = client.get("/setup/2fa", headers=HTML)
+    secret = re.search(r'name="secret" value="([^"]+)"', page.text).group(1)
+    client.post("/setup/2fa", headers=HTML, follow_redirects=False,
+                data={"secret": secret, "code": "000000", "_csrf": _token(client)})
+    with session_factory() as db:
+        assert not twofactor.is_enabled(db.query(User).one())
+
+
+def test_enrolling_does_not_reissue_the_codes_already_handed_out(client, session_factory):
+    """The codes belong to the account, not to this factor. Reissuing them here
+    would silently kill the list somebody wrote down one step ago — which is
+    the failure the codes exist to prevent.
+    """
+    import pyotp
+
+    _through_the_account(client, want_2fa=True)
+    with session_factory() as db:
+        before = {c.code_hash for c in db.query(RecoveryCode).all()}
+    page = client.get("/setup/2fa", headers=HTML)
+    secret = re.search(r'name="secret" value="([^"]+)"', page.text).group(1)
+    client.post("/setup/2fa", headers=HTML, follow_redirects=False,
+                data={"secret": secret, "code": pyotp.TOTP(secret).now(),
+                      "_csrf": _token(client)})
+    with session_factory() as db:
+        assert {c.code_hash for c in db.query(RecoveryCode).all()} == before
+
+
+def test_deciding_against_it_at_the_last_moment_is_not_a_dead_end(client):
+    """Somebody who ticked the box and then cannot reach their phone must be
+    able to go on — and the rail must stop claiming a step that will not run.
+    """
+    _through_the_account(client, want_2fa=True)
+    client.get("/setup/2fa", headers=HTML)
+    resp = client.post("/setup/2fa/skip", headers=HTML, follow_redirects=False,
+                       data={"_csrf": _token(client)})
+    assert resp.headers["location"] == "/setup/portfolio"
+    assert "Two-factor" not in _rail(client.get("/setup/portfolio", headers=HTML).text)
+
+
+def test_going_back_to_the_codes_shows_the_same_ones(client, session_factory):
+    """The codes page issues on first view and re-shows after that.
+
+    Regenerating on a revisit is silent invalidation — somebody writes the list
+    down, presses Back from the next step to check a character, and the copy in
+    their hand is dead with nothing on screen saying so. Found by rendering the
+    two-factor step and following its own back link.
+    """
+    _through_the_account(client, want_2fa=True)
+    first = re.findall(r"[A-Z0-9]{4}-[A-Z0-9]{4}", client.get(
+        "/setup/recovery", headers=HTML).text)
+    assert first
+    with session_factory() as db:
+        stored = {c.code_hash for c in db.query(RecoveryCode).all()}
+
+    page = client.get("/setup/2fa", headers=HTML).text
+    back = re.search(r'class="backlink" href="([^"]+)"', page).group(1)
+    again = client.get(back, headers=HTML).text
+
+    assert re.findall(r"[A-Z0-9]{4}-[A-Z0-9]{4}", again) == first
+    with session_factory() as db:
+        assert {c.code_hash for c in db.query(RecoveryCode).all()} == stored

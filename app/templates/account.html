@@ -166,6 +166,32 @@
   </div>
   <div>
 <section class="narrow">
+  <h2>How you sign in</h2>
+  <p class="note">Every way into this account, and whether it is on.</p>
+  <div class="tablewrap">
+  <table class="methods">
+    <thead><tr><th>Method</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      <tr>
+        <th scope="row">Password</th>
+        <td><span class="badge badge-on">On</span></td>
+        <td><a href="#password">Change</a></td>
+      </tr>
+      <tr>
+        <th scope="row">Two-factor authentication</th>
+        {# The word as well as the colour: "on" and "off" told apart by hue
+           alone is not a status anybody can read. #}
+        <td>{% if totp_enabled %}<span class="badge badge-on">On</span>
+            {% else %}<span class="badge badge-off">Off</span>{% endif %}</td>
+        <td>{% if totp_enabled %}<a href="#twofactor">Turn off</a>
+            {% elif not enrol %}<a href="/profile/2fa">Set up</a>{% endif %}</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="narrow" id="password">
   <h2>Change password</h2>
   <form class="panel" method="post" action="/profile/password" autocomplete="on">
     <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
@@ -181,7 +207,7 @@
     <button type="submit">Change password</button>
   </form>
 </section>
-<section class="narrow">
+<section class="narrow" id="twofactor">
   <h2>Two-factor authentication</h2>
   {% if totp_enabled %}
   <p class="note">On. Signing in needs a code from your authenticator app as

@@ -328,12 +328,14 @@ means not captured, and the price feed can backfill it. The name says
 reporting-currency-per-native rather than AUD so it does not contradict
 `portfolio.reporting_currency` the day somebody sets that to something else.
 
-**49. Two-factor is not a setup step, and that has a cost worth naming.** It
-moved to the account page in 2026-08-08, where `/profile/2fa` had always been
-the way to turn it on — a wizard step was a second door to one room, and a stop
-in a flow somebody is trying to finish. The cost is that **a step is a prompt
-and a toggle is not**: somebody who would have set it up when asked may never
-open the page. The finish step carries a line about it for exactly that reason.
+**49. Two-factor is a setup step again, but an opted-into one.** It was removed
+in 2026-08-08 as a second door to a room `/profile/2fa` already opened, and the
+cost named at the time is the one that arrived: **a step is a prompt and a
+toggle is not.** Nobody enrolled. It is a step again — offered only when the
+account step's tickbox asks for it, so the run that does not want it is not
+lengthened, and `setupwizard.skipped()` keeps the rail and the router agreeing
+about whether it exists. The line about doing it later moved to that tickbox's
+tooltip, where the question is actually being asked.
 
 **50. "Avg price (AUD)" is not `cost_aud / units`.** `cost` is buys only and
 includes brokerage, and `units` is net of sales, so that quotient is a third
@@ -456,7 +458,12 @@ config.yaml, which is written once, at the end — so an abandoned wizard leaves
 no file, which is what makes starting again safe.
 
 **66. Recovery codes come before two-factor enrolment.** They are what makes
-skipping the next step survivable. Shown once.
+skipping the next step survivable. The usual reason to put them after is that
+they are a by-product of enrolling — but here they are also the whole of
+password reset, so they are issued whether or not the next step runs and cannot
+belong to it. Ordering them first also closes the window where a second factor
+is live and nothing can recover it. Issued once and re-shown, never reissued:
+see #111.
 
 **67. A provider falls back on error or empty, never on "fewer rows than
 asked for".** Three days when five were requested is normal — markets close.
@@ -763,3 +770,41 @@ bounces them to /login, which bounces them to /, which arrives back here.
 `/logout` stays open, because abandoning a wizard is a legitimate thing to
 want.
 
+**108. The "no database" check runs BEFORE the public-path list, not after.**
+`/login` is public and opens a session to look for the account, so an
+unconfigured app answered it with `NotConfigured` — a 500 on the one page every
+redirect lands on, which reads as an app broken beyond recovery rather than one
+asking to be finished. Only static files, the health probes, the wizard and
+`/metrics` answer with no database at all; everything else, `/login` included,
+is sent to the wizard.
+
+**109. `next_step` derives from STEPS; a back button never offers a closed
+step.** Two halves of one loop. `next_step` read from its own hardcoded list,
+which still carried "2fa" after that stopped being a step (#49) — harmless
+while nothing turned the answer into a URL, and a 404 the moment something did.
+It reads STEP_KEYS now, so it cannot name a page that does not exist. And
+`welcome`, `database` and `account` shut once an account exists: offering one
+as a back target sends you to /login, which sends a signed-in user to /, which
+sends a wizard in progress back to the wizard. Three redirects that each look
+reasonable. The recovery step therefore offers no way back at all, which is the
+answer rather than an omission.
+
+**110. A `<details>` cannot live in a `<p>`.** It is block-level to the HTML
+parser whatever its CSS display says, so the paragraph is closed before it and
+the (?) lands on its own line — the tip's parent came back as `<section>`. Use
+`.tipline` for running text that carries one. And `vertical-align: middle`
+aligns an inline-block with the baseline plus half the X-HEIGHT rather than the
+optical centre, so a circle taller than the x-height sits low: measured 2.9px
+on a 1.15rem (?) beside 1rem text, corrected in em so it scales.
+
+**111. The codes step re-shows the same codes rather than minting new ones.**
+It regenerated on every view, which is silent invalidation — write them down,
+press Back from the next step to check a character, and the list in your hand
+is dead with nothing on screen saying so. They are issued once per wizard and
+held in the draft; a fresh set is a deliberate act from the account page. Found
+by rendering the two-factor step and following its own back link.
+
+**112. Finishing setup restarts, without asking.** It was a ticked checkbox,
+which made "Finish setup" able to mean "finish setup and ignore the settings I
+just chose" — the restart is what picks them up. It is now stated rather than
+offered, and only appears when there is something to pick up.

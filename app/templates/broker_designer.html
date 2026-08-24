@@ -206,7 +206,7 @@ anywhere; it is held in this form until you leave the page.</p>
   </div>
   {% endif %}
   {% if result.adjusted %}
-  <p class="note">{{ result.adjusted }} time(s) moved into {{ exchange }} trading hours
+  <div class="note tipline">{{ result.adjusted }} time(s) moved into {{ exchange }} trading hours
     {%- set time_tip %}
     <p>A time outside the session is not when a trade happened — it is a
     settlement stamp, or a clock in another timezone.</p>
@@ -215,7 +215,7 @@ anywhere; it is held in this form until you leave the page.</p>
     {% with body = time_tip, label = "Why times move" %}
       {% include "_tip.html" %}
     {% endwith %}
-  </p>
+  </div>
   {% endif %}
 
   {% if result.skipped %}

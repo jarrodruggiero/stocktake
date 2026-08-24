@@ -49,7 +49,7 @@ WIDTHS = {"desktop": 1400, "mobile": 412}
 # instead of silently never being checked.
 PAGES = [
     "1-welcome", "2-database", "2b-database-error", "3-account",
-    "4-recovery-codes", "6-portfolio", "7-features", "7b-environment",
+    "4-recovery-codes", "5-2fa", "6-portfolio", "7-features", "7b-environment",
     "8-finish", "9-restarting", "10-dashboard", "11-profile", "12-charts",
     "12b-chart-builder", "13-login", "14-recover", "15-instruments",
     "16-dashboard-holdings", "17-dashboard-sorted", "17b-holdings-blocked",
