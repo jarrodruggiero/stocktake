@@ -25,26 +25,17 @@
 {% endif %}
 
 {% if restart_for %}
-<p class="note"><strong>Restart required</strong> for:
+<p class="note"><strong>Restart to get started</strong> — it's what picks up:
   {{ restart_for | join(', ') }}.</p>
 {% endif %}
-
-{# The nudge that replaces the two-factor STEP. A step is a prompt and an
-   account-page toggle is not, so removing it costs something — this is the
-   cheap way to keep most of it without another screen to click through. #}
-<p class="note">Two-factor authentication and passkeys are on your
-<strong>account page</strong> whenever you want them.</p>
 
 <form method="post" action="/setup/finish" class="panel">
   <input type="hidden" name="_csrf" value="{{ csrf }}">
   {% if restart_for and supervision.restarts %}
-  <label class="check">
-    <input type="checkbox" name="restart" value="on" checked>
-    <span>Restart now, and take me there when it comes back</span>
-  </label>
-  {% if external_url %}
-  <p class="note">You'll be redirected to <code>{{ external_url }}</code>.</p>
-  {% endif %}
+  {# No tickbox: the settings above do not take effect without it, so an
+     unticked box is a finished wizard that did not do what it said. #}
+  <p class="note">Finishing restarts the app{% if external_url %}, then takes you
+    to <code>{{ external_url }}</code>{% endif %}.</p>
   {% endif %}
   <div class="commitbar">
     <button type="submit" class="primary">Finish setup</button>

@@ -305,6 +305,12 @@ select:focus-visible, textarea:focus-visible {
 }
 .commitbar { margin: var(--sp-3) 0; display: flex; gap: var(--sp-3); align-items: center; }
 .flash { background: rgba(21, 115, 71, 0.12); color: var(--up); border-radius: 8px; padding: 0.6rem 0.9rem; }
+.badge-on { background: var(--up); }
+.badge-off { background: var(--muted); }
+/* `th, td` are nowrap everywhere else because columns of numbers must not
+   reflow. A method name is prose, and holding it on one line pushed this
+   three-column table into a horizontal scroll on a phone. */
+.methods th[scope="row"] { font-weight: 500; text-align: left; white-space: normal; }
 .badge-new { background: var(--up); }
 .badge-duplicate { background: var(--muted); }
 .badge-unknown-instrument { background: var(--accent); }
@@ -460,7 +466,9 @@ form.inline button { margin-top: 0; }
 .panel textarea { display: block; margin-top: 0.25rem; padding: 0.4rem 0.5rem; width: 100%;
   background: var(--sunken); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
   font: inherit; }
-.panel label.check { display: flex; align-items: center; gap: 0.4rem; }
+.panel .optline { display: flex; align-items: center; gap: 0.35rem; margin: 0.9rem 0 0.2rem; }
+.optline label.check { margin: 0; font-size: 0.95rem; }
+label.check { display: flex; align-items: center; gap: 0.4rem; }
 .panel label.check input { display: inline; width: auto; margin: 0; }
 .rowactions form { display: inline-flex; align-items: center; gap: 0.3rem; margin-right: 0.6rem; }
 .rowactions input { padding: 0.2rem 0.4rem; font-size: 0.8rem; background: var(--sunken);
@@ -831,6 +839,8 @@ button.primary { background: var(--accent-grad); border-color: transparent; colo
 .colgroups { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.8rem; }
 .colgroups fieldset { margin: 0; }
 .colgroups legend { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.optline { display: flex; align-items: center; gap: 0.35rem; margin: 0.9rem 0 0.2rem; }
+.optline label.check { margin: 0; font-size: 0.95rem; }
 label.check { display: flex; align-items: center; gap: 0.4rem; margin: 0.2rem 0; font-size: 0.85rem; }
 label.check input { width: auto; margin: 0; }
 

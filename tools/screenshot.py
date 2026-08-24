@@ -50,6 +50,7 @@ os.environ.pop("STOCKTAKE_TEST_DB", None)
 os.environ["APP_CONFIG_FILE"] = str(WORK / "config" / "config.yaml")
 sys.path.insert(0, str(APP_ROOT))
 
+import pyotp  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import lifecycle, main  # noqa: E402
@@ -126,9 +127,18 @@ def render_all() -> None:
     save("3-account", client.get("/setup/profile", headers=HTML).text)
     client.post("/setup/profile",
                 data={"_csrf": t, "name": "Jo", "email": "jo@example.test",
-                      "password": "correct-horse-battery"},
+                      "password": "correct-horse-battery", "want_2fa": "1"},
                 headers=HTML, follow_redirects=False)
     save("4-recovery-codes", client.get("/setup/recovery", headers=HTML).text)
+    # Ticked above so this step exists to be rendered. Enrolled with a real
+    # code rather than skipped, because skipping takes it back out of the rail
+    # and the later pages would then be showing the shorter one.
+    page = client.get("/setup/2fa", headers=HTML)
+    save("5-2fa", page.text)
+    secret = re.search(r'name="secret" value="([^"]+)"', page.text).group(1)
+    client.post("/setup/2fa", headers=HTML, follow_redirects=False,
+                data={"_csrf": token("/setup/2fa"), "secret": secret,
+                      "code": pyotp.TOTP(secret).now()})
     save("6-portfolio", client.get("/setup/portfolio", headers=HTML).text)
     client.post("/setup/portfolio",
                 data={"_csrf": token("/setup/portfolio"), "name": "Family",

@@ -776,6 +776,11 @@ def _wizard_step(request: Request, step: str):
 
     if not setupwizard.in_progress():
         raise _WizardRefused(_redirect("/" if _accounts_exist() else "/setup"))
+    # A step this run does not offer is not enterable by typing its URL either.
+    # The rail would otherwise be describing a flow the router disagrees with,
+    # which is the shape of the loop in decisions.md #109.
+    if step in setupwizard.skipped():
+        raise _WizardRefused(_redirect(_wizard_url()))
     db = SessionLocal()
     try:
         ctx = auth.load_auth(request, db)
@@ -822,6 +827,9 @@ def _wizard_page(request: Request, step: str, extra: dict, *,
     recovery codes belong to two-factor, and giving them a rail entry of their
     own would make the flow look longer than it is.
     """
+    # Union rather than default, so a page that skips a step of its own does
+    # not also un-skip the ones this run never offers.
+    skip = (skip or set()) | setupwizard.skipped()
     token = ctx.session.csrf_token if ctx else auth.ensure_pre_auth_csrf(request)
     resp = templates.TemplateResponse(
         request,
@@ -1007,6 +1015,7 @@ def setup_account(request: Request, error: str = ""):
     return _wizard_page(request, "account", {
         "db_description": database.describe(database.current() or settings.database),
         "error": error or None,
+        "want_2fa": setupwizard.draft().want_2fa,
     }, skip=_skipped_steps())
 
 
@@ -1016,14 +1025,17 @@ async def setup_account_create(
     name: str = Form(...),
     email: str = Form(...),
     password: str = Form(...),
+    want_2fa: str = Form(""),
 ):
     _wizard_step(request, "account")
     await auth.verify_pre_auth_csrf(request)
     problem = auth.password_problem(password) or auth.email_problem(email)
     if problem:
+        setupwizard.draft().want_2fa = bool(want_2fa)
         return _wizard_page(request, "account", {
             "db_description": database.describe(database.current() or settings.database),
             "error": problem,
+            "want_2fa": bool(want_2fa),
         }, skip=_skipped_steps())
     with anon() as db:
         if _users_exist(db):
@@ -1049,6 +1061,7 @@ async def setup_account_create(
         raw = auth.create_session(db, user, settings, active_portfolio_id=portfolio.id)
     current = setupwizard.draft()
     current.completed("account")
+    current.want_2fa = bool(want_2fa)
     current.portfolio_name = portfolio.name
     resp = _redirect("/setup/recovery")
     _set_session_cookie(resp, raw)
@@ -1066,21 +1079,78 @@ def setup_recovery(request: Request):
     they are not a footnote to enrolling an authenticator, they come first.
     """
     _wizard_step(request, "recovery")
+    current = setupwizard.draft()
     with scoped(request) as (ctx, db):
-        codes = twofactor.generate_recovery_codes(db, ctx.user)
-        ctx.user.recovery_codes_seen_at = dt.datetime.now(dt.timezone.utc)
-        db.flush()
-    setupwizard.draft().completed("recovery")
+        # Issued once for the whole wizard. A reload or a step back re-renders
+        # the same list; a fresh set is a deliberate act from the account page.
+        if not current.recovery_codes:
+            current.recovery_codes = twofactor.generate_recovery_codes(db, ctx.user)
+            ctx.user.recovery_codes_seen_at = dt.datetime.now(dt.timezone.utc)
+            db.flush()
+    codes = current.recovery_codes
+    current.completed("recovery")
     return _wizard_page(request, "recovery", {
         "codes": codes,
         "totp_on": False,
+        # Derived, not "/setup/portfolio": whether two-factor comes next is the
+        # tickbox's business, and a hardcoded target here is how a step gets
+        # skipped by the link that was supposed to lead to it.
+        "continue_url": _WIZARD_URLS.get(setupwizard.next_step(
+            database_configured=True, account_exists=True), "/setup/portfolio"),
     }, ctx=ctx, skip=_skipped_steps())
 
 
 # --- step 5: two-factor ---------------------------------------------------- #
 
-# Two-factor is NOT a wizard step. It lives on the account page — see
-# `setupwizard.STEPS` for why, and `/profile/2fa` for the routes that do it.
+@app.get("/setup/2fa", response_class=HTMLResponse)
+def setup_twofactor(request: Request, error: str = ""):
+    """Offered only when the account step asked for it.
+
+    The secret lives in the form rather than on the user row until a code
+    proves the app really holds it — decisions.md #39. Same ceremony as
+    `/profile/2fa`, in wizard chrome.
+    """
+    ctx = _wizard_step(request, "2fa")
+    secret = twofactor.new_secret()
+    uri = twofactor.provisioning_uri(secret, ctx.user.email, branding.NAME)
+    return _wizard_page(request, "2fa", {
+        "error": error or None,
+        "secret": secret,
+        "qr": twofactor.qr_svg(uri),
+    }, ctx=ctx, skip=_skipped_steps())
+
+
+@app.post("/setup/2fa")
+async def setup_twofactor_enable(
+    request: Request, secret: str = Form(...), code: str = Form(...)
+):
+    _wizard_step(request, "2fa")
+    with scoped(request) as (ctx, db):
+        await auth.verify_csrf(request, db)
+        if not twofactor.verify_code(secret, code):
+            return _redirect("/setup/2fa?error=" + quote_plus(
+                "That code isn't right — check the app and try again."))
+        # Does NOT reissue recovery codes: they were handed out on the previous
+        # step and belong to the account, not to this factor.
+        twofactor.enable(db, ctx.user, secret)
+        log.info("2FA enabled for user %s during setup", ctx.user.id)
+    setupwizard.draft().completed("2fa")
+    return _redirect("/setup/portfolio")
+
+
+@app.post("/setup/2fa/skip")
+async def setup_twofactor_skip(request: Request):
+    """Not a dead end: somebody who cannot reach their phone right now would
+    otherwise be stuck on a step they asked for. Clearing the flag also takes
+    it out of the rail, so the numbering matches what is left to do.
+    """
+    _wizard_step(request, "2fa")
+    # The session token, not the pre-auth one: the account exists by now, so
+    # this page was rendered with `ctx` and carries the signed-in token.
+    with scoped(request) as (_ctx, db):
+        await auth.verify_csrf(request, db)
+    setupwizard.draft().want_2fa = False
+    return _redirect("/setup/portfolio")
 
 
 # --- step 5: the first portfolio ------------------------------------------- #
@@ -1223,7 +1293,7 @@ def setup_finish(request: Request, error: str = ""):
 
 
 @app.post("/setup/finish")
-async def setup_finish_save(request: Request, restart: str = Form("")):
+async def setup_finish_save(request: Request):
     """Write the config, then either land on the dashboard or on the page that
     carries you across a restart."""
     _wizard_step(request, "finish")
@@ -1239,7 +1309,10 @@ async def setup_finish_save(request: Request, restart: str = Form("")):
             return _redirect("/setup/finish?error=" + quote_plus(
                 f"Could not write {configfile.config_path()}: {exc}"))
 
-    wants_restart = restart.lower() in ("1", "true", "on", "yes")
+    # Always, when there is something a restart is needed to pick up. It used
+    # to be a tickbox, which made "finish setup" able to mean "finish setup and
+    # ignore what I just configured".
+    wants_restart = bool(setupwizard.needs_restart(current))
     target = _post_setup_url(current)
     setupwizard.discard()
     if wants_restart and lifecycle.supervision().restarts:
