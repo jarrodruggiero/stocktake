@@ -4,8 +4,8 @@
    these get shown — because the codes must never appear without the sentence
    explaining what somebody holding them can do. #}
 <section class="panel warn">
-  <p><strong>Save these now. They are shown once.</strong> Each one works a
-  single time.
+  <div class="tipline"><strong>Save these now. They are shown once.</strong>
+  Each one works a single time.
   {#- What somebody holding this list can do belongs WITH the list, but above
       it rather than under it: read after the codes, it arrives once they have
       already been copied somewhere. #}
@@ -21,7 +21,7 @@
   {% with body = codes_tip, label = "What these are for" %}
     {% include "_tip.html" %}
   {% endwith %}
-  </p>
+  </div>
 
   <ul class="codes">
     {% for code in codes %}<li><code>{{ code }}</code></li>{% endfor %}

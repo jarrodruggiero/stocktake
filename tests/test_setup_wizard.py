@@ -358,8 +358,9 @@ def test_the_settings_steps_follow_the_account():
     assert setupwizard.next_step(database_configured=True,
                                  account_exists=True) == "recovery"
     draft.completed("recovery")
-    assert setupwizard.next_step(database_configured=True, account_exists=True) == "2fa"
-    draft.completed("2fa")
+    # Not "2fa". This asserted it for a while after two-factor stopped being a
+    # step (decisions.md #49) — the expectation outlived the page, which is how
+    # `next_step` kept a key it could no longer turn into a URL.
     assert setupwizard.next_step(database_configured=True, account_exists=True) == "portfolio"
     draft.completed("portfolio")
     assert setupwizard.next_step(database_configured=True,
@@ -1592,9 +1593,10 @@ def test_every_step_after_the_first_offers_a_way_back(client):
         page = client.get(path, headers=HTML)
         assert f'class="backlink" href="{expected}"' in page.text, path
 
-    # And the recovery page, which is part of a step rather than one of its
-    # own, goes back to the step it belongs to rather than to itself.
-    assert 'class="backlink"' in client.get("/setup/recovery", headers=HTML).text
+    # Recovery offers NO way back, and that is the point rather than an
+    # omission: everything before it — welcome, database, account — shuts the
+    # moment an account exists, so a link to one is a link into the loop.
+    assert 'class="backlink"' not in client.get("/setup/recovery", headers=HTML).text
 
 
 def test_login_does_not_explode_when_no_database_is_configured():
@@ -1629,3 +1631,52 @@ def test_login_does_not_explode_when_no_database_is_configured():
     out = subprocess.run([sys.executable, "-c", script], capture_output=True,
                          text=True, cwd=str(APP_ROOT))
     assert "OK" in out.stdout, out.stdout + out.stderr
+
+
+def test_no_wizard_path_loops(client, session_factory):
+    """Every way into the wizard terminates, including the ones a bookmark or
+    the browser's back button can still reach.
+
+    The loop this pins: the early steps close once an account exists and send
+    you to /login, /login sends a signed-in user to /, and / sends a wizard in
+    progress back to the wizard. Three redirects that each look reasonable.
+    """
+    _through_the_account(client)
+
+    for path in ("/setup", "/setup/database", "/setup/profile", "/setup/recovery",
+                 "/setup/portfolio", "/setup/environment", "/", "/login"):
+        seen, cur = set(), path
+        for _ in range(10):
+            resp = client.get(cur, headers=HTML, follow_redirects=False)
+            if resp.status_code != 303:
+                break
+            assert cur not in seen, f"{path} loops at {cur}"
+            seen.add(cur)
+            cur = resp.headers["location"]
+        else:
+            raise AssertionError(f"{path} never settled")
+        assert resp.status_code == 200, (path, cur, resp.status_code)
+
+
+def test_a_back_button_never_points_at_a_step_that_has_closed(client):
+    """welcome, database and account shut the moment an account exists, so
+    offering one as a destination is offering the loop above."""
+    _through_the_account(client)
+
+    for path in ("/setup/portfolio", "/setup/features", "/setup/environment",
+                 "/setup/finish"):
+        page = client.get(path, headers=HTML)
+        for closed in ('href="/setup"', 'href="/setup/database"', 'href="/setup/profile"'):
+            assert f'class="backlink" {closed}' not in page.text, (path, closed)
+
+
+def test_next_step_never_names_a_step_with_no_page(client):
+    """It read from its own list, which still carried "2fa" after that stopped
+    being a step — so it could name a page that 404s."""
+    from app import setupwizard
+
+    _through_the_account(client)
+    for _ in range(len(setupwizard.STEPS) + 2):
+        step = setupwizard.next_step(database_configured=True, account_exists=True)
+        assert step in setupwizard.STEP_KEYS, step
+        setupwizard.draft().completed(step)

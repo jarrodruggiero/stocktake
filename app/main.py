@@ -786,19 +786,30 @@ def _wizard_step(request: Request, step: str):
     return ctx
 
 
+# The steps that close the moment an account exists: they run before there is
+# a session, and `_wizard_step` sends anyone arriving later to /login. Offering
+# one as a destination is offering a loop — /login bounces a signed-in user to
+# /, and / bounces a wizard in progress back here.
+_CLOSED_ONCE_SIGNED_IN = ("welcome", "database", "account")
+
+
 def _previous_step_url(rail: list[dict]) -> str | None:
-    """The step before the active one, as a URL, or None at the start.
+    """The nearest step before the active one that can still be entered.
 
     A wizard whose only way back is the browser button is one where noticing a
-    mistake on the summary means starting again. Steps the deployment skips are
-    not offered: they have nothing to go back TO.
+    mistake on the summary means starting again. Steps this deployment skips
+    have nothing to go back TO, and the early steps are shut — so the answer is
+    the nearest one that is neither, or nothing.
     """
     seen: list[str] = []
     for entry in rail:
         if entry.get("state") == "active":
-            return _WIZARD_URLS.get(seen[-1]) if seen else None
+            break
         if entry.get("state") != "skipped":
-            seen.append(entry.get("key") or entry.get("name") or "")
+            seen.append(entry.get("key") or "")
+    for key in reversed(seen):
+        if key not in _CLOSED_ONCE_SIGNED_IN and key in _WIZARD_URLS:
+            return _WIZARD_URLS[key]
     return None
 
 

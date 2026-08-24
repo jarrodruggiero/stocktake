@@ -1337,7 +1337,18 @@ button.danger, .linkish.danger { color: var(--down); }
    floating panel on the site already has — and so it STAYS OPEN while the
    cursor is inside it, which is what makes the text selectable. People copy
    paths and examples out of these. */
-.tip { display: inline-block; position: relative; vertical-align: middle; }
+/* `vertical-align: middle` aligns an inline-block's centre with the baseline
+   plus half the X-HEIGHT, not with the optical centre of the line — so a
+   circle taller than the x-height sits low beside its label. Measured at 2.9px
+   on a 1.15rem (?) next to 1rem text; the offset corrects it and scales,
+   because it is in em. */
+.tip { display: inline-block; position: relative; vertical-align: middle;
+  top: -0.18em; }
+/* A <details> is block-level to the HTML PARSER whatever its CSS display says,
+   so a <p> containing one is closed before it and the (?) lands on its own
+   line. Use `.tipline` instead of `<p>` wherever a tip sits in running text. */
+.tipline { margin: 0 0 0.7rem; }
+.tipline:last-child { margin-bottom: 0; }
 .tip > summary { list-style: none; cursor: help; display: inline-flex;
   align-items: center; justify-content: center; width: 1.15rem; height: 1.15rem;
   border: 1px solid var(--line); border-radius: 50%; color: var(--muted);

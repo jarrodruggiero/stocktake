@@ -116,10 +116,14 @@ def next_step(*, database_configured: bool, account_exists: bool) -> str:
         return "database"
     if not account_exists:
         return "account"
-    for step in ("recovery", "2fa", "portfolio", "features", "environment"):
+    # Derived from STEPS, not a second list. The hardcoded one still carried
+    # "2fa" after that stopped being a step (decisions.md #49), so this could
+    # name a step with no page — harmless while nothing turned the answer into
+    # a URL, and a 404 the moment something did.
+    for step in STEP_KEYS[STEP_KEYS.index("account") + 1:]:
         if not current.has(step):
             return step
-    return "finish"
+    return STEP_KEYS[-1]
 
 
 def progress(active: str, *, skip: set[str] | None = None) -> list[dict]:

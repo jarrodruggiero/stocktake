@@ -771,3 +771,22 @@ asking to be finished. Only static files, the health probes, the wizard and
 `/metrics` answer with no database at all; everything else, `/login` included,
 is sent to the wizard.
 
+**109. `next_step` derives from STEPS; a back button never offers a closed
+step.** Two halves of one loop. `next_step` read from its own hardcoded list,
+which still carried "2fa" after that stopped being a step (#49) — harmless
+while nothing turned the answer into a URL, and a 404 the moment something did.
+It reads STEP_KEYS now, so it cannot name a page that does not exist. And
+`welcome`, `database` and `account` shut once an account exists: offering one
+as a back target sends you to /login, which sends a signed-in user to /, which
+sends a wizard in progress back to the wizard. Three redirects that each look
+reasonable. The recovery step therefore offers no way back at all, which is the
+answer rather than an omission.
+
+**110. A `<details>` cannot live in a `<p>`.** It is block-level to the HTML
+parser whatever its CSS display says, so the paragraph is closed before it and
+the (?) lands on its own line — the tip's parent came back as `<section>`. Use
+`.tipline` for running text that carries one. And `vertical-align: middle`
+aligns an inline-block with the baseline plus half the X-HEIGHT rather than the
+optical centre, so a circle taller than the x-height sits low: measured 2.9px
+on a 1.15rem (?) beside 1rem text, corrected in em so it scales.
+
