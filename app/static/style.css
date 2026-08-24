@@ -310,7 +310,17 @@ select:focus-visible, textarea:focus-visible {
 /* `th, td` are nowrap everywhere else because columns of numbers must not
    reflow. A method name is prose, and holding it on one line pushed this
    three-column table into a horizontal scroll on a phone. */
-.methods th[scope="row"] { font-weight: 500; text-align: left; white-space: normal; }
+/* A row header is CONTENT, not a column label: `th` is uppercased and tracked
+   out for headings, which turned a device somebody named "My phone" into
+   "MY PHONE". `th, td` is also nowrap everywhere else, because columns of
+   numbers must not reflow — a name is prose, and holding it on one line pushed
+   both of these tables into a horizontal scroll on a phone. */
+.methods th[scope="row"],
+.keys th[scope="row"] {
+  font-weight: 500; text-align: left; white-space: normal;
+  text-transform: none; letter-spacing: 0;
+  color: var(--text); font-size: inherit;
+}
 .badge-new { background: var(--up); }
 .badge-duplicate { background: var(--muted); }
 .badge-unknown-instrument { background: var(--accent); }

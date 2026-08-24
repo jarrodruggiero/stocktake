@@ -193,7 +193,11 @@ auth:
   #   window_minutes: 15    # how long failures are remembered
   #   lockout_minutes: 15   # how long the wait lasts
 
-  # ── Passkeys and security keys — RESERVED, nothing reads this yet ─────────
+  # ── Passkeys and security keys ────────────────────────────────────────────
+  # Once set, a passkey appears as an option on the login page and can be
+  # added from your account. It signs you in on its own: the ceremony requires
+  # a fingerprint, face or PIN, so it stands in for the password AND the
+  # authenticator code.
   # Two things must be true before WebAuthn can be switched on:
   #
   #   1. HTTPS. WebAuthn requires a secure context, so http://stocktake.home

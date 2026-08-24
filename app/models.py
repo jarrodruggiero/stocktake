@@ -416,14 +416,12 @@ class RecoveryCode(Base):
 
 
 class WebauthnCredential(Base):
-    """Passkey / security-key groundwork. NOTHING WRITES THIS YET.
+    """One enrolled passkey or security key. Written by `app/passkeys.py`.
 
-    The table exists now so enabling WebAuthn later is a feature, not a
-    migration on a live database. It cannot be used until the app is served
-    over **HTTPS**: WebAuthn requires a secure context, so a plain-HTTP host
-    is a hard no — see the `auth.webauthn` block in config.yaml for what has to
-    be true first, and why `rp_id` must be declared in config rather than read
-    off the Host header.
+    It cannot be used until the app is served over **HTTPS**: WebAuthn requires
+    a secure context, so a plain-HTTP host is a hard no — see the
+    `auth.webauthn` block in config.yaml for what has to be true first, and why
+    `rp_id` must be declared in config rather than read off the Host header.
 
     Credentials bind permanently to the rp_id they were registered under, so a
     passkey created at `portfolio.example.com` will not work from
@@ -456,6 +454,37 @@ class WebauthnCredential(Base):
 
     __table_args__ = (
         UniqueConstraint("credential_id", name="uq_webauthn_credential_id"),
+    )
+
+
+class WebauthnChallenge(Base):
+    """One issued challenge, waiting for the browser to come back with it.
+
+    A WebAuthn ceremony is two requests, and the server has to remember the
+    nonce it issued between them. It lives in a row rather than a cookie for
+    the same reason a session does: the browser holds only a random token, and
+    the token is stored HASHED, so a database copy cannot be replayed.
+
+    `user_id` is null for a sign-in. That ceremony is discoverable — the
+    authenticator names the account, so asking for one up front would only
+    leak whether an email is registered.
+    """
+
+    __tablename__ = "webauthn_challenge"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), index=True)
+    challenge: Mapped[str] = mapped_column(String(255))  # base64url
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_webauthn_challenge_token"),
     )
 
 

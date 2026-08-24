@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Passkeys — Stocktake{% endblock %}
+{% block content %}
+<h1>Passkeys</h1>
+<p class="sub">Sign in with your fingerprint, face or device PIN instead of a
+password.</p>
+
+{% if saved == 'added' %}<p class="panel ok">Passkey added. You can sign in with it now.</p>{% endif %}
+{% if saved == 'removed' %}<p class="panel ok">Passkey removed.</p>{% endif %}
+{% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+
+<section class="narrow">
+  {% if not passkeys_usable %}
+  {# The reason, not a missing button: every one of them is something the
+     person reading it can act on, and a control that has silently vanished
+     teaches nobody why. #}
+  <p class="panel warn">{{ passkeys_reason }}</p>
+  {% else %}
+  <p class="note">A passkey signs you in on its own — it replaces your password
+  <em>and</em> your authenticator code, because unlocking it already proves both
+  that you hold the device and that it is you.</p>
+
+  <form class="panel" id="addpasskey">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <label>What is this device? <span class="sub">so you can tell them apart later</span>
+      <input name="name" maxlength="80" placeholder="My phone">
+    </label>
+    <div class="commitbar">
+      <button type="submit" class="primary">Add a passkey</button>
+    </div>
+  </form>
+  <p class="panel error" id="passkeyerror" hidden></p>
+  <p class="panel warn" id="nopasskeys" hidden>This browser cannot use passkeys.
+  Try a current version of Safari, Chrome, Edge or Firefox.</p>
+  {% endif %}
+</section>
+
+<section class="narrow">
+  <h2>Your passkeys</h2>
+  {% if not passkeys %}
+  <p class="note">None yet. Your password{% if totp_enabled %} and authenticator
+  code{% endif %} still sign you in.</p>
+  {% else %}
+  <div class="tablewrap">
+  <table class="keys">
+    <thead><tr><th>Device</th><th>Added</th><th>Last used</th><th></th></tr></thead>
+    <tbody>
+      {% for key in passkeys %}
+      <tr>
+        <th scope="row">{{ key.name }}</th>
+        <td>{{ key.created.strftime('%d %b %Y') }}</td>
+        <td>{{ key.last_used.strftime('%d %b %Y') if key.last_used else 'Never' }}</td>
+        <td>
+          <form method="post" action="/profile/passkeys/{{ key.id }}/remove">
+            <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+            <button type="submit" class="linkish danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if passkeys and not totp_enabled %}
+  <p class="note">Removing your last passkey leaves your password as the only
+  way in — which still works.</p>
+  {% endif %}
+  {% endif %}
+</section>
+
+<p class="note"><a href="/profile">Back to your account</a></p>
+{% if passkeys_usable %}<script src="/static/passkeys.js?v={{ asset_v }}" defer></script>{% endif %}
+{% endblock %}

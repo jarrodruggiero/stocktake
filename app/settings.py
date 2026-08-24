@@ -21,11 +21,12 @@ class RateLimitSettings(BaseModel):
 
 
 class WebauthnSettings(BaseModel):
-    """Passkeys and security keys. RESERVED — nothing reads this yet.
+    """Passkeys and security keys, read by `app/passkeys.py`.
 
-    A credential binds permanently to the `rp_id` it was created under, so the
-    shape is settled before anyone enrols. Needs HTTPS (a browser rule) and a
-    canonical domain; public reachability is not required.
+    A credential binds permanently to the `rp_id` it was created under, so
+    changing it after anyone has enrolled invalidates every passkey. Needs
+    HTTPS (a browser rule) and a canonical domain; public reachability is not
+    required.
 
     `rp_id` is declared HERE and never read off Host or X-Forwarded-Host —
     decisions.md #96.

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import json
 import logging
 import re
 import threading
@@ -64,6 +65,7 @@ from . import (
     metrics,
     money,
     navigation,
+    passkeys,
     plans,
     pricefeed,
     queries,
@@ -149,6 +151,10 @@ def SessionLocal():
 # those pages need. `/login/code`, `/session/status` and `/metrics` are public
 # to the MIDDLEWARE only, and each guards itself — decisions.md #29.
 PUBLIC_PATHS = {"/healthz", "/readyz", "/login", "/login/code", "/login/recover",
+                # Signing in with a passkey happens before there is a session,
+                # so both halves of the ceremony are public. Each verifies the
+                # pre-auth CSRF token, and the second only trusts a signature.
+                "/login/passkey", "/login/passkey/options",
                 "/setup", "/session/status", "/metrics"}
 # Two prefixes the login middleware waves through, each of which guards
 # itself. **Both failure modes are silent publication of an endpoint:**
@@ -1388,6 +1394,16 @@ def _claim_legacy_rows(db: DbSession, user_id: int, portfolio_id: int) -> None:
     log.info("claimed %d pre-auth rows into portfolio %d", claimed, portfolio_id)
 
 
+def _passkeys_usable(request: Request) -> bool:
+    """Whether this connection can run the ceremony at all.
+
+    Both halves matter: configured by the deployment, and reached over HTTPS —
+    a browser refuses WebAuthn outside a secure context, so offering the button
+    on plain HTTP is offering a failure with no visible cause.
+    """
+    return passkeys.configured(settings) and auth.is_secure_request(request, settings)
+
+
 @app.get("/login", response_class=HTMLResponse)
 def login_form(request: Request, timeout: str = ""):
     with anon() as db:
@@ -1404,7 +1420,8 @@ def login_form(request: Request, timeout: str = ""):
              "insecure": auth.insecure_login_problem(request, settings),
              # Sent here by the idle overlay. Saying why beats a login page
              # that appears for no reason someone can see.
-             "timed_out": timeout == "1"},
+             "timed_out": timeout == "1",
+             "passkeys_usable": _passkeys_usable(request)},
         )
         _set_pre_auth_csrf(resp, token)
         return resp
@@ -1421,7 +1438,9 @@ async def login_submit(
         def _fail(message: str):
             token = auth.ensure_pre_auth_csrf(request)
             resp = templates.TemplateResponse(
-                request, "login.html", {"auth": None, "csrf": token, "error": message}
+                request, "login.html",
+                {"auth": None, "csrf": token, "error": message,
+                 "passkeys_usable": _passkeys_usable(request)}
             )
             _set_pre_auth_csrf(resp, token)
             return resp
@@ -1447,17 +1466,7 @@ async def login_submit(
             return _fail("Invalid email or password.")
         if auth.needs_rehash(user.password_hash):
             user.password_hash = auth.hash_password(password)
-        # Land in a portfolio they own before one merely shared with them —
-        # otherwise the lowest id wins and someone invited into an older
-        # portfolio opens somebody else's holdings instead of their own.
-        landing = db.scalar(
-            select(PortfolioMember.portfolio_id)
-            .where(PortfolioMember.user_id == user.id)
-            .order_by(
-                (PortfolioMember.role != "owner"),  # owners first
-                PortfolioMember.portfolio_id,
-            )
-        )
+        landing = _landing_portfolio(db, user)
         # With a second factor on, the password only buys a half-authenticated
         # session: `auth.load_session` refuses it everywhere, so the cookie is
         # useless until the code step flips the flag.
@@ -1473,6 +1482,23 @@ async def login_submit(
         resp = _redirect("/profile" if user.must_change_password else "/")
         _set_session_cookie(resp, raw)
         return resp
+
+
+def _landing_portfolio(db: DbSession, user: User) -> int | None:
+    """Where a sign-in lands. Shared by every way in, so they cannot drift.
+
+    A portfolio they own comes before one merely shared with them — otherwise
+    the lowest id wins and someone invited into an older portfolio opens
+    somebody else's holdings instead of their own.
+    """
+    return db.scalar(
+        select(PortfolioMember.portfolio_id)
+        .where(PortfolioMember.user_id == user.id)
+        .order_by(
+            (PortfolioMember.role != "owner"),  # owners first
+            PortfolioMember.portfolio_id,
+        )
+    )
 
 
 def _code_form(request: Request, error: str | None = None, used_recovery: bool = False):
@@ -1733,6 +1759,7 @@ def account_page(request: Request, saved: str = "", error: str = ""):
              "defaults": theming.DEFAULTS,
              "color_warnings": theming.warnings(ctx.user.theme_colors),
              **_twofactor_context(db, ctx.user),
+             **_passkey_context(request, db, ctx.user),
              **_sessions_context(db, ctx)},
         )
 
@@ -1876,6 +1903,123 @@ async def twofactor_enable(
              **_twofactor_context(db, ctx.user),
              "new_codes": codes},
         )
+
+
+# --------------------------------------------------------------------------- #
+# Passkeys. Two ceremonies, each two requests: the browser asks for options,
+# talks to the authenticator, and posts back what it signed. The challenge
+# lives in a row between the two — app/passkeys.py.
+# --------------------------------------------------------------------------- #
+
+def _passkey_context(request: Request, db: DbSession, user: User) -> dict:
+    secure = auth.is_secure_request(request, settings)
+    return {
+        # Dates normalised here rather than in the template: SQLite hands back
+        # naive datetimes, and a template cannot tell that from UTC.
+        "passkeys": [
+            {"id": row.id, "name": row.name or "Passkey",
+             "created": ensure_utc(row.created_at),
+             "last_used": ensure_utc(row.last_used_at) if row.last_used_at else None}
+            for row in passkeys.for_user(db, user)
+        ],
+        "passkeys_usable": passkeys.configured(settings) and secure,
+        # The reason is shown rather than the control hidden: every one of them
+        # is something the reader can act on.
+        "passkeys_reason": passkeys.unavailable_reason(settings, secure=secure),
+    }
+
+
+@app.get("/profile/passkeys", response_class=HTMLResponse)
+def passkeys_page(request: Request, error: str = "", saved: str = ""):
+    with scoped(request) as (ctx, db):
+        return _render(request, ctx, "passkeys.html", {
+            "saved": saved, "error": error or None, "active_nav": "account",
+            "totp_enabled": twofactor.is_enabled(ctx.user),
+            **_passkey_context(request, db, ctx.user),
+        })
+
+
+@app.post("/profile/passkeys/options")
+async def passkeys_options(request: Request):
+    """Step one of enrolment: what the browser should ask the authenticator."""
+    with scoped(request) as (ctx, db):
+        await auth.verify_csrf(request, db)
+        if not passkeys.configured(settings) or not auth.is_secure_request(
+                request, settings):
+            raise HTTPException(400, "Passkeys are not available here")
+        options, token = passkeys.registration_options(db, ctx.user, settings)
+    return JSONResponse({"options": json.loads(options), "token": token})
+
+
+@app.post("/profile/passkeys")
+async def passkeys_register(request: Request):
+    """Step two: store what the authenticator signed."""
+    form = await request.form()
+    with scoped(request) as (ctx, db):
+        await auth.verify_csrf(request, db)
+        try:
+            passkeys.verify_registration(
+                db, ctx.user, str(form.get("credential") or ""),
+                str(form.get("token") or ""), settings,
+                name=str(form.get("name") or ""),
+            )
+        except passkeys.PasskeyError as exc:
+            return _redirect("/profile/passkeys?error=" + quote_plus(str(exc)))
+        log.info("passkey registered for user %s", ctx.user.id)
+    return _redirect("/profile/passkeys?saved=added")
+
+
+@app.post("/profile/passkeys/{credential_id}/remove")
+async def passkeys_remove(request: Request, credential_id: int):
+    with scoped(request) as (ctx, db):
+        await auth.verify_csrf(request, db)
+        removed = passkeys.remove(db, ctx.user, credential_id)
+        if removed:
+            log.info("passkey removed for user %s", ctx.user.id)
+    return _redirect("/profile/passkeys?saved=" + ("removed" if removed else ""))
+
+
+@app.post("/login/passkey/options")
+async def login_passkey_options(request: Request):
+    """Sign-in options. No email is asked for and none is confirmed — the
+    ceremony is discoverable, so the authenticator names the account."""
+    await auth.verify_pre_auth_csrf(request)
+    if not passkeys.configured(settings) or not auth.is_secure_request(
+            request, settings):
+        raise HTTPException(400, "Passkeys are not available here")
+    with anon() as db:
+        options, token = passkeys.authentication_options(db, settings)
+    return JSONResponse({"options": json.loads(options), "token": token})
+
+
+@app.post("/login/passkey")
+async def login_passkey(request: Request):
+    """A passkey signs in on its own — no password, and no code step.
+
+    That is the point of one rather than a shortcut around the second factor:
+    the ceremony requires user verification, so it already proves possession of
+    the authenticator AND a biometric or PIN. decisions.md #113.
+    """
+    await auth.verify_pre_auth_csrf(request)
+    form = await request.form()
+    ip = auth.client_ip(request)
+    with anon() as db:
+        try:
+            user = passkeys.verify_authentication(
+                db, str(form.get("credential") or ""),
+                str(form.get("token") or ""), settings)
+        except passkeys.PasskeyError as exc:
+            auth.record_attempt(db, "", ip, success=False)
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        raw = auth.create_session(
+            db, user, settings, active_portfolio_id=_landing_portfolio(db, user),
+            ip=ip, user_agent=request.headers.get("user-agent"),
+        )
+        log.info("passkey sign-in for user %s", user.id)
+        target = "/profile" if user.must_change_password else "/"
+    resp = JSONResponse({"next": target})
+    _set_session_cookie(resp, raw)
+    return resp
 
 
 @app.post("/profile/recovery")

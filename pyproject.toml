@@ -18,7 +18,6 @@ dependencies = [
     "psycopg[binary]>=3.1",
     "jinja2>=3.1",
     "python-multipart>=0.0.9",
-
     "argon2-cffi>=23.1", # argon2id password hashing (multi-user auth)
     "openpyxl>=3.1",   # .xlsx export
     "yfinance>=0.2.50", # price/FX feed (only ticker symbols ever leave)
@@ -27,6 +26,7 @@ dependencies = [
     "ruamel.yaml>=0.18", # comment-preserving config.yaml edits (admin settings)
     "pyotp>=2.9",      # TOTP second factor
     "qrcode>=7.4",     # TOTP enrolment QR, rendered locally as inline SVG
+    "webauthn>=3.0.0", # passkeys: both ceremonies, and the signature checks
 ]
 
 [project.urls]
@@ -51,6 +51,7 @@ dev = [
     "freezegun>=1.5",   # deterministic dt.date.today() — the app has 18 call sites
     "ruff>=0.6",
     "pytest-cov>=5.0",
+    "soft-webauthn>=0.1.3", # a signing authenticator, so passkey tests are real
 ]
 
 [tool.ruff]

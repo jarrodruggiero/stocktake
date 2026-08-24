@@ -171,6 +171,10 @@ def render_all() -> None:
     # Past the wizard: the pages themselves.
     save("10-dashboard", client.get("/", headers=HTML).text)
     save("11-profile", client.get("/profile", headers=HTML).text)
+    # Passkeys need HTTPS and a configured domain, neither of which a shot
+    # walkthrough has — so this renders the page in the state most people will
+    # first meet it in, which is the one worth looking at.
+    save("11b-passkeys", client.get("/profile/passkeys", headers=HTML).text)
     save("12-charts", client.get("/charts", headers=HTML).text)
     # The admin pages: two-column on a desktop, and the Settings page now
     # carries a console, which is a scrolling panel inside a form page.

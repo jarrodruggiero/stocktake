@@ -18,8 +18,9 @@ already answered:
    until it works.
 3. **Your account** — the first account, and the administrator. There is no
    default password to change and no seeded user.
-4. **Two-factor** — a QR to scan now, or skip and do it later from your account
-   page. Passkeys need HTTPS, so they are offered only once TLS is in front.
+4. **Two-factor** — a QR to scan, if you ticked it on the account step. It can
+   also be turned on later from your account page, along with passkeys — which
+   need HTTPS, so they are offered only once TLS is in front.
 5. **Your first portfolio** — its name, whether to refresh market data
    automatically, and your timezone (it can read that from your browser).
 6. **Environment** — trusted proxies and the external URL. All optional.

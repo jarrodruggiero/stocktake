@@ -27,6 +27,18 @@
     </label>
     <button type="submit">Log in</button>
   </form>
+  {% if passkeys_usable %}
+  {# An ALTERNATIVE to the form above, not a step after it: the ceremony
+     verifies a biometric or PIN, so it already stands for both a password and
+     a code. Hidden by the script itself on a browser that cannot do it. #}
+  <p class="or">or</p>
+  <p class="passkeyline">
+    <button type="button" id="passkeysignin" data-csrf="{{ csrf }}">
+      Sign in with a passkey</button>
+  </p>
+  <p class="panel error" id="passkeyerror" hidden></p>
+  {% endif %}
   <p class="note"><a href="/login/recover">Forgotten your password?</a> Use one of your recovery codes.</p>
 </div>
+{% if passkeys_usable %}<script src="/static/passkeys.js?v={{ asset_v }}" defer></script>{% endif %}
 {% endblock %}
