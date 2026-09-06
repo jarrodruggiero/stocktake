@@ -498,7 +498,9 @@ def test_the_account_page_lists_every_way_in_and_whether_it_is_on(client, sessio
     make_login(client, session_factory)
     methods = _methods_table(client)
     assert "Password" in methods and "Two-factor authentication" in methods
-    assert ">Off<" in methods and "/profile/2fa" in methods
+    # A button opening the dialog, not a link away: the table is the index of
+    # every way in, so acting on a row should not leave the page.
+    assert ">Off<" in methods and 'data-dialog="twofactordialog"' in methods
 
     with session_factory() as s:
         twofactor.enable(s, s.scalars(select(User)).one(), pyotp.random_base32())

@@ -1,0 +1,18 @@
+{# Enrolment. The secret travels in the form and reaches the user row only once
+   a code proves the app holds it — decisions.md #39. #}
+<p class="note">Scan this with an authenticator app, then type the code it shows.</p>
+<div class="panel qr">{{ enrol.qr | safe }}</div>
+<p class="note">Can't scan? Enter this key by hand: <code>{{ enrol.secret }}</code></p>
+<form class="panel" method="post" action="/profile/2fa/enable" autocomplete="off">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  <input type="hidden" name="secret" value="{{ enrol.secret }}">
+  <label>Code from your app
+    <input name="code" inputmode="numeric" autocomplete="one-time-code"
+           required maxlength="10" placeholder="123456">
+  </label>
+  <div class="commitbar">
+    <button type="submit" class="primary">Turn it on</button>
+    {% if in_dialog %}<button type="button" class="secondary" data-close-dialog>Cancel</button>
+    {% else %}<a href="/profile">Cancel</a>{% endif %}
+  </div>
+</form>
