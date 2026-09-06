@@ -1063,9 +1063,14 @@ pre.yaml { background: var(--sunken); border: 1px solid var(--line); border-radi
 .enrol { display: flex; gap: 1.2rem; align-items: flex-start; flex-wrap: wrap; }
 /* The instructions need a flex-basis, or their max-content width pushes them
    onto a line of their own and the QR ends up sitting alone above them. */
+/* White ALWAYS, not only on the light theme: the QR is dark modules on a
+   transparent ground, so on the dark theme it rendered dark-on-dark and no
+   camera could read it. It was scoped to `.enrol`, which neither page that
+   shows a QR actually uses — so it applied nowhere. */
+.qr { background: #fff; padding: 0.5rem; border-radius: 8px; width: fit-content; }
+.qr svg { display: block; width: 10rem; height: 10rem; }
 .enrol > :not(.qr) { flex: 1 1 16rem; min-width: 0; }
-.enrol .qr { flex: 0 0 auto; background: #fff; padding: 0.5rem; border-radius: 8px; }
-.enrol .qr svg { display: block; width: 10rem; height: 10rem; }
+.enrol .qr { flex: 0 0 auto; }
 code.secret { background: var(--sunken); padding: 0.15rem 0.4rem; border-radius: 4px;
   word-break: break-all; }
 form.inlineform { display: flex; gap: 0.8rem; align-items: flex-end; flex-wrap: wrap;

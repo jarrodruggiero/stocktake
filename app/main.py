@@ -804,13 +804,18 @@ def _wizard_step(request: Request, step: str):
 _CLOSED_ONCE_SIGNED_IN = ("welcome", "database", "account")
 
 
-def _previous_step_url(rail: list[dict]) -> str | None:
+def _previous_step_url(rail: list[dict], *, closed: tuple[str, ...]) -> str | None:
     """The nearest step before the active one that can still be entered.
 
     A wizard whose only way back is the browser button is one where noticing a
     mistake on the summary means starting again. Steps this deployment skips
-    have nothing to go back TO, and the early steps are shut — so the answer is
-    the nearest one that is neither, or nothing.
+    have nothing to go back TO, and the early steps shut once an account
+    exists — so the answer is the nearest one that is neither, or nothing.
+
+    `closed` is passed rather than read from the constant because those steps
+    are shut ONCE SIGNED IN and not before: treating them as shut throughout
+    took the back link off the database and account steps, where going back is
+    exactly what somebody correcting a typo needs.
     """
     seen: list[str] = []
     for entry in rail:
@@ -819,7 +824,7 @@ def _previous_step_url(rail: list[dict]) -> str | None:
         if entry.get("state") != "skipped":
             seen.append(entry.get("key") or "")
     for key in reversed(seen):
-        if key not in _CLOSED_ONCE_SIGNED_IN and key in _WIZARD_URLS:
+        if key not in closed and key in _WIZARD_URLS:
             return _WIZARD_URLS[key]
     return None
 
@@ -848,7 +853,9 @@ def _wizard_page(request: Request, step: str, extra: dict, *,
             # The previous step somebody can actually return to. Derived from
             # the rail rather than a fixed order, so a step this deployment
             # skips is skipped going backwards too.
-            "wizard_back": _previous_step_url(setupwizard.progress(rail or step, skip=skip)),
+            "wizard_back": _previous_step_url(
+                setupwizard.progress(rail or step, skip=skip),
+                closed=_CLOSED_ONCE_SIGNED_IN if _accounts_exist() else ()),
             "error": None,
             **extra,
         },

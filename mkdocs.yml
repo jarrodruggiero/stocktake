@@ -38,6 +38,8 @@ nav:
   - Getting started: getting-started/index.md
   - Guides:
       - Overview: guides/index.md
+      - Market data: guides/market-data.md
+      - DCA Schedule: guides/dca-schedule.md
       - Recovery codes: guides/recovery-codes.md
   - Deployment:
       - Overview: deploy/index.md

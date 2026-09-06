@@ -1,5 +1,5 @@
 {% extends "setup_base.html" %}
-{% set heading = "Ready" %}
+{% set heading = "Summary" %}
 {% block wizard %}
 
 {% if config_writable.writable %}
@@ -8,7 +8,7 @@
    disclosure triangle (right when closed, down when open) for free, and it is
    the same control the rest of the app uses. #}
 <details class="panel summary">
-  <summary>Configuration summary <span class="sub">written to
+  <summary>Configuration <span class="sub">written to
     <code>{{ config_path }}</code></span></summary>
   <p class="note">Everything not listed keeps its default.</p>
   <pre class="yaml"><code>{{ yaml }}</code></pre>
@@ -24,18 +24,13 @@
 </section>
 {% endif %}
 
-{% if restart_for %}
-<p class="note"><strong>Restart to get started</strong> — it's what picks up:
-  {{ restart_for | join(', ') }}.</p>
-{% endif %}
-
 <form method="post" action="/setup/finish" class="panel">
   <input type="hidden" name="_csrf" value="{{ csrf }}">
   {% if restart_for and supervision.restarts %}
   {# No tickbox: the settings above do not take effect without it, so an
      unticked box is a finished wizard that did not do what it said. #}
-  <p class="note">Finishing restarts the app{% if external_url %}, then takes you
-    to <code>{{ external_url }}</code>{% endif %}.</p>
+  <p class="note">Click finish to get started! Stocktake will restart and reload
+    into your portfolio{% if external_url %} at <code>{{ external_url }}</code>{% endif %}.</p>
   {% endif %}
   <div class="commitbar">
     <button type="submit" class="primary">Finish setup</button>
