@@ -72,14 +72,11 @@ def unavailable_reason(settings: PortfolioSettings, *, secure: bool) -> str | No
     """
     wa = settings.auth.webauthn
     if not wa.enabled:
-        return ("Passkeys are turned off. Set auth.webauthn.enabled in your "
-                "configuration file to use them.")
+        return "Turn on passkeys in Admin → Settings."
     if not wa.rp_id or not wa.origins:
-        return ("Passkeys need auth.webauthn.rp_id and auth.webauthn.origins "
-                "set to the domain you reach this app on.")
+        return "Set the passkey domain in Admin → Settings."
     if not secure:
-        return ("Passkeys need an HTTPS connection. That is a browser rule "
-                "rather than a limit of this app.")
+        return "Requires Stocktake to be available via HTTPS."
     return None
 
 

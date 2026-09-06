@@ -1,0 +1,17 @@
+{# Turning two-factor off. Needs the password AND a current code: either alone
+   would let a borrowed session remove the factor it was meant to defend. #}
+{% if recovery_left == 0 %}
+<p class="panel warn">You've used all your recovery codes. Turn two-factor off and
+on again to issue a fresh set.</p>
+{% endif %}
+<form class="panel" method="post" action="/profile/2fa/disable" autocomplete="off">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  <div class="row">
+    <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
+    <label>Code <input name="code" inputmode="numeric" required maxlength="20" placeholder="123456"></label>
+  </div>
+  <div class="commitbar">
+    <button type="submit" class="danger">Turn off two-factor</button>
+    {% if in_dialog %}<button type="button" class="secondary" data-close-dialog>Cancel</button>{% endif %}
+  </div>
+</form>

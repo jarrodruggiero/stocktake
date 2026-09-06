@@ -314,7 +314,9 @@ def test_enabled_without_a_domain_is_not_configured(settings):
     settings.auth.webauthn.rp_id = None
 
     assert not passkeys.configured(settings)
-    assert "rp_id" in passkeys.unavailable_reason(settings, secure=True)
+    # Names where to fix it rather than which YAML key is missing: the setting
+    # is editable on that page now, so the key is no longer the useful noun.
+    assert "passkey domain" in passkeys.unavailable_reason(settings, secure=True)
 
 
 def test_plain_http_is_named_as_the_reason(settings):

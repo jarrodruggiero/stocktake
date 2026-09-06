@@ -1853,6 +1853,19 @@ async def revoke_other_sessions(request: Request):
         return _redirect("/profile?saved=sessions-revoked")
 
 
+def _enrolment(user: User) -> dict:
+    """A fresh secret and its QR, for the enrolment form.
+
+    Generated per render and never stored: it reaches the user row only once a
+    code proves the authenticator holds it — decisions.md #39. That is also why
+    rendering one on the profile page costs nothing but the drawing.
+    """
+    secret = twofactor.new_secret()
+    return {"secret": secret,
+            "qr": twofactor.qr_svg(
+                twofactor.provisioning_uri(secret, user.email, branding.NAME))}
+
+
 def _twofactor_context(db: DbSession, user: User) -> dict:
     return {
         "totp_enabled": twofactor.is_enabled(user),
@@ -1860,7 +1873,9 @@ def _twofactor_context(db: DbSession, user: User) -> dict:
             twofactor.remaining_recovery_codes(db, user)
             if twofactor.is_enabled(user) else 0
         ),
-        "enrol": None,      # set by the enrolment page
+        # The dialog on the profile page needs it up front; None once it is on,
+        # which is what hides the "Set up" dialog entirely.
+        "enrol": None if twofactor.is_enabled(user) else _enrolment(user),
         "new_codes": None,  # shown exactly once, right after enabling
     }
 
@@ -1875,15 +1890,10 @@ def twofactor_setup(request: Request, error: str = ""):
     with scoped(request) as (ctx, db):
         if twofactor.is_enabled(ctx.user):
             return _redirect("/profile")
-        secret = twofactor.new_secret()
-        uri = twofactor.provisioning_uri(secret, ctx.user.email, branding.NAME)
         return _render(
-            request,
-            ctx,
-            "account.html",
-            {"saved": "", "error": error, "active_nav": "",
-             **_twofactor_context(db, ctx.user),
-             "enrol": {"secret": secret, "qr": twofactor.qr_svg(uri)}},
+            request, ctx, "twofactor_setup.html",
+            {"error": error, "active_nav": "account",
+             "enrol": _enrolment(ctx.user)},
         )
 
 
@@ -2309,6 +2319,8 @@ def _settings_context(saved: str = "", error: str = "", pending: list[str] | Non
     values = {}
     for option in configfile.OPTIONS:
         value = configfile.effective(settings, option)
+        # Lists reach the template as lists and are joined there; a date has to
+        # be a string for `<input type="date">` to select it.
         values[option.name] = value.isoformat() if isinstance(value, dt.date) else value
     db = settings.database
     return {

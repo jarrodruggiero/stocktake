@@ -739,9 +739,19 @@ button.primary { background: var(--accent-grad); border-color: transparent; colo
 .settinglabel label { font-weight: 600; }
 .settinglabel .sub { margin: .2rem 0 0; }
 .settinglabel .sub em { font-style: normal; opacity: .85; }
+/* These fields sit in a settings grid rather than a `.panel`, so they were
+   getting the browser's default white box on a dark page. The look is the
+   panel's, without inheriting its layout. */
+.settingfield input, .settingfield select, .settingfield textarea {
+  padding: 0.45rem 0.6rem; background: var(--sunken); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius-xs);
+  font: inherit;
+}
+.settingfield input[type="checkbox"] { padding: 0; }
 .settingfield { justify-self: end; width: 100%; }
 .settingfield input[type="text"], .settingfield input[type="number"],
-.settingfield input[type="date"], .settingfield select { width: 100%; }
+.settingfield input[type="date"], .settingfield select,
+.settingfield textarea { width: 100%; }
 .settingfield input[type="checkbox"] { width: auto; }
 .settingrow.disabled .settingfield { opacity: .55; }
 .settingrow.disabled input, .settingrow.disabled select { cursor: not-allowed; }

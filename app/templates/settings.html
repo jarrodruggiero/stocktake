@@ -37,6 +37,11 @@ preferences live on <a href="/profile">your profile</a>.</p>
         <label for="f-{{ opt.name }}">{{ opt.label }}</label>
         <p class="sub">{{ opt.blurb }}{% if opt.doc %}
           <a href="{{ docs_url }}/{{ opt.doc }}">More information</a>.{% endif %}
+          {%- if opt.link %}
+          {# New tab: this is a form, and following a reference out of it
+             would take unsaved edits with it. #}
+          <a href="{{ opt.link }}" target="_blank"
+             rel="noopener noreferrer">{{ opt.link_text }}</a>.{% endif %}
           {% if opt.restart %}<em>Takes effect after a restart.</em>{% endif %}</p>
         {% if opt.name in from_environment %}
         <p class="sub warn">Currently set by the environment variable
@@ -49,6 +54,11 @@ preferences live on <a href="/profile">your profile</a>.</p>
         <input type="checkbox" id="f-{{ opt.name }}" name="{{ opt.name }}" value="on"
                {{ 'checked' if values[opt.name] else '' }}
                {{ 'disabled' if not writable.writable else '' }}>
+        {% elif opt.kind == 'list' %}
+        {# One per line: a comma-separated box would mangle an IPv6 range. #}
+        <textarea id="f-{{ opt.name }}" name="{{ opt.name }}" rows="3"
+                  {{ 'disabled' if not writable.writable else '' }}
+                  >{{ (values[opt.name] or []) | join('\n') }}</textarea>
         {% elif opt.kind == 'choice' %}
         <select id="f-{{ opt.name }}" name="{{ opt.name }}"
                 {{ 'disabled' if not writable.writable else '' }}>
@@ -60,7 +70,7 @@ preferences live on <a href="/profile">your profile</a>.</p>
         {% else %}
         <input id="f-{{ opt.name }}" name="{{ opt.name }}"
                type="{{ 'number' if opt.kind == 'int' else ('date' if opt.kind == 'date' else 'text') }}"
-               value="{{ values[opt.name] }}"
+               value="{{ values[opt.name] if values[opt.name] is not none else '' }}"
                {% if opt.minimum is not none %}min="{{ opt.minimum }}"{% endif %}
                {% if opt.maximum is not none %}max="{{ opt.maximum }}"{% endif %}
                {{ 'disabled' if not writable.writable else '' }}>
@@ -72,10 +82,12 @@ preferences live on <a href="/profile">your profile</a>.</p>
 
   {% if writable.writable %}
   <div class="commitbar">
-    <button type="submit">Save settings</button>
+    <button type="submit" class="primary">Save settings</button>
     {# Some settings only take effect on a restart, so offer both in one step
-       rather than making someone save and then hunt for the restart. #}
-    <button type="submit" name="restart" value="1" class="linkish"
+       rather than making someone save and then hunt for the restart. A real
+       button, like the one beside it: `.linkish` is for actions inside a table
+       row, and this is a commit bar. #}
+    <button type="submit" name="restart" value="1" class="secondary"
             onclick="return confirm('Save these settings and restart the application?')">
       Save and restart</button>
     <span class="sub">Written to {{ config_path }}, comments and all.</span>
@@ -84,8 +96,7 @@ preferences live on <a href="/profile">your profile</a>.</p>
 </form>
 
 <h2>Restart</h2>
-<p class="note">Stops the application so it starts again — for settings that only take effect
-at startup, or a price feed that has got stuck.</p>
+<p class="note">Restarts the application.</p>
 
 {% if supervision.restarts %}
 <p class="note">{{ supervision.detail }}</p>
@@ -103,8 +114,7 @@ at startup, or a price feed that has got stuck.</p>
 </form>
 
 <h2>Fixed at startup</h2>
-<p class="note">Shown for reference. These decide where the data lives, so they are only ever
-changed in the configuration file itself.</p>
+<p class="note">Where the data lives. Changed only in the configuration file.</p>
 <div class="tablewrap">
 <table>
   <tbody>
@@ -121,13 +131,8 @@ changed in the configuration file itself.</p>
 <section>
   <h2>Console
     {%- set console_tip %}
-    <p>Warnings and errors from the running application, newest at the bottom.</p>
-    <p>Not every log line: <strong>INFO is left out</strong>, because it is one
-    entry per web request and buries the thing you came here to read. What is
-    shown is the band in between — a price feed falling back to its secondary
-    source, a statement that parsed with fields missing, a job that skipped.</p>
-    <p>Held in memory only and cleared on restart, so the container's own logs
-    remain the record for anything older.</p>
+    <p class="tipline">Warnings and errors, newest last. INFO is left out — it
+    is one line per request.</p>
     {% endset %}
     {% with body = console_tip, label = "What appears here" %}
       {% include "_tip.html" %}

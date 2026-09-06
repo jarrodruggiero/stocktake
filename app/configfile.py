@@ -29,9 +29,14 @@ class Option:
 
     path: tuple[str, ...]      # where it sits in the YAML, e.g. ("auth", "cookie_secure")
     label: str
-    kind: str                  # text | int | bool | date | choice
+    kind: str                  # text | int | bool | date | choice | list
     blurb: str
     restart: bool = False      # does a change wait for a restart?
+    optional: bool = False     # may be left empty, and is then written as unset
+    # An authoritative reference, where one exists and beats explaining. The
+    # blurb is escaped in the template, so a link cannot live inside it.
+    link: str = ""
+    link_text: str = ""
     choices: tuple[str, ...] = ()
     minimum: int | None = None
     maximum: int | None = None
@@ -46,43 +51,103 @@ class Option:
 # from the web: see the module docstring.
 OPTIONS: tuple[Option, ...] = (
     Option(("timezone",), "Timezone", "text",
-           "Every date decision — whether a trade is in the future, which financial "
-           "year is current, what the calendar highlights — is made in this zone. "
-           "An IANA name, e.g. Australia/Melbourne or Europe/Dublin."),
+           "The zone every date decision is made in. An IANA name, e.g. "
+           "Australia/Melbourne.",
+           link="https://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
+           link_text="List of IANA time zones"),
     Option(("log_level",), "Log level", "choice",
            "How much the application writes to its log.",
            restart=True, choices=("DEBUG", "INFO", "WARNING", "ERROR")),
 
     Option(("price_feed", "enabled"), "Fetch prices", "bool",
-           "Whether the daily price and exchange-rate feed runs at all. With it "
-           "off, valuations stay at the last stored close.", restart=True),
+           "The daily price and exchange-rate feed. Off means valuations stay at "
+           "the last stored close.", restart=True),
     Option(("price_feed", "hour"), "Feed hour", "int",
-           "Hour of the daily run, in the timezone above. Set it after the market "
-           "you follow has closed.", minimum=0, maximum=23),
+           "Hour of the daily run. Set it after your market closes.", minimum=0, maximum=23),
     Option(("price_feed", "minute"), "Feed minute", "int",
            "Minute of the daily run.", minimum=0, maximum=59),
     Option(("price_feed", "backfill_start"), "Backfill from", "date",
-           "How far back to fetch price history the first time an instrument is "
-           "seen. Earlier means a longer first run and a longer chart."),
+           "How far back to fetch history when an instrument is first seen."),
 
     Option(("auth", "session_ttl_days"), "Session length (days)", "int",
-           "How long a signed-in session lasts. It slides: every request pushes "
-           "the expiry out again.", minimum=1, maximum=365),
+           "How long a session lasts. Every request pushes the expiry out again.", minimum=1, maximum=365),
     Option(("auth", "cookie_secure"), "HTTPS-only cookie", "bool",
-           "Send the session cookie only over HTTPS. Turn this ON once the app is "
-           "behind TLS, and leave it off on a plain-HTTP LAN or nobody can sign in."),
+           "Send the session cookie only over HTTPS. Turning this on without TLS "
+           "stops anyone signing in."),
     Option(("auth", "rate_limit", "max_attempts"), "Failed sign-ins allowed", "int",
-           "Failures from one email and address before that combination is locked "
-           "out.", minimum=1, maximum=100),
+           "Failures from one email and address before it is locked out.", minimum=1, maximum=100),
     Option(("auth", "rate_limit", "window_minutes"), "Counting window (minutes)", "int",
-           "How long failures are remembered when counting towards a lockout.",
+           "How long failures count towards a lockout.",
            minimum=1, maximum=1440),
     Option(("auth", "rate_limit", "lockout_minutes"), "Lockout (minutes)", "int",
-           "How long a locked-out combination has to wait.", minimum=1, maximum=1440),
+           "How long a lockout lasts.", minimum=1, maximum=1440),
+
+    Option(("auth", "session_idle_minutes"), "Idle timeout (minutes)", "int",
+           "How long a session survives with no requests.", minimum=1, maximum=10080),
+    Option(("auth", "session_absolute_days"), "Maximum session age (days)", "int",
+           "How long a session lasts however active it is. This is the cap a "
+           "stolen cookie runs into.", minimum=1, maximum=365),
+    Option(("auth", "idle_warning_seconds"), "Idle warning (seconds)", "int",
+           "How long before the timeout to warn, and blur the figures on "
+           "screen.", minimum=0, maximum=3600),
+    Option(("auth", "trusted_proxies"), "Trusted proxies", "list",
+           "Addresses or ranges whose X-Forwarded-For and X-Forwarded-Proto "
+           "headers are believed. One per line.",
+           optional=True, restart=True),
+
+    Option(("auth", "webauthn", "enabled"), "Passkeys", "bool",
+           "Whether passkeys can be added and used to sign in. Needs HTTPS and "
+           "the two settings below.", restart=True),
+    Option(("auth", "webauthn", "rp_id"), "Passkey domain", "text",
+           "The domain passkeys are bound to. Change it and every existing passkey "
+           "stops working.",
+           optional=True, restart=True),
+    Option(("auth", "webauthn", "rp_name"), "Passkey prompt name", "text",
+           "What the browser's passkey prompt calls this site.",
+           optional=True, restart=True),
+    Option(("auth", "webauthn", "origins"), "Passkey origins", "list",
+           "The full URLs passkeys may be used from. One per line.",
+           optional=True, restart=True),
+
+    Option(("price_feed", "quotes_enabled"), "Live quotes", "bool",
+           "Whether prices refresh while a market is open, as well as at the "
+           "daily close.", restart=True),
+    Option(("price_feed", "quote_interval_minutes"), "Live quote interval (minutes)",
+           "int", "How often live quotes refresh while a market is open.",
+           minimum=1, maximum=1440),
+    Option(("price_feed", "timezone"), "Feed timezone", "text",
+           "The zone the daily run is scheduled in. Empty follows the timezone above.",
+           optional=True),
+
+    Option(("maintenance", "enabled"), "Daily housekeeping", "bool",
+           "Whether the nightly sweep runs: expired sessions, old sign-in "
+           "attempts, half-finished imports.", restart=True),
+    Option(("maintenance", "hour"), "Housekeeping hour", "int",
+           "Hour of the nightly sweep.",
+           minimum=0, maximum=23, restart=True),
+    Option(("maintenance", "minute"), "Housekeeping minute", "int",
+           "Minute of the nightly sweep.", minimum=0, maximum=59, restart=True),
+    Option(("maintenance", "attempt_retention_days"), "Keep sign-in attempts (days)",
+           "int", "How long failed sign-ins are kept. They drive lockout; they "
+           "are not an audit log.", minimum=1, maximum=365),
+    Option(("maintenance", "staged_upload_hours"), "Keep unfinished imports (hours)",
+           "int", "How long a previewed but uncommitted import is kept. It holds real "
+           "trade data.", minimum=1, maximum=720),
+
+    Option(("metrics", "enabled"), "Prometheus metrics", "bool",
+           "Whether /metrics is served. It publishes machine health only — no "
+           "holdings, no values.", restart=True),
+
+    Option(("imports", "max_upload_mb"), "Maximum upload (MB)", "int",
+           "The largest file an import will accept.", minimum=1, maximum=200),
+    Option(("imports", "ocr", "enabled"), "Read scanned PDFs", "bool",
+           "Whether image-only PDFs are put through local OCR. Nothing is sent "
+           "anywhere.",
+           restart=True),
 
     Option(("imports", "allow_new_instruments"), "Create instruments on import", "bool",
-           "Whether a broker CSV may create instruments it does not recognise. Off "
-           "means an unknown ticker stops the import so you can check it first."),
+           "Whether an import may create instruments it doesn't recognise. Off "
+           "stops the import on an unknown ticker."),
 )
 
 # Optional features, appended from the registry rather than typed out here:
@@ -234,6 +299,10 @@ def coerce(option: Option, raw: str) -> Any:
             return dt.date.fromisoformat(raw)
         except ValueError:
             raise ValueError(f"{option.label} must be a date, as YYYY-MM-DD.") from None
+    if option.kind == "list":
+        # One per line. Split here rather than on commas because an IPv6 range
+        # and a URL both contain characters a comma-split would ruin.
+        return [line.strip() for line in raw.splitlines() if line.strip()]
     if option.kind == "choice":
         if raw not in option.choices:
             raise ValueError(f"{option.label} must be one of {', '.join(option.choices)}.")
@@ -247,6 +316,8 @@ def coerce(option: Option, raw: str) -> Any:
                 "Australia/Melbourne."
             ) from None
     if not raw:
+        if option.optional:
+            return None
         raise ValueError(f"{option.label} cannot be empty.")
     return raw
 

@@ -30,26 +30,6 @@
   <p class="note"><a href="/profile">Done — I've saved them</a></p>
 </section>
 {% endif %}
-{% if enrol %}
-<section class="narrow">
-  <h2>Set up two-factor authentication</h2>
-  <p class="note">Scan this with an authenticator app, then type the code it shows.</p>
-  <div class="panel qr">{{ enrol.qr | safe }}</div>
-  <p class="note">Can't scan? Enter this key by hand: <code>{{ enrol.secret }}</code></p>
-  <form class="panel" method="post" action="/profile/2fa/enable" autocomplete="off">
-    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-    <input type="hidden" name="secret" value="{{ enrol.secret }}">
-    <label>Code from your app
-      <input name="code" inputmode="numeric" autocomplete="one-time-code"
-             required maxlength="10" placeholder="123456" autofocus>
-    </label>
-    <div class="commitbar">
-      <button type="submit">Turn it on</button>
-      <a href="/profile">Cancel</a>
-    </div>
-  </form>
-</section>
-{% endif %}
 
 <div class="accountcols">
   <div>
@@ -177,7 +157,7 @@
         {# Always on: there is no way to remove it, and a passkey is an
            alternative to using it rather than a replacement for having one. #}
         <td><span class="badge badge-on">On</span></td>
-        <td><a href="#password">Change</a></td>
+        <td><button type="button" class="secondary" data-dialog="passworddialog">Change</button></td>
       </tr>
       <tr>
         <th scope="row">Two-factor authentication</th>
@@ -185,8 +165,11 @@
            alone is not a status anybody can read. #}
         <td>{% if totp_enabled %}<span class="badge badge-on">On</span>
             {% else %}<span class="badge badge-off">Off</span>{% endif %}</td>
-        <td>{% if totp_enabled %}<a href="#twofactor">Turn off</a>
-            {% elif not enrol %}<a href="/profile/2fa">Set up</a>{% endif %}</td>
+        <td>{% if totp_enabled %}
+            <button type="button" class="secondary" data-dialog="twofactoroffdialog">Turn off</button>
+            {% else %}
+            <button type="button" class="secondary" data-dialog="twofactordialog">Set up</button>
+            {% endif %}</td>
       </tr>
       <tr>
         <th scope="row">Passkeys</th>
@@ -194,54 +177,16 @@
             {% elif passkeys_usable %}<span class="badge badge-off">Off</span>
             {# Not "Off": the deployment cannot offer them at all, which is a
                different answer and the reason is on the page it links to. #}
-            {% else %}<span class="badge badge-off">Unavailable</span>{% endif %}</td>
-        <td><a href="/profile/passkeys">{% if passkeys %}Manage{% else %}Set up{% endif %}</a></td>
+            {% else %}<span class="badge badge-off"
+               title="{{ passkeys_reason }}">Unavailable</span>{% endif %}</td>
+        <td><button type="button" class="secondary" data-dialog="passkeydialog">{%
+            if passkeys %}Manage{% else %}Set up{% endif %}</button></td>
       </tr>
     </tbody>
   </table>
   </div>
 </section>
 
-<section class="narrow" id="password">
-  <h2>Change password</h2>
-  <form class="panel" method="post" action="/profile/password" autocomplete="on">
-    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-    <label>Current password
-      <input type="password" name="current_password" required autocomplete="current-password">
-    </label>
-    <label>New password <span class="sub">at least 10 characters</span>
-      <input type="password" name="password" required minlength="10" autocomplete="new-password">
-    </label>
-    <label>Confirm new password
-      <input type="password" name="confirm" required minlength="10" autocomplete="new-password">
-    </label>
-    <button type="submit">Change password</button>
-  </form>
-</section>
-<section class="narrow" id="twofactor">
-  <h2>Two-factor authentication</h2>
-  {% if totp_enabled %}
-  <p class="note">On. Signing in needs a code from your authenticator app as
-  well as your password. <strong>{{ recovery_left }}</strong> recovery
-  code{{ '' if recovery_left == 1 else 's' }} left.</p>
-  {% if recovery_left == 0 %}
-  <p class="panel warn">You've used all your recovery codes. Turn two-factor off and on again to
-  issue a fresh set.</p>
-  {% endif %}
-  <form class="panel" method="post" action="/profile/2fa/disable" autocomplete="off">
-    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-    <p class="note">Turning it off needs your password and a current code.</p>
-    <div class="row">
-      <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
-      <label>Code <input name="code" inputmode="numeric" required maxlength="20" placeholder="123456"></label>
-    </div>
-    <button type="submit" class="danger">Turn off two-factor</button>
-  </form>
-  {% elif not enrol %}
-  <p class="note">Off. With it on, your password alone isn't enough to sign in.</p>
-  <p><a href="/profile/2fa"><button type="button">Set up two-factor</button></a></p>
-  {% endif %}
-</section>
 <section class="narrow">
   <h2>Where you're signed in</h2>
   <p class="note">Sessions end after an hour idle, and after 7 days regardless. Lost a device?
@@ -292,5 +237,51 @@
 
 <script src="/static/colourpicker.js?v={{ asset_v }}" defer></script>
 <script src="/static/colourwheel.js?v={{ asset_v }}" defer></script>
+
+
+{# The sign-in table is the way in, and each action opens its form here — the
+   same pattern as Record a trade. Each dialog INCLUDES the partial that the
+   standalone page uses, so neither can drift from the other. #}
+<dialog id="passworddialog">
+  <h2>Change password</h2>
+  {% with in_dialog = True %}{% include "_password_form.html" %}{% endwith %}
+</dialog>
+
+{% if totp_enabled %}
+<dialog id="twofactoroffdialog">
+  <h2>Turn off two-factor</h2>
+  <p class="note">You have <strong>{{ recovery_left }}</strong> recovery
+  code{{ '' if recovery_left == 1 else 's' }} left.</p>
+  {% with in_dialog = True %}{% include "_twofactor_disable.html" %}{% endwith %}
+</dialog>
+{% elif enrol %}
+<dialog id="twofactordialog">
+  <h2>Set up two-factor</h2>
+  {% with in_dialog = True %}{% include "_twofactor_enrol.html" %}{% endwith %}
+</dialog>
+{% endif %}
+
+<dialog id="passkeydialog">
+  <h2>Passkeys</h2>
+  {% include "_passkeys_panel.html" %}
+</dialog>
+
+{# Without scripting a dialog cannot open, so the same forms are here inline
+   and the two pages that already exist are linked. #}
+<noscript>
+  <section class="narrow">
+    <h2>Change password</h2>
+    {% include "_password_form.html" %}
+  </section>
+  <section class="narrow">
+    <h2>Two-factor authentication</h2>
+    {% if totp_enabled %}{% include "_twofactor_disable.html" %}
+    {% else %}<p><a href="/profile/2fa">Set up two-factor</a></p>{% endif %}
+  </section>
+  <p><a href="/profile/passkeys">Manage passkeys</a></p>
+</noscript>
+
+<script src="/static/accountpage.js?v={{ asset_v }}" defer></script>
+{% if passkeys_usable %}<script src="/static/passkeys.js?v={{ asset_v }}" defer></script>{% endif %}
 
 {% endblock %}
