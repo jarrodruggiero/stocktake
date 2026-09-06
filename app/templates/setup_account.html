@@ -16,10 +16,7 @@
            autocomplete="new-password">
   </label>
   {%- set tfa_tip %}
-    <p class="tipline">An app on your phone shows a 6-digit code that changes
-      every 30 seconds, and signing in asks for it as well as your password.</p>
-    <p class="tipline">You can turn this on — and add a passkey — later from
-      your account settings, so leaving it unticked now costs nothing.</p>
+    <p class="tipline">This can be enabled later in account settings.</p>
   {% endset -%}
   {# The tip sits OUTSIDE the label on purpose: a <details> inside one both
      breaks the parse and makes opening the tooltip toggle the tickbox. #}

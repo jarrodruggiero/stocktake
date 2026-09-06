@@ -38,6 +38,8 @@ Recording a planned buy from here advances the schedule; recording the same
 trade from **Record a trade** does not, because the app cannot know it was the
 scheduled one. Skipping is recorded too, so the history stays honest.
 
+More detail: [DCA Schedule](dca-schedule.md).
+
 ## Reports → FY
 
 The Australian tax view for a financial year:

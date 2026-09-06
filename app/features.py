@@ -21,6 +21,7 @@ class Feature:
     key: str            # the settings field name under `features:`
     name: str           # what the wizard and the settings page call it
     blurb: str          # what it does, for somebody deciding
+    doc: str = ""       # docs path for "More information", relative to docs_url
     # Nav entries this feature owns. Hidden when it is off, so the bar never
     # offers a way to a page that will only tell you it is unavailable.
     nav_keys: tuple[str, ...] = ()
@@ -34,12 +35,8 @@ FEATURES: tuple[Feature, ...] = (
     Feature(
         key="dca_schedule",
         name="DCA Schedule",
-        blurb=(
-            "A calendar of scheduled buys built from a rotation you set — which "
-            "ticker is next, when it is due, and a record-it button that advances "
-            "the schedule. Turn it off if you invest in lump sums rather than on "
-            "a cycle; your trades and holdings are unaffected."
-        ),
+        blurb="An optional DCA (Dollar Cost Averaging) scheduling tool.",
+        doc="guides/dca-schedule/",
         nav_keys=("plan",),
         routes=("/schedule",),
     ),

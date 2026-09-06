@@ -729,16 +729,24 @@ def test_the_privacy_promise_is_made_where_the_choice_is(client):
     README sells the app, this wizard sets it up.
 
     The promise itself is not marketing, though: it is a claim about what this
-    install does, and it belongs at the control that decides it. So it is
-    asserted at the market-data checkbox rather than on a page somebody clicks
-    past.
+    install does, and it belongs at the control that decides it.
+
+    The detail moved to the guide — "public" carries the weight at the control,
+    and the specific claim is one click away. So this asserts BOTH ends: the
+    word at the checkbox, and the promise still being made where the link
+    lands. Checking only the tooltip would let the guarantee disappear the day
+    somebody trimmed the page it moved to.
     """
     _through_the_account(client)
 
     page = client.get("/setup/portfolio", headers=HTML).text
 
     assert 'name="price_feed"' in page, "no market-data choice to explain"
-    assert "sends ticker symbols and nothing else" in page
+    assert "public market data" in page
+    assert "/guides/market-data/" in page
+
+    guide = (APP_ROOT / "docs" / "guides" / "market-data.md").read_text()
+    assert "ticker symbols and nothing else" in guide
 
 
 def test_the_database_step_is_skipped_when_one_is_configured(client):
@@ -837,7 +845,7 @@ def test_the_offer_to_do_it_later_sits_where_the_choice_is_made(client):
     page = client.get("/setup/profile", headers=HTML).text
 
     tip = re.search(r'<details class="tip menu">.*?</details>', page, re.S).group(0)
-    assert "account settings" in tip and "passkey" in tip
+    assert "enabled later in account settings" in tip
 
 
 def test_the_portfolio_step_renames_the_portfolio_and_records_the_zone(
@@ -1595,6 +1603,29 @@ def test_every_step_after_the_first_offers_a_way_back(client):
     # omission: everything before it — welcome, database, account — shuts the
     # moment an account exists, so a link to one is a link into the loop.
     assert 'class="backlink"' not in client.get("/setup/recovery", headers=HTML).text
+
+
+def test_the_steps_before_the_account_offer_a_way_back_too(client):
+    """The early steps shut ONCE SIGNED IN — not before.
+
+    Suppressing them throughout took the back link off the database and account
+    steps, which is where somebody correcting a typed connection string most
+    needs one, and left the wizard with no way back until step 5.
+    """
+    token = _token(client)
+    client.post("/setup", data={"_csrf": token}, headers=HTML, follow_redirects=False)
+
+    for path in ("/setup/database", "/setup/profile"):
+        assert 'class="backlink"' in client.get(path, headers=HTML).text, path
+
+    # Where the account step points depends on what this deployment offers:
+    # the database step is skipped when config already names a database, as
+    # this fixture does, so the nearest step still open behind it is welcome.
+    assert 'class="backlink" href="/setup"' in client.get(
+        "/setup/profile", headers=HTML).text
+
+    # The first step has nothing behind it, which is the one legitimate absence.
+    assert 'class="backlink"' not in client.get("/setup", headers=HTML).text
 
 
 def test_login_does_not_explode_when_no_database_is_configured():

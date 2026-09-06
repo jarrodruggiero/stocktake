@@ -20,10 +20,8 @@
     <input type="checkbox" name="price_feed" value="on" {% if price_feed %}checked{% endif %}>
     <span>Automatically refresh market data</span>
   {%- set feed_tip %}
-  <p>Once a day the app asks Yahoo Finance for closing prices and exchange
-  rates.</p>
-  <p><strong>It sends ticker symbols and nothing else</strong> — no holdings,
-  no quantities, no account.</p>
+  <p class="tipline">Refreshes public market data from Yahoo Finance.
+  <a href="{{ docs_url }}/guides/market-data/">More information</a>.</p>
   {% endset %}
   {% with body = feed_tip, label = "What this sends" %}
     {% include "_tip.html" %}

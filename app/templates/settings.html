@@ -35,7 +35,8 @@ preferences live on <a href="/profile">your profile</a>.</p>
     <div class="settingrow{{ ' disabled' if not writable.writable else '' }}">
       <div class="settinglabel">
         <label for="f-{{ opt.name }}">{{ opt.label }}</label>
-        <p class="sub">{{ opt.blurb }}
+        <p class="sub">{{ opt.blurb }}{% if opt.doc %}
+          <a href="{{ docs_url }}/{{ opt.doc }}">More information</a>.{% endif %}
           {% if opt.restart %}<em>Takes effect after a restart.</em>{% endif %}</p>
         {% if opt.name in from_environment %}
         <p class="sub warn">Currently set by the environment variable
