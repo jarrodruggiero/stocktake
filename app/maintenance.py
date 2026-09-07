@@ -64,6 +64,13 @@ def purge_passkey_challenges(session, settings) -> int:
     return passkeys.purge_expired_challenges(session)
 
 
+def purge_oidc_states(session, settings) -> int:
+    """Sign-ins that went to a provider and never came back."""
+    from . import federation  # noqa: PLC0415 - avoids a circular import
+
+    return federation.purge_expired_states(session)
+
+
 def sweep_staged_uploads(session, settings) -> int:
     """Remove half-finished CSV imports left in the staging area.
 
@@ -105,6 +112,7 @@ def sweep_visual_mapper(session, settings) -> int:
 STEPS = (
     ("expired sessions", purge_expired_sessions),
     ("stale passkey challenges", purge_passkey_challenges),
+    ("stale sign-in attempts", purge_oidc_states),
     ("old login attempts", purge_old_login_attempts),
     ("staged uploads", sweep_staged_uploads),
     ("visual mapper pages", sweep_visual_mapper),

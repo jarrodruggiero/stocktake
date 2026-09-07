@@ -98,13 +98,21 @@ def lookup(db: DbSession, raw: str | None) -> PortfolioInvite:
 
 
 def accept(db: DbSession, raw: str | None, user: User) -> PortfolioInvite:
-    """Spend the invite, giving this account the role it names.
+    """Spend the invite behind this token, giving the account its role."""
+    return accept_row(db, lookup(db, raw), user)
+
+
+def accept_row(db: DbSession, invite: PortfolioInvite, user: User) -> PortfolioInvite:
+    """As `accept`, for a caller that already holds the row.
+
+    The OIDC path needs this: it carries an invite across a redirect to the
+    provider and back, and it stores the invite's ID rather than its token —
+    a row holding a live credential in the clear is a row worth stealing.
 
     Marked used BEFORE anything else can fail, so a link cannot be spent twice
     by two requests arriving together. Already being a member is not an error:
     the invite is still consumed, because it was offered and answered.
     """
-    invite = lookup(db, raw)
     invite.used_at = _utcnow()
     invite.used_by = user.id
     db.flush()

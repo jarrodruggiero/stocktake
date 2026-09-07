@@ -847,3 +847,18 @@ provider can only auto-provision somebody who is authorised to exist — but
 membership needed them anyway: adding a member required the account to exist
 first, so there was no way to bring in somebody who had never signed in. An
 install with no identity provider gets the same link.
+
+**119. An OIDC identity is matched on `(issuer, sub)`, never on email.** An
+address is something a directory can often be *told*, so matching on it would
+let anybody who can set an email in the provider sign in as an existing local
+account. Provisioning refuses a colliding address rather than adopting it: two
+people are not one person because a directory says so. Linking an existing
+account to a provider is a deliberate act by somebody already signed in.
+
+**120. `user.password_hash` is nullable, and NULL is not a password.** An
+account provisioned by a provider never had one. `verify_password` already
+returned False for a NULL hash — that was written for the
+account-does-not-exist case and turns out to be exactly right here — and
+unlinking the last identity is refused while the hash is NULL, because an
+account with no way in is not something a settings page should be able to
+create quietly.

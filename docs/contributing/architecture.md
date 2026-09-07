@@ -57,6 +57,7 @@ Two consequences worth internalising:
 | `twofactor.py`, `recover.py` | TOTP, recovery codes, and getting back in. |
 | `passkeys.py` | WebAuthn: enrolling a passkey, and signing in with one. |
 | `invites.py` | Single-use invitations into one portfolio, at one role. |
+| `federation.py` | OIDC sign-in: which account an identity is, and who may be created. |
 | `api.py` | `/api/v1`, authenticated by key rather than cookie. |
 
 ### The application around it

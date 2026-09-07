@@ -156,7 +156,10 @@ class User(Base):
     )
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120))
-    password_hash: Mapped[str] = mapped_column(String(255))  # argon2id
+    # NULL where the account signs in another way — an account provisioned by
+    # an identity provider never had one. `auth.verify_password` refuses None
+    # rather than treating it as "any password" — decisions.md #120.
+    password_hash: Mapped[str | None] = mapped_column(String(255))  # argon2id
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=true()
     )
@@ -460,6 +463,72 @@ class WebauthnCredential(Base):
 
     __table_args__ = (
         UniqueConstraint("credential_id", name="uq_webauthn_credential_id"),
+    )
+
+
+class ExternalIdentity(Base):
+    """One account, as one identity provider knows it.
+
+    Matched on `(issuer, subject)` and never on the email address: an address
+    is something a directory can often be *told*, so matching on it would be a
+    way to take over an existing account by claiming its email — decisions.md
+    #119.
+
+    A table rather than columns on `user`, because an account may end up linked
+    to more than one provider, and because unlinking should leave no trace on
+    the account itself.
+    """
+
+    __tablename__ = "external_identity"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), index=True
+    )
+    issuer: Mapped[str] = mapped_column(String(255), index=True)
+    subject: Mapped[str] = mapped_column(String(255))
+    # What the provider called them when they linked. Stored for the account
+    # page only — it is never matched on.
+    email: Mapped[str | None] = mapped_column(String(320))
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    last_used_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("issuer", "subject", name="uq_external_identity_subject"),
+    )
+
+
+class OidcState(Base):
+    """One sign-in attempt through a provider, between the two requests.
+
+    The same shape as `WebauthnChallenge`, for the same reason: a random token
+    in the browser, its hash in the row, deleted on read. `state` defends the
+    callback against forgery, `nonce` ties the ID token to this attempt, and
+    the PKCE verifier proves the code is redeemed by whoever asked for it.
+
+    `invite_id` rather than the invite's token: the token is a credential, and
+    this row would otherwise hold a live one in the clear.
+    """
+
+    __tablename__ = "oidc_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), index=True)
+    state: Mapped[str] = mapped_column(String(64))
+    nonce: Mapped[str] = mapped_column(String(64))
+    verifier: Mapped[str] = mapped_column(String(128))
+    invite_id: Mapped[int | None] = mapped_column(
+        ForeignKey("portfolio_invite.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_oidc_state_token"),
     )
 
 
