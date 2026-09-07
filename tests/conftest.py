@@ -130,7 +130,14 @@ def session_factory(db_path):
         type="sqlite", path=str(db_path))
     factory = make_session_factory(settings)
     tenancy.install(factory)
-    return factory
+    yield factory
+    # Every test builds its own engine, and an engine holds a pool of up to ten
+    # connections. Undisposed, they come back only when CPython collects the
+    # engine — so the suite's connection use depended on garbage-collection
+    # timing rather than on anything it does, and a machine slow enough to hold
+    # more engines at once exhausted Postgres's 100 and errored. Reported from
+    # a machine with tesseract installed, where the OCR tests run.
+    factory.kw["bind"].dispose()
 
 
 @pytest.fixture(autouse=True)
