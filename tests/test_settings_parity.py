@@ -37,6 +37,11 @@ WITHHELD: dict[str, str] = {
 
     "auth.cookie_name": "Renaming it signs everybody out, and nothing is gained.",
 
+    # Same reason as the database password: a field that renders its own value
+    # puts a live credential on a screen somebody may be sharing.
+    "auth.oidc.client_secret": "A credential. Set it in the file or the "
+                               "environment, never on a page.",
+
     # Paths the process reads and writes. A typo here breaks imports until
     # somebody edits YAML anyway, which is the opposite of the point.
     "imports.templates_dir": "A server path, not a preference.",

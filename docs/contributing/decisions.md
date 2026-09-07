@@ -829,3 +829,21 @@ hashed and deleted as it is read, exactly like a session token: a ceremony is
 two requests, and the nonce between them is what stops a captured response
 being replayed. A challenge that survived being used would make the signature
 worth nothing.
+
+**116. `/invite/` is public, and the token is the whole authorisation.** The
+person opening an invitation has no account yet, so the login middleware has to
+let them through — and every route under the prefix checks the token itself.
+Signing up is possible ONLY with a live one: without that check the endpoint is
+open registration on an app holding somebody's holdings.
+
+**117. An invitation never changes an existing membership.** Accepting one when
+already a member consumes the invite and leaves the role alone, so a viewer
+link sent to an owner cannot quietly demote them. It is still consumed, because
+it was offered and answered — a spent link that still worked would be a live
+credential nobody thinks they have.
+
+**118. Invitations are not an OIDC feature.** They were built for it — a
+provider can only auto-provision somebody who is authorised to exist — but
+membership needed them anyway: adding a member required the account to exist
+first, so there was no way to bring in somebody who had never signed in. An
+install with no identity provider gets the same link.

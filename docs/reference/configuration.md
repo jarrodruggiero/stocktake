@@ -216,6 +216,37 @@ auth:
   # If you terminate TLS at a Cloudflare tunnel, note that Cloudflare sees your
   # traffic in plaintext at its edge — fine for many people, worth knowing for
   # an app that shows everything you own.
+  # ── Single sign-on (OIDC) ─────────────────────────────────────────────────
+  # Hand sign-in to an identity provider you already run — Authentik, Authelia,
+  # Keycloak, Pocket ID. Off by default, and inert when off: no request is made
+  # to anybody until somebody presses the button.
+  #
+  # Local passwords keep working. That is deliberate: an IdP that is down
+  # should be an inconvenience, not a lock-out from your own records.
+  #
+  # `provisioning` decides who may sign in:
+  #   off    — only accounts already linked to this provider
+  #   invite — an unknown person may create an account, but only holding a
+  #            valid invite from a portfolio owner
+  #   open   — anyone your provider authenticates gets an account
+  #
+  # Accounts are matched on the provider's `sub` claim, never on the email
+  # address: an address is something a directory can often be told, and
+  # matching on it would be a way to take over an existing account.
+  #
+  # redirect_uri must match what the provider has registered, exactly. It is
+  # declared here rather than read from the request, for the same reason as
+  # webauthn's rp_id — a value taken from a header is one the caller chose.
+  # oidc:
+  #   enabled: false
+  #   issuer: https://auth.example.com/application/o/stocktake/
+  #   client_id: stocktake
+  #   client_secret: from-your-provider
+  #   redirect_uri: https://stocktake.example.com/login/oidc/callback
+  #   button_label: Sign in with Authentik
+  #   provisioning: off
+  #   scopes: [openid, email, profile]
+
   # webauthn:
   #   enabled: false
   #   rp_id: stocktake.example.com

@@ -178,7 +178,14 @@ def render_all() -> None:
     save("12-charts", client.get("/charts", headers=HTML).text)
     # The admin pages: two-column on a desktop, and the Settings page now
     # carries a console, which is a scrolling panel inside a form page.
-    save("22-admin", client.get("/members", headers=HTML).text)
+    # With an invitation issued, so the list and the shown-once link are both
+    # in the shot rather than an empty state.
+    issued = client.post("/members/invite", follow_redirects=False,
+                         data={"_csrf": token("/members"), "role": "member"})
+    invite_token = issued.headers.get("location", "").partition("invite=")[2]
+    save("22-admin", client.get("/members?invite=" + invite_token,
+                                headers=HTML).text)
+    save("22b-invite", client.get("/invite/" + invite_token, headers=HTML).text)
     save("23-admin-settings", client.get("/admin/settings", headers=HTML).text)
     # The builder is four columns of controls, which is exactly the sort of
     # layout that only reveals its problems when rendered.
