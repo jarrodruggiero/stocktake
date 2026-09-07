@@ -118,6 +118,10 @@ OPTIONS: tuple[Option, ...] = (
     Option(("auth", "oidc", "client_id"), "Client ID", "text",
            "The client ID the provider issued for Stocktake.",
            optional=True, restart=True),
+    Option(("auth", "oidc", "client_auth"), "Client authentication", "choice",
+           "How the token request proves who it is. Basic sends the client "
+           "secret; none is a public client, which has no secret and relies on "
+           "PKCE alone.", choices=("basic", "none"), restart=True),
     Option(("auth", "oidc", "redirect_uri"), "Redirect URL", "text",
            "Where the provider sends people back to. Must match what it has "
            "registered.", optional=True, restart=True),

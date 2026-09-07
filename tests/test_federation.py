@@ -232,3 +232,35 @@ def test_the_reason_names_what_is_missing(settings):
 
     settings.auth.oidc.enabled = False
     assert "Admin" in federation.unavailable_reason(settings)
+
+
+# --------------------------------------------------------------------------- #
+# Public clients
+# --------------------------------------------------------------------------- #
+
+def test_a_public_client_is_offered_without_a_secret(settings):
+    """A public client has no secret to set, so the absence of one is not a
+    reason to withhold the button — which is what stopped it rendering."""
+    settings.auth.oidc.client_auth = "none"
+    settings.auth.oidc.client_secret = None
+
+    assert federation.configured(settings)
+    assert federation.unavailable_reason(settings) is None
+
+
+def test_only_the_exact_value_none_waives_the_secret(settings):
+    """Anything unrecognised still needs one. A `client_auth` typo must not be
+    a way to run unauthenticated — decisions.md #121."""
+    settings.auth.oidc.client_auth = "nome"
+    settings.auth.oidc.client_secret = None
+
+    assert not federation.configured(settings)
+    assert "client_secret" in federation.unavailable_reason(settings)
+
+
+def test_the_client_auth_setting_reaches_the_provider(settings):
+    """The wire between the two halves. Without it every test above still
+    passes and the token request goes out with a Basic header anyway."""
+    settings.auth.oidc.client_auth = "none"
+
+    assert federation.provider(settings).client_auth == "none"

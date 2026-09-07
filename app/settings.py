@@ -56,6 +56,12 @@ class OidcSettings(BaseModel):
     * `open`   — anyone the IdP authenticates gets an account. Right for a
                  household directory, and a real statement about who that is.
 
+    `client_auth` is how the token request proves who it is: `basic` sends the
+    client secret, `none` makes this a public client and leaves PKCE — which is
+    unconditional here — to prove the redemption. It is stated rather than
+    inferred from a missing secret, so a secret dropped from the environment
+    refuses to start instead of quietly going anonymous — decisions.md #121.
+
     Matching is on `(issuer, subject)` and never on the email address. An IdP
     that lets somebody set an unverified address would otherwise be a way to
     take over an existing local account by claiming its email.
@@ -64,7 +70,7 @@ class OidcSettings(BaseModel):
     enabled: bool = False
     issuer: str | None = None          # e.g. https://auth.example.com/application/o/stocktake/
     client_id: str | None = None
-    client_secret: str | None = None
+    client_secret: str | None = None   # not needed when client_auth is none
     # Declared rather than derived from the request: it must match what the
     # provider has registered exactly, and a value taken from the Host header
     # would be one the caller chose. Editable, because getting it wrong is the
@@ -74,6 +80,7 @@ class OidcSettings(BaseModel):
     # in with OIDC" names a protocol rather than the thing they recognise.
     button_label: str = "Sign in with your identity provider"
     provisioning: str = "off"          # off | invite | open
+    client_auth: str = "basic"         # basic | none
     scopes: list[str] = ["openid", "email", "profile"]
 
 
