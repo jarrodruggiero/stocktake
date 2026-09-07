@@ -19,6 +19,7 @@ import json
 import logging
 import re
 import threading
+import urllib.parse
 from contextlib import asynccontextmanager, contextmanager
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -2043,6 +2044,25 @@ async def login_passkey(request: Request):
     return resp
 
 
+@app.post("/profile/recovery/later")
+async def account_recovery_later(request: Request):
+    """Put the banner away until the next sign-in.
+
+    On the session rather than the user: an account with no saved codes is one
+    forgotten password from being unreachable, so "not now" must not mean
+    "never". A new session asks again.
+    """
+    with scoped(request) as (ctx, db):
+        await auth.verify_csrf(request, db)
+        ctx.session.codes_banner_hidden = True
+        db.flush()
+    # The PATH from the referer, never the whole header: it is client-supplied,
+    # and redirecting to an absolute URL somebody else chose is an open
+    # redirect. Back where they were, or home.
+    back = urllib.parse.urlparse(request.headers.get("referer") or "").path
+    return _redirect(back if back.startswith("/") else "/")
+
+
 @app.post("/profile/recovery")
 async def account_recovery_codes(request: Request):
     """Issue a fresh set of recovery codes and show them once.
@@ -2452,7 +2472,11 @@ async def portfolio_switch(request: Request, portfolio_id: int = Form(...)):
             raise HTTPException(403, "you're not a member of that portfolio")
         ctx.session.active_portfolio_id = portfolio_id
         db.flush()
-        return _redirect(request.headers.get("referer") or "/")
+        # The PATH from the referer, never the whole header: it is client-supplied,
+    # and redirecting to an absolute URL somebody else chose is an open
+    # redirect. Back where they were, or home.
+    back = urllib.parse.urlparse(request.headers.get("referer") or "").path
+    return _redirect(back if back.startswith("/") else "/")
 
 
 @app.get("/admin/logs.json")
@@ -3156,7 +3180,11 @@ async def refresh(request: Request):
         _require_write(ctx)
     if not feed_status["running"]:
         asyncio.get_running_loop().run_in_executor(None, _run_feed)
-    return _redirect(request.headers.get("referer") or "/")
+    # The PATH from the referer, never the whole header: it is client-supplied,
+    # and redirecting to an absolute URL somebody else chose is an open
+    # redirect. Back where they were, or home.
+    back = urllib.parse.urlparse(request.headers.get("referer") or "").path
+    return _redirect(back if back.startswith("/") else "/")
 
 
 @app.get("/charts", response_class=HTMLResponse)

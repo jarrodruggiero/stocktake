@@ -57,7 +57,13 @@ def create(db: DbSession, *, portfolio_id: int, role: str, created_by: int) -> s
     """
     if role not in MEMBER_ROLES:
         raise InviteError("Unknown role.")
-    raw = secrets.token_urlsafe(32)
+    # 128 bits, which is 22 characters instead of 43 and takes the whole link
+    # from ~80 characters to ~59. There is nothing to gain by "shortening" it
+    # further with a lookup table: the token IS the identifier, so indirection
+    # would add a row and save nothing. What length buys here is guessing
+    # resistance, and 128 bits of it is already far past a link that lives for
+    # seven days and can be used once.
+    raw = secrets.token_urlsafe(16)
     db.add(PortfolioInvite(
         token_hash=_hash(raw),
         portfolio_id=portfolio_id,

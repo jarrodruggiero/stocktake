@@ -1159,6 +1159,7 @@ button.secondary:hover { border-color: var(--accent); color: var(--accent); filt
   border-radius: 8px; padding: 0.7rem 1rem; margin-bottom: 1.2rem; font-size: 0.9rem; }
 .banner span { flex: 1 1 20rem; }
 .banner button { margin: 0; flex: 0 0 auto; }
+.banner form { flex: 0 0 auto; margin: 0; }
 
 /* --------------------------------------------------------------------------
    Add-an-instrument dialog, and the instruments table it was rescued from.

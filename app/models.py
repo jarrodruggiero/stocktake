@@ -356,6 +356,12 @@ class UserSession(Base):
         DateTime(timezone=True), default=_utcnow
     )
     expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
+    # The recovery-codes banner, put away for THIS session. Deliberately not on
+    # the user: dismissing it should last until they sign in again, not
+    # forever — codes nobody has saved are codes nobody has.
+    codes_banner_hidden: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
     # Where this session was created. Captured once at login and never updated:
     # it answers "what is this session on the list?", not "where is it now".
     # The UA is truncated — it is only parsed into "Firefox on macOS" for

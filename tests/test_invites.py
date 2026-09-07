@@ -208,6 +208,18 @@ def test_the_token_is_not_stored(session_factory, owner_and_portfolio):
         assert len(row.token_hash) == 64
 
 
+def test_the_token_keeps_enough_entropy_to_be_unguessable(
+    session_factory, owner_and_portfolio
+):
+    """It was shortened to keep the link sendable. The floor matters: the URL
+    is the whole authorisation, and nothing rate-limits guesses at it."""
+    owner_id, portfolio_id = owner_and_portfolio
+    with session_factory() as db:
+        token = _invite(db, portfolio_id, owner_id)
+
+    assert len(token) >= 22          # >= 128 bits, base64url
+
+
 def test_the_list_an_owner_sees_keeps_the_used_and_drops_the_withdrawn(
     session_factory, owner_and_portfolio
 ):

@@ -214,3 +214,24 @@ def test_the_owners_list_shows_what_happened_to_each_one(owner, session_factory)
 
     page = owner.get("/members", headers=HTML).text
     assert ">Used<" in page and "Withdraw" not in page
+
+
+def test_the_banner_can_be_put_away_for_this_session_only(client, session_factory):
+    """"Not now" must not mean "never": an account with no saved codes is one
+    forgotten password from being unreachable, so a new session asks again."""
+    make_login(client, session_factory)
+    assert "no saved recovery codes" in client.get("/", headers=HTML).text
+
+    client.post("/profile/recovery/later", follow_redirects=False,
+                data={"_csrf": session_csrf(session_factory)})
+    assert "no saved recovery codes" not in client.get("/", headers=HTML).text
+
+    client.post("/logout", data={"_csrf": session_csrf(session_factory)},
+                follow_redirects=False)
+    # Sign in again through the form rather than `make_login`, which would try
+    # to create the account a second time. A NEW session is the whole point.
+    client.post("/login", follow_redirects=False, headers=HTML,
+                data={"email": "user@example.test", "password": PASSWORD,
+                      "_csrf": pre_auth_csrf(client)})
+
+    assert "no saved recovery codes" in client.get("/", headers=HTML).text
