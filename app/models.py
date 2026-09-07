@@ -457,6 +457,49 @@ class WebauthnCredential(Base):
     )
 
 
+class PortfolioInvite(Base):
+    """An offer of access to one portfolio, at one role, for one person.
+
+    It exists because membership previously required the account to exist
+    first: an owner picked a name from a list, so there was no way to bring in
+    somebody who had never signed in. That is also what OIDC provisioning needs
+    — the invite is the authorisation to have an account at all.
+
+    Single use, revocable, and stored HASHED. The URL is a credential for as
+    long as it is live: whoever holds it gets the role it names, so it is shown
+    once and a database copy cannot be replayed.
+    """
+
+    __tablename__ = "portfolio_invite"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), index=True)
+    portfolio_id: Mapped[int] = mapped_column(
+        ForeignKey("portfolio.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(20))
+    # Who is answerable for it. Kept after use, because "who let this person
+    # in" is the question an owner asks later.
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    # Spent and withdrawn are different states and both are worth keeping: one
+    # is a member who joined, the other is a link somebody thought better of.
+    used_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    used_by: Mapped[int | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL")
+    )
+    revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_portfolio_invite_token"),
+    )
+
+
 class WebauthnChallenge(Base):
     """One issued challenge, waiting for the browser to come back with it.
 
