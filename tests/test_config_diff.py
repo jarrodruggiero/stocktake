@@ -111,3 +111,44 @@ def test_a_date_compares_by_what_it_reads_as(config_file):
         {"price_feed": {"backfill_start": dt.date(2020, 1, 1)}})
 
     assert outstanding == {}
+
+
+# --------------------------------------------------------------------------- #
+# What is written has to be readable by the thing that reads it
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("value", ["off", "on", "no", "yes", "true", "false", "null"])
+def test_a_word_yaml_would_read_as_a_boolean_is_quoted(config_file, value):
+    """We WRITE with ruamel (YAML 1.2, where `off` is a string) and the app
+    READS through pydantic-settings, which uses PyYAML (YAML 1.1, where it is
+    `False`). Unquoted, choosing "off" in Admin → Settings produced a file the
+    application could not start from — a settings page able to stop the next
+    boot. Reported as a docs typo in issue #23; it was not one.
+    """
+    config_file.write_text("auth:\n  oidc:\n    enabled: true\n")
+    configfile.save({"auth.oidc.provisioning": value})
+
+    written = config_file.read_text()
+    assert f"provisioning: '{value}'" in written
+
+
+def test_the_written_file_survives_the_loader_that_reads_it(config_file):
+    """The round trip, rather than the quoting: what matters is that the file
+    the settings page writes is one the application can boot from."""
+    import yaml as pyyaml  # what pydantic-settings uses
+
+    config_file.write_text("auth:\n  oidc:\n    enabled: true\n")
+    configfile.save({"auth.oidc.provisioning": "off"})
+
+    reloaded = pyyaml.safe_load(config_file.read_text())
+
+    assert reloaded["auth"]["oidc"]["provisioning"] == "off"
+
+
+def test_an_ordinary_string_is_left_alone(config_file):
+    """Quoting everything would rewrite half the file on every save and lose
+    the shape somebody chose."""
+    config_file.write_text("timezone: UTC\n")
+    configfile.save({"timezone": "Australia/Melbourne"})
+
+    assert "timezone: Australia/Melbourne" in config_file.read_text()
