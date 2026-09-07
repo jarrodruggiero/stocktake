@@ -241,6 +241,7 @@ auth:
   #   enabled: false
   #   issuer: https://auth.example.com/application/o/stocktake/
   #   client_id: stocktake
+  #   client_auth: basic            # basic sends client_secret; none = public client
   #   client_secret: from-your-provider
   #   redirect_uri: https://stocktake.example.com/login/oidc/callback
   #   button_label: Sign in with Authentik

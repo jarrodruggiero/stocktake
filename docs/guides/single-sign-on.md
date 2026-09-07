@@ -20,6 +20,7 @@ auth:
     enabled: true
     issuer: https://auth.example.com/application/o/stocktake/
     client_id: stocktake
+    client_auth: basic
     client_secret: from-your-provider
     redirect_uri: https://stocktake.example.com/login/oidc/callback
     button_label: Sign in with Authentik
@@ -32,6 +33,30 @@ because a value read from a header is one the caller chose.
 
 The client secret is the one setting not editable on the settings page: a field
 that renders its own value puts a live credential on screen.
+
+## Public clients
+
+If your provider issued a **public** client — one with no secret — say so:
+
+```yaml
+auth:
+  oidc:
+    client_auth: none
+```
+
+Then `client_secret` is not needed and is ignored if it is still there, so you
+can move an existing confidential client across in two steps rather than one.
+Nothing else changes: Stocktake always sends PKCE, so the proof that the code
+is being redeemed by whoever asked for it is the same either way.
+
+Authentik, Keycloak and Pocket ID all offer public clients. Some deployments
+prefer them because there is then no shared secret at rest anywhere.
+
+**It has to be said, not guessed.** Stocktake will not decide you meant a
+public client because it cannot find a secret — a secret lost from the
+environment would then downgrade sign-in to an unauthenticated token request
+without anybody being told. `client_auth: basic` with no secret refuses to
+offer sign-in and says which setting is missing.
 
 ## Who may sign in
 
