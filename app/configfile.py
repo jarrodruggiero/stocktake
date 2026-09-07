@@ -408,8 +408,14 @@ def save(values: dict[str, Any]) -> None:
                 cursor[key] = {}
             cursor = cursor[key]
         # Dates round-trip as strings; ruamel would otherwise emit a bare date
-        # that reads back as a string on some loaders.
-        cursor[option.path[-1]] = value.isoformat() if isinstance(value, dt.date) else value
+        # that reads back as a string on some loaders. `_quoted` covers the
+        # other end of the same problem — see the note beside it.
+        if isinstance(value, dt.date):
+            cursor[option.path[-1]] = value.isoformat()
+        elif isinstance(value, list):
+            cursor[option.path[-1]] = [_quoted(item) for item in value]
+        else:
+            cursor[option.path[-1]] = _quoted(value)
 
     tmp = path.with_name(f".{path.name}.new")
     try:
@@ -495,6 +501,30 @@ def write_tree(values: dict[str, Any]) -> None:
         tmp.unlink(missing_ok=True)
 
 
+# Words YAML 1.1 reads as booleans or null. We WRITE with ruamel, which is
+# YAML 1.2 and treats them as plain strings; the app READS through
+# pydantic-settings, which uses PyYAML and does not. So writing `off` unquoted
+# produces a file this application cannot start from — a settings page able to
+# stop the next boot. Quoting on the way out is what makes the two agree.
+_AMBIGUOUS = frozenset({
+    "y", "n", "yes", "no", "on", "off", "true", "false",
+    "null", "none", "~",
+})
+
+
+def _quoted(value: Any) -> Any:
+    """A string that YAML 1.1 would misread, wrapped so it cannot be."""
+    if not isinstance(value, str):
+        return value
+    if value.strip().lower() in _AMBIGUOUS:
+        from ruamel.yaml.scalarstring import (  # noqa: PLC0415 - writer only
+            SingleQuotedScalarString,
+        )
+
+        return SingleQuotedScalarString(value)
+    return value
+
+
 def _merge(target: Any, values: dict[str, Any]) -> None:
     """Set the given keys, leaving every other line — and every comment — alone.
 
@@ -506,8 +536,10 @@ def _merge(target: Any, values: dict[str, Any]) -> None:
             if not isinstance(target.get(key), dict):
                 target[key] = {}
             _merge(target[key], value)
+        elif isinstance(value, list):
+            target[key] = [_quoted(item) for item in value]
         else:
-            target[key] = value
+            target[key] = _quoted(value)
 
 
 def render(values: dict[str, Any]) -> str:

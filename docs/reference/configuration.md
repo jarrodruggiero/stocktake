@@ -244,7 +244,7 @@ auth:
   #   client_secret: from-your-provider
   #   redirect_uri: https://stocktake.example.com/login/oidc/callback
   #   button_label: Sign in with Authentik
-  #   provisioning: off
+  #   provisioning: 'off'
   #   scopes: [openid, email, profile]
 
   # webauthn:
