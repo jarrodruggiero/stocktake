@@ -27,6 +27,7 @@ dependencies = [
     "pyotp>=2.9",      # TOTP second factor
     "qrcode>=7.4",     # TOTP enrolment QR, rendered locally as inline SVG
     "webauthn>=3.0.0", # passkeys: both ceremonies, and the signature checks
+    "pyjwt>=2.13.0",
 ]
 
 [project.urls]

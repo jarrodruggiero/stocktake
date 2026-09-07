@@ -38,6 +38,45 @@ class WebauthnSettings(BaseModel):
     origins: list[str] = []       # e.g. ["https://portfolio.example.com"]
 
 
+class OidcSettings(BaseModel):
+    """Sign-in delegated to an external identity provider — issue #17.
+
+    Off by default and inert when off: nothing here is read, and no request is
+    made, until somebody presses the button. Local accounts always remain a way
+    in, so an IdP that is down is an inconvenience rather than a lock-out.
+
+    `provisioning` is the whole of the "who may sign in" policy:
+
+    * `off`    — only accounts already linked to this provider. An unknown
+                 subject is refused, however happily the IdP authenticated it.
+    * `invite` — an unknown subject may create an account, but only when it
+                 arrives holding a valid invite. This is the middle setting:
+                 self-service without opening the door to every account in the
+                 directory.
+    * `open`   — anyone the IdP authenticates gets an account. Right for a
+                 household directory, and a real statement about who that is.
+
+    Matching is on `(issuer, subject)` and never on the email address. An IdP
+    that lets somebody set an unverified address would otherwise be a way to
+    take over an existing local account by claiming its email.
+    """
+
+    enabled: bool = False
+    issuer: str | None = None          # e.g. https://auth.example.com/application/o/stocktake/
+    client_id: str | None = None
+    client_secret: str | None = None
+    # Declared rather than derived from the request: it must match what the
+    # provider has registered exactly, and a value taken from the Host header
+    # would be one the caller chose. Editable, because getting it wrong is the
+    # commonest way to set this up and it must be correctable — issue #17.
+    redirect_uri: str | None = None
+    # What the button says. A household knows its provider by name, and "Sign
+    # in with OIDC" names a protocol rather than the thing they recognise.
+    button_label: str = "Sign in with your identity provider"
+    provisioning: str = "off"          # off | invite | open
+    scopes: list[str] = ["openid", "email", "profile"]
+
+
 class AuthSettings(BaseModel):
     session_ttl_days: int = 30   # sliding expiry
     # Two independent limits, and the absolute one cannot be extended by the
@@ -58,6 +97,7 @@ class AuthSettings(BaseModel):
     trusted_proxies: list[str] = []
     rate_limit: RateLimitSettings = RateLimitSettings()
     webauthn: WebauthnSettings = WebauthnSettings()
+    oidc: OidcSettings = OidcSettings()
 
     _empty_means_defaults = field_validator("rate_limit", mode="before")(
         lambda v: {} if v is None else v
