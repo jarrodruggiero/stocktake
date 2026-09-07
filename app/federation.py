@@ -87,8 +87,13 @@ def provider(settings: PortfolioSettings) -> oidc.Provider:
 # --------------------------------------------------------------------------- #
 
 def begin(db: DbSession, settings: PortfolioSettings,
-          invite: PortfolioInvite | None = None) -> tuple[str, str]:
-    """Where to send the browser, and the token that remembers this attempt."""
+          invite: PortfolioInvite | None = None,
+          link_to: User | None = None) -> tuple[str, str]:
+    """Where to send the browser, and the token that remembers this attempt.
+
+    `link_to` marks it as attaching a provider to an account that already
+    exists, rather than signing one in.
+    """
     if not configured(settings):
         raise FederationError(unavailable_reason(settings) or "Not available.")
     url, pending = oidc.begin(provider(settings))
@@ -99,6 +104,7 @@ def begin(db: DbSession, settings: PortfolioSettings,
         nonce=pending["nonce"],
         verifier=pending["verifier"],
         invite_id=invite.id if invite else None,
+        link_user_id=link_to.id if link_to else None,
         expires_at=_utcnow() + STATE_TTL,
     ))
     db.flush()

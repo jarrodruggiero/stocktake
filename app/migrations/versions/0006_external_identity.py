@@ -44,10 +44,12 @@ def upgrade() -> None:
         sa.Column('nonce', sa.String(length=64), nullable=False),
         sa.Column('verifier', sa.String(length=128), nullable=False),
         sa.Column('invite_id', sa.Integer(), nullable=True),
+        sa.Column('link_user_id', sa.Integer(), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
         sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(['invite_id'], ['portfolio_invite.id'],
                                 ondelete='SET NULL'),
+        sa.ForeignKeyConstraint(['link_user_id'], ['user.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('token_hash', name='uq_oidc_state_token'),
     )

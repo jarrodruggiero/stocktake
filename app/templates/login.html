@@ -27,6 +27,12 @@
     </label>
     <button type="submit">Log in</button>
   </form>
+  {% if oidc_usable %}
+  <p class="or">or</p>
+  <p class="passkeyline">
+    <a class="button" href="/login/oidc">{{ oidc_label }}</a>
+  </p>
+  {% endif %}
   {% if passkeys_usable %}
   {# An ALTERNATIVE to the form above, not a step after it: the ceremony
      verifies a biometric or PIN, so it already stands for both a password and

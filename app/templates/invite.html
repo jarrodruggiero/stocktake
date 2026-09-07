@@ -43,6 +43,12 @@
       <button type="submit" class="primary">Create account and join</button>
     </div>
   </form>
+  {% if oidc_usable %}
+  <p class="or">or</p>
+  <p class="passkeyline">
+    <a class="button" href="/login/oidc?invite={{ token }}">{{ oidc_label }}</a>
+  </p>
+  {% endif %}
   <p class="note">Already have an account? <a href="/login">Sign in</a>, then
   open this link again.</p>
   {% endif %}

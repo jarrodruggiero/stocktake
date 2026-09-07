@@ -11,6 +11,7 @@
 {% if saved == 'password' %}<p class="panel ok">Password changed. Other devices have been signed out.</p>{% endif %}
 {% if saved == 'appearance' %}<p class="panel ok">Appearance saved.</p>{% endif %}
 {% if saved == '2fa-off' %}<p class="panel ok">Two-factor authentication is off, and your recovery codes have been destroyed.</p>{% endif %}
+{% if saved == 'oidc' %}<p class="panel ok">Single sign-on updated.</p>{% endif %}
 {% if saved == 'session-revoked' %}<p class="panel ok">That session has been signed out.</p>{% endif %}
 {% if saved == 'sessions-revoked' %}<p class="panel ok">Signed out everywhere except here.</p>{% endif %}
 {% if error == 'password' %}<p class="panel error">That password isn't right.</p>
@@ -182,6 +183,17 @@
         <td><button type="button" class="secondary" data-dialog="passkeydialog">{%
             if passkeys %}Manage{% else %}Set up{% endif %}</button></td>
       </tr>
+      <tr>
+        <th scope="row">Single sign-on</th>
+        <td>{% if identities %}<span class="badge badge-on">On</span>
+            {% elif oidc_usable %}<span class="badge badge-off">Off</span>
+            {% else %}<span class="badge badge-off"
+               title="{{ oidc_reason }}">Unavailable</span>{% endif %}</td>
+        <td>{% if oidc_usable %}
+          <button type="button" class="secondary" data-dialog="ssodialog">
+            {% if identities %}Manage{% else %}Link{% endif %}</button>
+          {% endif %}</td>
+      </tr>
     </tbody>
   </table>
   </div>
@@ -258,6 +270,51 @@
 <dialog id="twofactordialog">
   <h2>Set up two-factor</h2>
   {% with in_dialog = True %}{% include "_twofactor_enrol.html" %}{% endwith %}
+</dialog>
+{% endif %}
+
+{% if oidc_usable %}
+<dialog id="ssodialog">
+  <h2>Single sign-on</h2>
+  {% if identities %}
+  <div class="tablewrap">
+  <table class="keys">
+    <thead><tr><th>Provider</th><th>Linked</th><th></th></tr></thead>
+    <tbody>
+      {% for i in identities %}
+      <tr>
+        <th scope="row">{{ i.issuer }}</th>
+        <td>{{ i.created.strftime('%d %b %Y') }}</td>
+        <td>
+          <form method="post" action="/profile/oidc/{{ i.id }}/unlink">
+            <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+            <button type="submit" class="linkish danger">Unlink</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  {%- set sso_tip %}
+    <p class="tipline">You will be sent to your provider to sign in, and
+    brought back here.</p>
+    <p class="tipline">Your password keeps working either way.</p>
+  {% endset -%}
+  <div class="optline">
+    <span>Sign in with your identity provider instead of a password.</span>
+    {%- with body = sso_tip, label = "About single sign-on" %}
+      {% include "_tip.html" %}{% endwith %}
+  </div>
+  <form method="post" action="/profile/oidc/link">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <div class="commitbar">
+      <button type="submit" class="primary">Link my provider account</button>
+      <button type="button" class="secondary" data-close-dialog>Cancel</button>
+    </div>
+  </form>
+  {% endif %}
 </dialog>
 {% endif %}
 

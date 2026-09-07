@@ -522,6 +522,13 @@ class OidcState(Base):
     invite_id: Mapped[int | None] = mapped_column(
         ForeignKey("portfolio_invite.id", ondelete="SET NULL")
     )
+    # Set when the attempt started from the profile page: the identity that
+    # comes back is attached to THIS account rather than signing one in. Named
+    # here rather than read off whoever happens to be signed in at the
+    # callback, so a session that changed mid-flow cannot redirect the link.
+    link_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE")
+    )
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow
     )
