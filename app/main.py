@@ -57,6 +57,7 @@ from . import (
     features,
     fields,
     fyreport,
+    invites,
     lifecycle,
     logbuffer,
     maintenance,
@@ -160,7 +161,10 @@ PUBLIC_PATHS = {"/healthz", "/readyz", "/login", "/login/code", "/login/recover"
 # itself. **Both failure modes are silent publication of an endpoint:**
 #   * a route under /api/ that does not open with `auth.api_session(...)`
 #   * a route under /setup/ that does not open with `_wizard_step()`
-PUBLIC_PREFIXES = ("/static/", "/api/", "/setup/")
+# `/invite/` is public because the person opening one has no account yet. The
+# token in the URL is the only authorisation, and every route under it checks
+# it — decisions.md #116.
+PUBLIC_PREFIXES = ("/static/", "/api/", "/setup/", "/invite/")
 # The subset that must answer with NO database at all. Everything else — /login
 # included — needs one to say anything useful, and gets sent to the wizard
 # instead of a 500 from its first query.
@@ -2192,6 +2196,19 @@ def _require_write(ctx):
         raise HTTPException(403, "You have read-only access to this portfolio")
 
 
+def _invite_url(request: Request, token: str) -> str:
+    """The full link to send.
+
+    Built from the request, because the external URL is not stored anywhere —
+    the wizard only uses it to decide `cookie_secure`. Behind a proxy that
+    means the link is right only when `trusted_proxies` is set, which is the
+    same condition every other absolute URL here depends on.
+    """
+    if not token:
+        return ""
+    return f"{str(request.base_url).rstrip('/')}/invite/{token}"
+
+
 def _require_owner(ctx):
     """Members, keys and portfolio settings."""
     if ctx is None or not ctx.is_owner:
@@ -2554,6 +2571,15 @@ def members_page(request: Request, error: str = ""):
                 "keys": keys,
                 "roles": MEMBER_ROLES,
                    "role_blurbs": ROLE_BLURBS,
+                "invitations": [
+                    {"id": i.id, "role": i.role, "state": invites.state(i),
+                     "created": ensure_utc(i.created_at)}
+                    for i in invites.outstanding(db, ctx.active_portfolio_id)
+                ],
+                # Shown once, straight after issuing: it is a credential, and
+                # the database keeps only its hash.
+                "new_invite": _invite_url(request,
+                                          request.query_params.get("invite", "")),
                 "error": error,
                 "new_key": request.query_params.get("key", ""),
             },
@@ -2584,6 +2610,131 @@ async def members_add(request: Request, user_id: int = Form(...), role: str = Fo
         )
         db.flush()
         return _redirect("/members")
+
+
+@app.post("/members/invite")
+async def members_invite(request: Request, role: str = Form("member")):
+    """Issue a link. Shown once, in the redirect, because it is a credential."""
+    with scoped(request) as (ctx, db):
+        _require_owner(ctx)
+        await auth.verify_csrf(request, db)
+        try:
+            token = invites.create(db, portfolio_id=ctx.active_portfolio_id,
+                                   role=role, created_by=ctx.user.id)
+        except invites.InviteError as exc:
+            return _redirect("/members?error=" + quote_plus(str(exc)))
+        log.info("invite issued for portfolio %s by user %s",
+                 ctx.active_portfolio_id, ctx.user.id)
+    return _redirect("/members?invite=" + quote_plus(token))
+
+
+@app.post("/members/invite/{invite_id}/revoke")
+async def members_invite_revoke(request: Request, invite_id: int):
+    with scoped(request) as (ctx, db):
+        _require_owner(ctx)
+        await auth.verify_csrf(request, db)
+        invites.revoke(db, invite_id=invite_id,
+                       portfolio_id=ctx.active_portfolio_id)
+    return _redirect("/members")
+
+
+# --------------------------------------------------------------------------- #
+# Accepting an invitation. Public, because the whole point is somebody who has
+# no account yet — the token in the URL is the only authorisation, and it is
+# checked on every one of these.
+# --------------------------------------------------------------------------- #
+
+def _invite_page(request: Request, token: str, *, error: str = "",
+                 ctx=None) -> HTMLResponse:
+    with anon() as db:
+        try:
+            invite = invites.lookup(db, token)
+        except invites.InviteError as exc:
+            return templates.TemplateResponse(
+                request, "invite.html",
+                {"auth": None, "csrf": auth.ensure_pre_auth_csrf(request),
+                 "refused": str(exc), "invite": None, "token": token},
+                status_code=410,
+            )
+        portfolio = db.get(Portfolio, invite.portfolio_id)
+        detail = {"portfolio": portfolio.name if portfolio else "a portfolio",
+                  "role": invite.role}
+    csrf = ctx.session.csrf_token if ctx else auth.ensure_pre_auth_csrf(request)
+    resp = templates.TemplateResponse(
+        request, "invite.html",
+        {"auth": ctx, "csrf": csrf, "refused": None, "invite": detail,
+         "token": token, "error": error or None},
+    )
+    if ctx is None:
+        _set_pre_auth_csrf(resp, csrf)
+    return resp
+
+
+@app.get("/invite/{token}", response_class=HTMLResponse)
+def invite_page(request: Request, token: str):
+    with anon() as db:
+        ctx = auth.load_auth(request, db)
+    return _invite_page(request, token, ctx=ctx)
+
+
+@app.post("/invite/{token}/accept")
+async def invite_accept(request: Request, token: str):
+    """Join with the account already signed in."""
+    with scoped(request) as (ctx, db):
+        await auth.verify_csrf(request, db)
+        try:
+            invite = invites.accept(db, token, ctx.user)
+        except invites.InviteError as exc:
+            return _invite_page(request, token, error=str(exc), ctx=ctx)
+        ctx.session.active_portfolio_id = invite.portfolio_id
+        db.flush()
+        log.info("invite accepted by existing user %s", ctx.user.id)
+    return _redirect("/")
+
+
+@app.post("/invite/{token}/signup")
+async def invite_signup(
+    request: Request,
+    token: str,
+    name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+):
+    """Create an account and join, in one step.
+
+    The invite is the whole of the authorisation: nobody may sign up here
+    without one, which is what stops a public instance growing accounts.
+    """
+    await auth.verify_pre_auth_csrf(request)
+    problem = auth.password_problem(password) or auth.email_problem(email)
+    if problem:
+        return _invite_page(request, token, error=problem)
+    with anon() as db:
+        try:
+            invites.lookup(db, token)
+        except invites.InviteError as exc:
+            return _invite_page(request, token, error=str(exc))
+        email_l = email.strip().lower()
+        if db.scalar(select(User).where(User.email == email_l)) is not None:
+            return _invite_page(request, token, error=(
+                "That email already has an account. Sign in, then open this "
+                "link again."))
+        user = User(email=email_l, name=name.strip() or email_l,
+                    password_hash=auth.hash_password(password))
+        db.add(user)
+        db.flush()
+        # Issued but NOT shown: the banner asks them to save a set of their own
+        # on first sign-in, exactly as for an admin-created account.
+        twofactor.ensure_recovery_codes(db, user)
+        invite = invites.accept(db, token, user)
+        raw = auth.create_session(db, user, settings,
+                                  active_portfolio_id=invite.portfolio_id,
+                                  ip=auth.client_ip(request),
+                                  user_agent=request.headers.get("user-agent"))
+        log.info("invite accepted by new user %s", user.id)
+    resp = _redirect("/")
+    _set_session_cookie(resp, raw)
+    return resp
 
 
 @app.post("/members/{member_id}/role")
