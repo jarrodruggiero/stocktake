@@ -877,3 +877,13 @@ The asymmetry is deliberate: `none` with a secret still in the file **ignores
 it** rather than refusing. That is what moving a confidential client to a
 public one looks like halfway through, and refusing would strand a deployment
 between two working states.
+
+**122. `appkit/` names no application configuration key.** Its modules are
+written to be lifted into applications that have not shipped yet, so an error
+telling somebody to set `auth.oidc.client_secret` is wrong the moment it is
+used by an app that calls the setting something else — and wrong in the way
+nothing catches, because the sentence still reads fine. The protocol layer
+names the *condition*; the caller names the settings that fix it, because only
+the caller knows what they are called. Raised by review on #25, where the same
+misconfiguration had two messages that disagreed about how many ways out there
+were.

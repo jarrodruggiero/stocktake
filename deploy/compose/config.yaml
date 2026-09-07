@@ -116,6 +116,15 @@ auth:
   # expiry out again.
   # session_ttl_days: 30
 
+  # Two independent limits the sliding renewal cannot extend. Idle is how long
+  # a session survives with no requests; absolute is the cap however active it
+  # is, and it is what a stolen cookie eventually runs into.
+  # session_idle_minutes: 60
+  # session_absolute_days: 7
+
+  # How long before the idle cutoff the browser warns and blurs the figures.
+  # idle_warning_seconds: 120
+
   # Send the session cookie only over HTTPS. Turn this ON once the application
   # is behind TLS. Leave it off on plain HTTP or nobody can sign in.
   # cookie_secure: false
@@ -167,6 +176,48 @@ auth:
   #   origins:
   #     - https://stocktake.example.com
 
+  # ── Single sign-on (OIDC) ──────────────────────────────────────────────────
+  # Hand sign-in to an identity provider you already run. Off by default, and
+  # inert when off: nothing is requested of anybody until somebody presses the
+  # button. Local passwords keep working, so a provider that is down is an
+  # inconvenience rather than a lock-out.
+  #
+  # provisioning decides who may sign in:
+  #   'off'    — only accounts already linked to this provider
+  #   'invite' — those, plus anyone holding a live invitation link
+  #   'open'   — anyone your provider authenticates
+  # Quoted because YAML reads a bare off as false.
+  #
+  # Accounts match on the provider's sub claim and never on the email address:
+  # an address is something a directory can be told, so matching on it would be
+  # a way to sign in as somebody else.
+  #
+  # redirect_uri must match what the provider has registered, exactly. It is
+  # declared here rather than read from the request, for the same reason as
+  # rp_id above.
+  #
+  # client_auth is basic (send client_secret) or none (a public client, with
+  # PKCE alone). It is stated rather than inferred from a missing secret, so a
+  # secret dropped from the environment refuses rather than quietly going
+  # anonymous.
+  # oidc:
+  #   enabled: false
+  #   issuer: https://auth.example.com/application/o/stocktake/
+  #   client_id: stocktake
+  #   client_auth: basic
+  #   client_secret: from-your-provider
+  #   redirect_uri: https://stocktake.example.com/login/oidc/callback
+  #   button_label: Sign in with your identity provider
+  #   provisioning: 'off'
+  #   scopes: [openid, email, profile]
+
+# ── Metrics ─────────────────────────────────────────────────────────────────
+# A Prometheus endpoint at /metrics, off by default. It publishes machine
+# health only — request counts, feed freshness, session numbers. No holdings,
+# no values, no tickers.
+# metrics:
+#   enabled: false
+
 # ── Housekeeping ────────────────────────────────────────────────────────────
 # A daily sweep, on its own schedule rather than riding along with the price
 # feed — turning the feed off should not silently stop expiring sessions.
@@ -200,6 +251,12 @@ imports:
   # a few hundred kilobytes. This bounds what the application reads into
   # memory; limiting what a client can SEND is a job for the proxy in front.
   # max_upload_mb: 10
+
+  # Where saved broker and statement layouts are kept, and where the visual
+  # mapper writes its working files. Both are server paths rather than
+  # preferences; change them only if those directories are not writable.
+  # templates_dir: /data/formats
+  # visual_dir: /scratch/visual
   # Reading statements that arrive as SCANS — a photograph of a page wrapped in
   # a PDF, with no text in it. On by default; where the tesseract program is
   # missing the app says so per upload and carries on.

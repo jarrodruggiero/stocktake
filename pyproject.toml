@@ -81,7 +81,11 @@ select = ["E4", "E7", "E9", "F", "I"]
 known-first-party = ["app", "appkit", "factories", "fixture_portfolio", "test_routes"]
 
 [tool.coverage.run]
-source = ["app"]
+# `appkit` as well as `app`: the OIDC protocol lives in appkit/oidc.py, and
+# measuring only `app` reported 92.85% while the file doing the verifying
+# contributed nothing to it. Raised on #25 — two numbers that together read as
+# more cover than they were.
+source = ["app", "appkit"]
 branch = true
 
 [tool.coverage.report]

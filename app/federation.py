@@ -72,7 +72,11 @@ def unavailable_reason(settings: PortfolioSettings) -> str | None:
     if not conf.issuer or not conf.client_id:
         return "Set the provider URL and client ID in Admin → Settings."
     if not conf.client_secret and not _is_public(conf):
-        return "Set auth.oidc.client_secret in your configuration file."
+        # Both ways out: a provider that issues public clients has no secret
+        # to fetch, and `client_auth` is the setting they would have no reason
+        # to have found yet — raised by review on #25.
+        return ("Set auth.oidc.client_secret in your configuration file, or "
+                "auth.oidc.client_auth to 'none' for a public client.")
     if not conf.redirect_uri:
         return "Set the redirect URL in Admin → Settings."
     return None

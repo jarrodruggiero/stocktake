@@ -324,6 +324,29 @@ def test_every_setting_appears_in_the_configuration_reference():
     assert not missing, f"undocumented settings: {missing}"
 
 
+def test_every_setting_appears_in_the_shipped_config_file():
+    """`config.yaml` makes the same promise as the reference and was not
+    checked against it.
+
+    "Every option the application understands is listed here" was untrue for
+    the whole `auth.oidc` block — eight settings, none of them present — and
+    nothing failed, because only the reference doc was guarded. A promise like
+    that is either checked or it is decoration; this is the second copy of it.
+    """
+    from pathlib import Path
+
+    from app.settings import PortfolioSettings
+
+    shipped = Path(__file__).resolve().parent.parent / "config.yaml"
+    text = shipped.read_text()
+    missing = [k for k in _setting_keys(PortfolioSettings)
+               if k.split(".")[-1] not in text]
+
+    assert not missing, (
+        f"settings absent from config.yaml, which claims to list them all: "
+        f"{missing}")
+
+
 def test_the_documented_routes_exist():
     """Docs name URLs. A renamed route leaves them pointing at a 404 — which
     happened to `/instruments`, `/plan` and `/dca` when they were renamed."""
