@@ -188,11 +188,12 @@ def _basic_auth(provider: Provider) -> tuple[str, str] | None:
     if provider.client_auth == "none":
         return None
     if not provider.client_secret:
+        # Names the condition, not the settings that fix it: this module is
+        # lifted into applications where those keys do not exist. The caller
+        # knows what its own configuration is called — decisions.md #122.
         raise OidcError(
-            "This client is set to authenticate with a secret but none is "
-            "configured. Set auth.oidc.client_secret, or set "
-            "auth.oidc.client_auth to 'none' if the provider issued a public "
-            "client.")
+            "This client is configured to authenticate with a secret and has "
+            "none. Either give it one, or configure it as a public client.")
     return provider.client_id, provider.client_secret
 
 

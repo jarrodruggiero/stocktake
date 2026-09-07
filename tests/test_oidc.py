@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from pathlib import Path
 
 import jwt
 import pytest
@@ -195,15 +196,39 @@ def test_an_unrecognised_client_auth_still_authenticates(provider, idp):
 
 
 def test_a_confidential_client_with_no_secret_refuses_before_asking(provider, idp):
-    """Refuse rather than send `client_id:None` and let the provider explain
-    it. The message has to name the two ways out, because both are valid."""
+    """Refuse rather than send `client_id:None` and let the provider explain it.
+
+    The message names the CONDITION and both directions out of it, but not the
+    settings that fix them — this module is lifted into applications where
+    those keys do not exist, so naming them is the caller's job.
+    decisions.md #122.
+    """
     provider.client_secret = None
     _, pending = oidc.begin(provider)
 
-    with pytest.raises(oidc.OidcError, match="client_auth"):
+    with pytest.raises(oidc.OidcError, match="public client"):
         oidc.complete(provider, code="c", pending=pending)
 
     assert idp.token_requests == [], "the token endpoint was asked anyway"
+
+
+def test_this_module_names_no_application_configuration_keys():
+    """It is meant to be lifted into applications that have not shipped yet.
+
+    A message telling somebody to set `auth.oidc.client_secret` is wrong the
+    moment the module is used by an app that calls it something else — and it
+    is the sort of wrong nothing fails on, because the sentence still reads
+    fine. decisions.md #122.
+    """
+    source = Path(oidc.__file__).read_text()
+
+    leaked = [key for key in ("auth.oidc", "auth.webauthn", "price_feed",
+                              "Admin → Settings", "config.yaml")
+              if key in source]
+
+    assert not leaked, (
+        f"appkit/oidc.py names this application's configuration: {leaked}. "
+        "Describe the condition and leave the key names to the caller.")
 
 
 def test_the_verifier_is_sent_when_the_code_is_redeemed(provider, idp):
