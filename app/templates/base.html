@@ -103,17 +103,25 @@
     {% endif %}
   </header>
   <main>
-    {# Codes nobody has saved are codes nobody has. Every account upgrading to
-       this version is in exactly that state, and so is anyone an administrator
-       created — so this is a banner on every page rather than a line on the
-       account page they have no reason to visit. #}
-    {% if auth and not auth.user.recovery_codes_seen_at %}
-    <form class="banner" method="post" action="/profile/recovery">
-      <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    {# Codes nobody has saved are codes nobody has, so this is a banner rather
+       than a line on a page they have no reason to visit. Dismissable, but
+       only for THIS session: it returns at the next sign-in, because the
+       account is still one forgotten password away from being unreachable. #}
+    {% if auth and not auth.user.recovery_codes_seen_at
+          and not auth.session.codes_banner_hidden %}
+    <div class="banner">
       <span><strong>You have no saved recovery codes.</strong> They are how you
         get back in if you forget your password or lose your authenticator.</span>
-      <button type="submit">Generate them now</button>
-    </form>
+      <form method="post" action="/profile/recovery">
+        <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+        <button type="submit">Generate them now</button>
+      </form>
+      <form method="post" action="/profile/recovery/later">
+        <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+        <button type="submit" class="secondary" aria-label="Dismiss until next sign-in">
+          Not now</button>
+      </form>
+    </div>
     {% endif %}
     {% block content %}{% endblock %}
   </main>

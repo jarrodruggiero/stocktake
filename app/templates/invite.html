@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Invitation — Stocktake{% endblock %}
+{% block content %}
+<div class="authcard">
+  <h1 class="authbrand">
+    {% include "_brand.html" %}
+    <span class="visually-hidden">{{ app_name }}</span>
+  </h1>
+
+  {% if refused %}
+  <p class="panel error">{{ refused }}</p>
+  <p class="note"><a href="/login">Go to sign in</a></p>
+
+  {% else %}
+  <p class="wizintro">You've been invited to <strong>{{ invite.portfolio }}</strong>
+  as a {{ invite.role }}.</p>
+  {% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+
+  {% if auth %}
+  <form class="panel" method="post" action="/invite/{{ token }}/accept">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <p class="note">Signed in as {{ auth.user.email }}.</p>
+    <div class="commitbar">
+      <button type="submit" class="primary">Join {{ invite.portfolio }}</button>
+    </div>
+  </form>
+
+  {% else %}
+  <form class="panel" method="post" action="/invite/{{ token }}/signup"
+        autocomplete="on">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <label>Name
+      <input name="name" required autofocus autocomplete="name">
+    </label>
+    <label>Email
+      <input type="email" name="email" required autocomplete="username">
+    </label>
+    <label>Password <span class="sub">at least 10 characters</span>
+      <input type="password" name="password" required minlength="10"
+             autocomplete="new-password">
+    </label>
+    <div class="commitbar">
+      <button type="submit" class="primary">Create account and join</button>
+    </div>
+  </form>
+  <p class="note">Already have an account? <a href="/login">Sign in</a>, then
+  open this link again.</p>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

@@ -97,6 +97,60 @@ all of them.</p>
 
 {% if auth.is_owner %}
 <section class="narrow">
+  <h2>Invite someone</h2>
+  {% if new_invite %}
+  <p class="panel ok"><strong>Send them this link.</strong> It is shown once.</p>
+  <p class="panel invitelink">{{ new_invite }}</p>
+  {% endif %}
+  {%- set invite_tip %}
+    <p class="tipline">Anyone opening the link gets the role you choose, so
+    treat it like a password.</p>
+    <p class="tipline">It works once, expires in 7 days, and can be withdrawn
+    below. They can sign in with an existing account or make a new one.</p>
+  {% endset -%}
+  <form class="panel" method="post" action="/members/invite">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <div class="optline">
+      <label>Role
+        <select name="role">
+          {% for r in roles %}<option value="{{ r }}"
+            {% if r == 'member' %}selected{% endif %}>{{ role_labels[r] }}</option>{% endfor %}
+        </select>
+      </label>
+      {%- with body = invite_tip, label = "About invitation links" %}
+        {% include "_tip.html" %}{% endwith %}
+    </div>
+    <div class="commitbar">
+      <button type="submit" class="primary">Create invitation link</button>
+    </div>
+  </form>
+
+  {% if invitations %}
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Role</th><th>Created</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for i in invitations %}
+      <tr>
+        <th scope="row">{{ role_labels[i.role] }}</th>
+        <td>{{ i.created.strftime('%d %b %Y') }}</td>
+        <td>{% if i.state == 'used' %}<span class="badge badge-off">Used</span>
+            {% else %}<span class="badge badge-on">Live</span>{% endif %}</td>
+        <td>{% if i.state != 'used' %}
+          <form method="post" action="/members/invite/{{ i.id }}/revoke">
+            <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+            <button type="submit" class="linkish danger">Withdraw</button>
+          </form>
+          {% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="narrow">
   <h2>Add someone</h2>
   {% if candidates %}
   <form class="panel" method="post" action="/members/add">

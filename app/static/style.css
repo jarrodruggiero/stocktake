@@ -742,6 +742,12 @@ button.primary { background: var(--accent-grad); border-color: transparent; colo
 /* These fields sit in a settings grid rather than a `.panel`, so they were
    getting the browser's default white box on a dark page. The look is the
    panel's, without inheriting its layout. */
+/* A URL, not a column of codes: `.codes` holds short lines and would send a
+   link this long into a horizontal scroll. */
+.invitelink { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere; margin: 0 0 var(--sp-3); }
+.tablewrap select, .tablewrap input:not([type="checkbox"]),
 .settingfield input, .settingfield select, .settingfield textarea {
   padding: 0.45rem 0.6rem; background: var(--sunken); color: var(--text);
   border: 1px solid var(--line); border-radius: var(--radius-xs);
@@ -1153,6 +1159,7 @@ button.secondary:hover { border-color: var(--accent); color: var(--accent); filt
   border-radius: 8px; padding: 0.7rem 1rem; margin-bottom: 1.2rem; font-size: 0.9rem; }
 .banner span { flex: 1 1 20rem; }
 .banner button { margin: 0; flex: 0 0 auto; }
+.banner form { flex: 0 0 auto; margin: 0; }
 
 /* --------------------------------------------------------------------------
    Add-an-instrument dialog, and the instruments table it was rescued from.

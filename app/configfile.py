@@ -109,6 +109,26 @@ OPTIONS: tuple[Option, ...] = (
            "The full URLs passkeys may be used from. One per line.",
            optional=True, restart=True),
 
+    Option(("auth", "oidc", "enabled"), "Single sign-on", "bool",
+           "Whether sign-in can be handed to an external identity provider.",
+           restart=True),
+    Option(("auth", "oidc", "issuer"), "Provider URL", "text",
+           "The provider's issuer URL. Its configuration is read from here.",
+           optional=True, restart=True),
+    Option(("auth", "oidc", "client_id"), "Client ID", "text",
+           "The client ID the provider issued for Stocktake.",
+           optional=True, restart=True),
+    Option(("auth", "oidc", "redirect_uri"), "Redirect URL", "text",
+           "Where the provider sends people back to. Must match what it has "
+           "registered.", optional=True, restart=True),
+    Option(("auth", "oidc", "button_label"), "Sign-in button", "text",
+           "What the button on the login page says.", optional=True),
+    Option(("auth", "oidc", "provisioning"), "Who may sign in", "choice",
+           "Linked accounts only, holders of an invite, or anyone the provider "
+           "authenticates.", choices=("off", "invite", "open"), restart=True),
+    Option(("auth", "oidc", "scopes"), "Scopes", "list",
+           "Requested at sign-in. One per line.", restart=True),
+
     Option(("price_feed", "quotes_enabled"), "Live quotes", "bool",
            "Whether prices refresh while a market is open, as well as at the "
            "daily close.", restart=True),
