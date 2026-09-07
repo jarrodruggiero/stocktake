@@ -342,6 +342,52 @@ def coerce(option: Option, raw: str) -> Any:
     return raw
 
 
+def not_yet_provided(values: dict[str, Any]) -> dict[str, Any]:
+    """The subset of `values` this installation does not already supply.
+
+    The wizard applies its choices to the RUNNING settings before the summary
+    is drawn, so comparing against those would say everything matches. This
+    compares against what survives a restart instead: the file on disk, and any
+    environment variable for the same path — an env var wins at load, so a
+    value it provides needs nothing written down.
+
+    Without this, somebody whose config.yaml already set their timezone and
+    turned the feed on was told to go and set both — issue #18.
+    """
+    try:
+        on_disk = load()
+    except OSError:
+        # Unreadable is not "absent": telling somebody to add settings when we
+        # simply could not look would be worse than saying nothing.
+        return dict(values)
+
+    def walk(wanted: dict, existing: Any, path: tuple[str, ...]) -> dict:
+        out: dict[str, Any] = {}
+        for key, value in wanted.items():
+            here = path + (key,)
+            current = existing.get(key) if isinstance(existing, dict) else None
+            if isinstance(value, dict):
+                nested = walk(value, current, here)
+                if nested:
+                    out[key] = nested
+            elif not _already(here, value, current):
+                out[key] = value
+        return out
+
+    return walk(values, on_disk, ())
+
+
+def _already(path: tuple[str, ...], wanted: Any, current: Any) -> bool:
+    """Whether this installation already provides this value after a restart."""
+    if f"APP_{'__'.join(p.upper() for p in path)}" in os.environ:
+        return True
+    if current is None:
+        return False
+    # Compared as text: YAML gives back `True` where the form gave "true", and
+    # a date where the draft holds one. Both mean the same to a reader.
+    return str(current).strip().lower() == str(wanted).strip().lower()
+
+
 def save(values: dict[str, Any]) -> None:
     """Write the given `{option name: typed value}` back to config.yaml.
 

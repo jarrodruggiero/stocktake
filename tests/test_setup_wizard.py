@@ -1833,3 +1833,58 @@ def test_going_back_to_the_codes_shows_the_same_ones(client, session_factory):
     assert re.findall(r"[A-Z0-9]{4}-[A-Z0-9]{4}", again) == first
     with session_factory() as db:
         assert {c.code_hash for c in db.query(RecoveryCode).all()} == stored
+
+
+def test_a_read_only_config_that_already_matches_asks_for_nothing(
+    client, tmp_path, monkeypatch
+):
+    """Issue #18. Somebody who wrote their own config.yaml reached the last
+    step and was told to set the timezone and turn the feed on — both of which
+    their file already had.
+
+    The wizard applies its choices to the RUNNING settings before drawing this
+    page, so a comparison against those says everything matches. It has to be
+    against the file.
+    """
+    config = tmp_path / "config.yaml"
+    config.write_text("timezone: Australia/Melbourne\nprice_feed:\n  enabled: true\n")
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(config))
+    monkeypatch.setattr(configfile, "creatable",
+                        lambda: configfile.Writability(False, "It is read-only."))
+
+    _through_the_account(client)
+    client.post("/setup/portfolio", headers=HTML, follow_redirects=False,
+                data={"_csrf": _token(client, "/setup/portfolio"), "name": "Mine",
+                      "timezone": "Australia/Melbourne", "price_feed": "on"})
+    client.post("/setup/features", headers=HTML, follow_redirects=False,
+                data={"_csrf": _token(client, "/setup/features"),
+                      "feature": "dca_schedule"})
+
+    page = client.get("/setup/finish", headers=HTML).text
+
+    assert "already has everything you chose" in page
+    assert "Add them to" not in page
+
+
+def test_a_read_only_config_asks_only_for_what_is_missing(
+    client, tmp_path, monkeypatch
+):
+    config = tmp_path / "config.yaml"
+    config.write_text("timezone: Australia/Melbourne\n")
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(config))
+    monkeypatch.setattr(configfile, "creatable",
+                        lambda: configfile.Writability(False, "It is read-only."))
+
+    _through_the_account(client)
+    client.post("/setup/portfolio", headers=HTML, follow_redirects=False,
+                data={"_csrf": _token(client, "/setup/portfolio"), "name": "Mine",
+                      "timezone": "Australia/Melbourne", "price_feed": "on"})
+    client.post("/setup/features", headers=HTML, follow_redirects=False,
+                data={"_csrf": _token(client, "/setup/features"),
+                      "feature": "dca_schedule"})
+
+    page = client.get("/setup/finish", headers=HTML).text
+
+    assert "price_feed" in page
+    # The one it already has is not repeated back at them.
+    assert "Australia/Melbourne" not in page.split("<pre")[1]

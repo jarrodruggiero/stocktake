@@ -13,14 +13,20 @@
   <p class="note">Everything not listed keeps its default.</p>
   <pre class="yaml"><code>{{ yaml }}</code></pre>
 </details>
-{% else %}
+{% elif outstanding_yaml %}
 {# Not collapsed when it cannot be saved: here the YAML is something somebody
-   has to ACT on, not a confirmation of something already done. #}
+   has to ACT on, not a confirmation of something already done. Only what the
+   file does not already provide — issue #18. #}
 <section class="panel warn">
-  <p><strong>Everything you chose is applied to the running application, but
-  will be lost on the next restart.</strong> {{ config_writable.reason }}</p>
-  <p>Put this into wherever that file is defined:</p>
-  <pre class="yaml"><code>{{ yaml }}</code></pre>
+  <p><strong>These choices will be lost on the next restart.</strong>
+  {{ config_writable.reason }}</p>
+  <p>Add them to <code>{{ config_path }}</code>:</p>
+  <pre class="yaml"><code>{{ outstanding_yaml }}</code></pre>
+</section>
+{% else %}
+<section class="panel ok">
+  <p><strong>Your configuration file already has everything you chose.</strong>
+  Nothing to change.</p>
 </section>
 {% endif %}
 

@@ -1298,10 +1298,14 @@ def setup_finish(request: Request, error: str = ""):
     current = setupwizard.draft()
     values = setupwizard.config_values(current)
     writable = configfile.creatable()
+    # Only what the file does not already provide. Somebody who wrote their own
+    # config.yaml was being told to set values it already had — issue #18.
+    outstanding = configfile.not_yet_provided(values)
     return _wizard_page(request, "finish", {
         "error": error,
         "values": values,
         "yaml": configfile.render(values),
+        "outstanding_yaml": configfile.render(outstanding) if outstanding else "",
         "config_path": str(configfile.config_path()),
         "config_writable": writable,
         "restart_for": setupwizard.needs_restart(current),
