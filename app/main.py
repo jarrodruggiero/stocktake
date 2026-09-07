@@ -41,6 +41,7 @@ from appkit import (
     create_app,
     ensure_utc,
     load_config,
+    oidc,
 )
 from appkit.config import DatabaseSettings
 
@@ -56,6 +57,7 @@ from . import (
     configfile,
     exports,
     features,
+    federation,
     fields,
     fyreport,
     invites,
@@ -97,6 +99,7 @@ from .models import (
     InvestmentPlan,
     PlannedPurchase,
     Portfolio,
+    PortfolioInvite,
     PortfolioMember,
     Price,
     SavedChart,
@@ -157,6 +160,9 @@ PUBLIC_PATHS = {"/healthz", "/readyz", "/login", "/login/code", "/login/recover"
                 # so both halves of the ceremony are public. Each verifies the
                 # pre-auth CSRF token, and the second only trusts a signature.
                 "/login/passkey", "/login/passkey/options",
+                # The provider redirects the browser back here before there is
+                # a session; `state` is what makes the callback trustworthy.
+                "/login/oidc", "/login/oidc/callback",
                 "/setup", "/session/status", "/metrics"}
 # Two prefixes the login middleware waves through, each of which guards
 # itself. **Both failure modes are silent publication of an endpoint:**
@@ -576,6 +582,25 @@ def _set_pre_auth_csrf(resp: Response, token: str) -> None:
         samesite="lax",
         secure=settings.auth.cookie_secure,
         path="/",
+    )
+
+
+OIDC_STATE_COOKIE = "pf_oidc"
+
+
+def _set_oidc_cookie(resp: Response, token: str) -> None:
+    """The token naming this sign-in attempt, for the callback to find.
+
+    HttpOnly and SameSite=Lax: the provider redirects the browser BACK here, a
+    top-level navigation, which Lax allows — Strict would drop the cookie on
+    exactly the request that needs it, and the sign-in would fail with nothing
+    on screen to explain why.
+    """
+    resp.set_cookie(
+        OIDC_STATE_COOKIE, token,
+        max_age=int(federation.STATE_TTL.total_seconds()),
+        httponly=True, samesite="lax",
+        secure=settings.auth.cookie_secure, path="/",
     )
 
 
@@ -1420,8 +1445,19 @@ def _passkeys_usable(request: Request) -> bool:
     return passkeys.configured(settings) and auth.is_secure_request(request, settings)
 
 
+def _oidc_context() -> dict:
+    """Whether to offer provider sign-in, and what to call it.
+
+    No secure-context requirement, unlike passkeys: OIDC is a redirect, and the
+    provider enforces its own transport. The redirect URL is the thing that has
+    to be right, and it is declared rather than guessed.
+    """
+    return {"oidc_usable": federation.configured(settings),
+            "oidc_label": settings.auth.oidc.button_label}
+
+
 @app.get("/login", response_class=HTMLResponse)
-def login_form(request: Request, timeout: str = ""):
+def login_form(request: Request, timeout: str = "", error: str = ""):
     with anon() as db:
         if auth.load_auth(request, db) is not None:
             return _redirect("/")
@@ -1430,14 +1466,18 @@ def login_form(request: Request, timeout: str = ""):
         token = auth.ensure_pre_auth_csrf(request)
         resp = templates.TemplateResponse(
             request, "login.html",
-            {"auth": None, "csrf": token, "error": None,
+            {"auth": None, "csrf": token,
+             # A provider sign-in that failed comes back here, and the reason
+             # has nowhere else to go: the whole attempt happened off-site.
+             "error": error or None,
              # Said BEFORE they try, because the failure it describes looks
              # like a wrong password and would otherwise be retried forever.
              "insecure": auth.insecure_login_problem(request, settings),
              # Sent here by the idle overlay. Saying why beats a login page
              # that appears for no reason someone can see.
              "timed_out": timeout == "1",
-             "passkeys_usable": _passkeys_usable(request)},
+             "passkeys_usable": _passkeys_usable(request),
+             **_oidc_context()},
         )
         _set_pre_auth_csrf(resp, token)
         return resp
@@ -1456,7 +1496,8 @@ async def login_submit(
             resp = templates.TemplateResponse(
                 request, "login.html",
                 {"auth": None, "csrf": token, "error": message,
-                 "passkeys_usable": _passkeys_usable(request)}
+                 "passkeys_usable": _passkeys_usable(request),
+                 **_oidc_context()}
             )
             _set_pre_auth_csrf(resp, token)
             return resp
@@ -1757,7 +1798,7 @@ def account_page(request: Request, saved: str = "", error: str = ""):
             request,
             ctx,
             "account.html",
-            {"saved": saved if saved in ("password", "appearance", "2fa-off",
+            {"saved": saved if saved in ("password", "appearance", "2fa-off", "oidc",
                                          "session-revoked", "sessions-revoked") else "",
              # Names the profile control as the active one, the same way a page
              # names its nav entry.
@@ -1776,6 +1817,13 @@ def account_page(request: Request, saved: str = "", error: str = ""):
              "color_warnings": theming.warnings(ctx.user.theme_colors),
              **_twofactor_context(db, ctx.user),
              **_passkey_context(request, db, ctx.user),
+             "identities": [
+                 {"id": row.id, "issuer": row.issuer,
+                  "created": ensure_utc(row.created_at)}
+                 for row in federation.identities_for(db, ctx.user)
+             ],
+             "oidc_reason": federation.unavailable_reason(settings),
+             **_oidc_context(),
              **_sessions_context(db, ctx)},
         )
 
@@ -2046,6 +2094,112 @@ async def login_passkey(request: Request):
     resp = JSONResponse({"next": target})
     _set_session_cookie(resp, raw)
     return resp
+
+
+# --------------------------------------------------------------------------- #
+# Signing in through an identity provider. Two requests: out to the provider,
+# and back with a code. app/federation.py decides whose account it is.
+# --------------------------------------------------------------------------- #
+
+@app.get("/login/oidc")
+def login_oidc(request: Request, invite: str = ""):
+    """Start a sign-in. `invite` carries an invitation across the round trip."""
+    with anon() as db:
+        held = None
+        if invite:
+            try:
+                held = invites.lookup(db, invite)
+            except invites.InviteError as exc:
+                return _redirect("/login?error=" + quote_plus(str(exc)))
+        try:
+            url, token = federation.begin(db, settings, held)
+        except (federation.FederationError, oidc.OidcError) as exc:
+            return _redirect("/login?error=" + quote_plus(str(exc)))
+    resp = _redirect(url)
+    _set_oidc_cookie(resp, token)
+    return resp
+
+
+@app.get("/login/oidc/callback")
+def login_oidc_callback(request: Request, code: str = "", state: str = "",
+                        error: str = ""):
+    """Where the provider sends the browser back.
+
+    A GET with no CSRF token of its own: `state` is the defence, and it is
+    checked against the row this attempt created before anything else happens.
+    """
+    if error:
+        return _redirect("/login?error=" + quote_plus(
+            f"Your identity provider refused the sign-in: {error}"))
+    ip = auth.client_ip(request)
+    with anon() as db:
+        try:
+            attempt = federation.take_state(
+                db, request.cookies.get(OIDC_STATE_COOKIE), state)
+            pending = {"state": attempt.state, "nonce": attempt.nonce,
+                       "verifier": attempt.verifier}
+            held = db.get(PortfolioInvite, attempt.invite_id) if attempt.invite_id else None
+            identity = oidc.complete(federation.provider(settings), code=code,
+                                     pending=pending)
+            if attempt.link_user_id is not None:
+                # Started from the profile page: attach, do not sign in.
+                user = db.get(User, attempt.link_user_id)
+                if user is None:
+                    raise federation.FederationError("That account is gone.")
+                federation.link(db, user, identity)
+            else:
+                user = federation.resolve(db, settings, identity, held)
+            if held is not None and held.used_at is None:
+                invites.accept_row(db, held, user)
+            # Spent only once everything above succeeded: a provider error must
+            # not burn the attempt and force a second trip.
+            db.delete(attempt)
+            db.flush()
+        except (federation.FederationError, oidc.OidcError) as exc:
+            auth.record_attempt(db, "", ip, success=False)
+            return _redirect("/login?error=" + quote_plus(str(exc)))
+        if user.must_change_password:
+            target = "/profile"
+        else:
+            target = "/"
+        raw = auth.create_session(
+            db, user, settings, active_portfolio_id=_landing_portfolio(db, user),
+            ip=ip, user_agent=request.headers.get("user-agent"),
+        )
+        log.info("oidc sign-in for user %s", user.id)
+    resp = _redirect(target)
+    _set_session_cookie(resp, raw)
+    resp.delete_cookie(OIDC_STATE_COOKIE, path="/")
+    return resp
+
+
+@app.post("/profile/oidc/link")
+async def profile_oidc_link(request: Request):
+    """Link the account already signed in to a provider identity.
+
+    Deliberately a signed-in action: it is how an existing local account gains
+    a provider without email matching ever being involved — decisions.md #119.
+    """
+    with scoped(request) as (ctx, db):
+        await auth.verify_csrf(request, db)
+        try:
+            url, token = federation.begin(db, settings, link_to=ctx.user)
+        except (federation.FederationError, oidc.OidcError) as exc:
+            return _redirect("/profile?error=" + quote_plus(str(exc)))
+    resp = _redirect(url)
+    _set_oidc_cookie(resp, token)
+    return resp
+
+
+@app.post("/profile/oidc/{identity_id}/unlink")
+async def profile_oidc_unlink(request: Request, identity_id: int):
+    with scoped(request) as (ctx, db):
+        await auth.verify_csrf(request, db)
+        try:
+            federation.unlink(db, ctx.user, identity_id)
+        except federation.FederationError as exc:
+            return _redirect("/profile?error=" + quote_plus(str(exc)))
+    return _redirect("/profile?saved=oidc")
 
 
 @app.post("/profile/recovery/later")
@@ -2691,7 +2845,7 @@ def _invite_page(request: Request, token: str, *, error: str = "",
     resp = templates.TemplateResponse(
         request, "invite.html",
         {"auth": ctx, "csrf": csrf, "refused": None, "invite": detail,
-         "token": token, "error": error or None},
+         "token": token, "error": error or None, **_oidc_context()},
     )
     if ctx is None:
         _set_pre_auth_csrf(resp, csrf)

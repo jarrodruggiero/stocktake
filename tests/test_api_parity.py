@@ -102,6 +102,9 @@ WITHHELD_TABLES: dict[str, str] = {
     "webauthn_challenge": "In-flight sign-in nonces. Credential material.",
     "portfolio_invite": "Live invitations. The token is a credential for as "
                         "long as the link is unspent.",
+    "external_identity": "Which provider account is which local one. Identity "
+                         "linkage, not portfolio data.",
+    "oidc_state": "In-flight sign-in nonces. Credential material.",
     "login_attempt": "Lockout state, and a record of failed sign-ins.",
     "api_key": "The keys themselves. A key cannot enumerate its siblings.",
     "portfolio_member": "Who has access. A consumer app has no business with it.",
