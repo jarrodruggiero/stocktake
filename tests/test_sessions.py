@@ -17,6 +17,8 @@ Everything time-dependent runs under `freeze_time`.
 from __future__ import annotations
 
 import datetime as dt
+import re
+from pathlib import Path
 
 import pytest
 from freezegun import freeze_time
@@ -29,6 +31,7 @@ from app.settings import PortfolioSettings
 from appkit import ensure_utc
 from factories import make_portfolio, make_user
 
+APP_ROOT = Path(__file__).resolve().parent.parent
 UTC = dt.timezone.utc
 START = "2026-08-02 09:00:00"
 
@@ -199,6 +202,78 @@ def test_background_requests_do_not_count_as_activity(path):
                                   "/holding/ALPHA"])
 def test_real_pages_do_count(path):
     assert auth.slides_window(path) is True
+
+
+def test_watching_the_log_console_does_not_keep_a_session_alive(
+    db, owner, settings
+):
+    """The bug, as a behaviour rather than a list entry.
+
+    Admin → Settings tails the log on a repeating timer. While that path
+    counted as activity, leaving the page open renewed the session on every
+    poll and the idle timeout never fired — reported from a desktop that had
+    stayed signed in for days.
+    """
+    with freeze_time(START) as clock:
+        raw = a_session(db, owner, settings)
+        for minute in range(0, 90, 5):          # the console, polling all morning
+            clock.move_to(f"2026-08-02 {9 + minute // 60}:{minute % 60:02d}:00")
+            auth.load_auth(request_with(settings, raw, path="/admin/logs.json"), db)
+
+        clock.move_to("2026-08-02 10:31:00")     # 91 minutes after the last click
+        assert auth.load_session(db, raw, settings) is None
+
+
+# Polled by a script, but deliberately counted as activity anyway. One reason
+# each, because an unexplained entry here is indistinguishable from an
+# oversight — which is the bug this whole test exists to catch.
+DELIBERATELY_COUNTS = {
+    "/session/keepalive": "Pressing 'keep me signed in' is a person, not a poll.",
+}
+
+
+def _polled_paths() -> dict[str, str]:
+    """Every URL fetched from a script that repeats itself, found rather than
+    listed.
+
+    The hand-written list above could not lose an entry, but nothing stopped it
+    never GAINING one: the log console was added with a self-rescheduling
+    `setTimeout`, its path was never added, and leaving Admin → Settings open
+    renewed the session forever. Deriving the list from the scripts is what
+    makes that impossible to repeat.
+    """
+    found: dict[str, str] = {}
+    for script in sorted((APP_ROOT / "app" / "static").glob("*.js")):
+        source = script.read_text()
+        repeats = "setInterval(" in source or re.search(
+            r"setTimeout\(\s*poll", source)
+        if not repeats:
+            continue
+        for url in re.findall(r"""fetch\(\s*["'](/[^"'?]+)""", source):
+            found.setdefault(url, script.name)
+    return found
+
+
+def test_every_path_a_script_polls_is_exempt_from_sliding():
+    offenders = {
+        url: script for url, script in _polled_paths().items()
+        if auth.slides_window(url) and url not in DELIBERATELY_COUNTS
+    }
+
+    assert not offenders, (
+        "These are polled on a timer and would keep a session alive forever. "
+        f"Add each to auth.SLIDING_EXEMPT, or to DELIBERATELY_COUNTS with a "
+        f"reason: {offenders}")
+
+
+def test_the_scan_actually_finds_the_pollers():
+    """A regex that matched nothing would make the test above vacuously true —
+    and it is the only thing standing between a new poller and a session that
+    never ends."""
+    found = _polled_paths()
+
+    assert "/session/status" in found
+    assert len(found) >= 4
 
 
 def test_polling_the_status_endpoint_cannot_keep_a_session_alive(db, owner, settings):

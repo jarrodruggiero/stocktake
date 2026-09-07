@@ -412,7 +412,11 @@ def client_ip(request: Request) -> str:
 # polls on a timer belongs here; `/session/keepalive` deliberately does not,
 # because a button press is a person.
 SLIDING_EXEMPT = frozenset(
-    {"/session/status", "/healthz", "/readyz", "/feed/status"}
+    {"/session/status", "/healthz", "/readyz", "/feed/status",
+     # The log console tails on a self-rescheduling timer, so leaving Admin →
+     # Settings open renewed the session indefinitely. Found by deriving the
+     # list from the scripts instead of maintaining it by hand.
+     "/admin/logs.json"}
 )
 
 
