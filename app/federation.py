@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session as DbSession
 from appkit import ensure_utc, oidc
 
 from .models import ExternalIdentity, OidcState, PortfolioInvite, User
-from .settings import PortfolioSettings
+from .settings import OidcSettings, PortfolioSettings
 
 # Long enough for a slow provider and a password prompt, short enough that an
 # abandoned attempt is not a live row for the afternoon.
@@ -51,10 +51,17 @@ def _hash(raw: str) -> str:
 # Whether it can be offered at all
 # --------------------------------------------------------------------------- #
 
+def _is_public(conf: OidcSettings) -> bool:
+    """A public client has no secret to be missing. Only the exact value
+    counts, so a typo leaves the secret required — decisions.md #121."""
+    return conf.client_auth == "none"
+
+
 def configured(settings: PortfolioSettings) -> bool:
     conf = settings.auth.oidc
     return bool(conf.enabled and conf.issuer and conf.client_id
-                and conf.client_secret and conf.redirect_uri)
+                and (conf.client_secret or _is_public(conf))
+                and conf.redirect_uri)
 
 
 def unavailable_reason(settings: PortfolioSettings) -> str | None:
@@ -64,7 +71,7 @@ def unavailable_reason(settings: PortfolioSettings) -> str | None:
         return "Turn on single sign-on in Admin → Settings."
     if not conf.issuer or not conf.client_id:
         return "Set the provider URL and client ID in Admin → Settings."
-    if not conf.client_secret:
+    if not conf.client_secret and not _is_public(conf):
         return "Set auth.oidc.client_secret in your configuration file."
     if not conf.redirect_uri:
         return "Set the redirect URL in Admin → Settings."
@@ -76,9 +83,10 @@ def provider(settings: PortfolioSettings) -> oidc.Provider:
     return oidc.Provider(
         issuer=conf.issuer or "",
         client_id=conf.client_id or "",
-        client_secret=conf.client_secret or "",
+        client_secret=conf.client_secret,
         redirect_uri=conf.redirect_uri or "",
         scopes=tuple(conf.scopes),
+        client_auth=conf.client_auth,
     )
 
 
