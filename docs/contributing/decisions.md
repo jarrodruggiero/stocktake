@@ -862,3 +862,18 @@ account-does-not-exist case and turns out to be exactly right here — and
 unlinking the last identity is refused while the hash is NULL, because an
 account with no way in is not something a settings page should be able to
 create quietly.
+
+**121. A public client is asked for, not deduced from a missing secret.**
+`auth.oidc.client_auth` is `basic` or `none`, and it defaults to `basic`.
+Reading the client type off an absent `client_secret` would be less to
+configure, but it makes a credential going missing indistinguishable from a
+deployment choice — the token request quietly stops authenticating and nothing
+says so. `DatabaseSettings._guard_ambiguous_sqlite` refuses the same shape for
+the same reason: an unset field selecting a different mode. So only the exact
+value `none` waives the secret — a typo still requires one, and a `basic`
+client with nothing set refuses rather than sending an empty password.
+
+The asymmetry is deliberate: `none` with a secret still in the file **ignores
+it** rather than refusing. That is what moving a confidential client to a
+public one looks like halfway through, and refusing would strand a deployment
+between two working states.

@@ -35,6 +35,7 @@ class FakeIdp:
         self.kid = "test-key"
         self.claims: dict = {}
         self.token_requests: list[dict] = []
+        self.token_auth: list[tuple[str, str] | None] = []
         self.omit_id_token = False
 
     # -- what the provider publishes ---------------------------------------- #
@@ -72,6 +73,7 @@ class FakeIdp:
             return self.discovery()
         if url.endswith("/token"):
             self.token_requests.append(dict(data or {}))
+            self.token_auth.append(auth)
             if self.omit_id_token:
                 return {"access_token": "x"}
             return {"access_token": "x", "id_token": self.id_token(**self.claims)}
@@ -142,6 +144,66 @@ def test_the_redirect_carries_pkce_and_a_nonce(provider, idp):
     assert query["state"] == [pending["state"]]
     assert query["nonce"] == [pending["nonce"]]
     assert query["redirect_uri"] == [REDIRECT]
+
+
+# --------------------------------------------------------------------------- #
+# How the token request proves who it is
+# --------------------------------------------------------------------------- #
+
+def test_a_confidential_client_authenticates_the_token_request(provider, idp):
+    """The default, and it must stay the default: a deployment that says
+    nothing about `client_auth` keeps sending client_secret_basic."""
+    _round_trip(provider, idp)
+
+    assert idp.token_auth[0] == (CLIENT_ID, "a-secret"), (
+        "a client with no client_auth setting stopped authenticating")
+
+
+def test_a_public_client_sends_no_authorization_header(provider, idp):
+    """The point of the feature. PKCE is unconditional, so the verifier in the
+    body is what proves the redemption; there is no secret to send."""
+    provider.client_auth = "none"
+    provider.client_secret = None
+
+    _round_trip(provider, idp)
+
+    assert idp.token_auth[0] is None, (
+        "a public client still sent Basic credentials to the token endpoint")
+
+
+def test_a_public_client_ignores_a_secret_it_still_has(provider, idp):
+    """`client_auth: none` with a secret left in the file is the halfway state
+    of moving a confidential client to a public one. It is permissive on
+    purpose — decisions.md #121."""
+    provider.client_auth = "none"
+
+    _round_trip(provider, idp)
+
+    assert idp.token_auth[0] is None, (
+        "a leftover secret was sent by a client configured as public")
+
+
+def test_an_unrecognised_client_auth_still_authenticates(provider, idp):
+    """A typo must not quietly make this a public client. Only the exact value
+    `none` drops the credentials — decisions.md #121."""
+    provider.client_auth = "bsaic"
+
+    _round_trip(provider, idp)
+
+    assert idp.token_auth[0] == (CLIENT_ID, "a-secret"), (
+        "a misspelt client_auth silently downgraded to an anonymous request")
+
+
+def test_a_confidential_client_with_no_secret_refuses_before_asking(provider, idp):
+    """Refuse rather than send `client_id:None` and let the provider explain
+    it. The message has to name the two ways out, because both are valid."""
+    provider.client_secret = None
+    _, pending = oidc.begin(provider)
+
+    with pytest.raises(oidc.OidcError, match="client_auth"):
+        oidc.complete(provider, code="c", pending=pending)
+
+    assert idp.token_requests == [], "the token endpoint was asked anyway"
 
 
 def test_the_verifier_is_sent_when_the_code_is_redeemed(provider, idp):

@@ -19,7 +19,9 @@ Three things this file exists to get right:
   application to keep somewhere single-use; this module only checks what comes
   back against what it is given.
 * **PKCE always.** The spec makes it optional for confidential clients. It
-  costs one hash and removes a whole class of code-interception bug.
+  costs one hash and removes a whole class of code-interception bug. It is
+  also what carries a public client, where `client_auth` is `none` and the
+  verifier is the only thing proving the redemption.
 """
 
 from __future__ import annotations
@@ -50,9 +52,13 @@ class Provider:
 
     issuer: str
     client_id: str
-    client_secret: str
+    client_secret: str | None
     redirect_uri: str
     scopes: tuple[str, ...] = ("openid", "email", "profile")
+    # `basic` sends the secret as client_secret_basic; `none` is a public
+    # client. Explicit rather than inferred from a missing secret, so a secret
+    # dropped from the environment fails instead of downgrading — decisions.md #121.
+    client_auth: str = "basic"
     # Filled by `discover()`. Cached on the instance rather than globally so a
     # settings change takes effect without a process restart.
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -173,6 +179,23 @@ def begin(provider: Provider) -> tuple[str, dict[str, str]]:
 # The callback
 # --------------------------------------------------------------------------- #
 
+def _basic_auth(provider: Provider) -> tuple[str, str] | None:
+    """The token request's credentials, or None for a public client.
+
+    Only the exact value `none` drops them: an unrecognised setting has to
+    authenticate, or a typo would be a silent downgrade — decisions.md #121.
+    """
+    if provider.client_auth == "none":
+        return None
+    if not provider.client_secret:
+        raise OidcError(
+            "This client is set to authenticate with a secret but none is "
+            "configured. Set auth.oidc.client_secret, or set "
+            "auth.oidc.client_auth to 'none' if the provider issued a public "
+            "client.")
+    return provider.client_id, provider.client_secret
+
+
 def complete(provider: Provider, *, code: str, pending: dict[str, str]) -> Identity:
     """Redeem the code and return the identity the ID token proves.
 
@@ -190,7 +213,7 @@ def complete(provider: Provider, *, code: str, pending: dict[str, str]) -> Ident
             "client_id": provider.client_id,
             "code_verifier": pending["verifier"],
         },
-        auth=(provider.client_id, provider.client_secret),
+        auth=_basic_auth(provider),
     )
     raw = tokens.get("id_token")
     if not raw:
