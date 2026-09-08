@@ -94,6 +94,7 @@ from .models import (
     TIME_ZONES_SHOWN,
     ApiKey,
     Dividend,
+    ExternalIdentity,
     HoldingPref,
     Instrument,
     InvestmentPlan,
@@ -2393,11 +2394,39 @@ def _require_owner(ctx):
         raise HTTPException(403, "Only the portfolio owner can do that")
 
 
+def _sole_memberships(db) -> dict[int, list[str]]:
+    """Portfolios each person is the ONLY member of.
+
+    Disabling them takes those out of everybody's view: membership is the only
+    route to a portfolio, so one with no member who can sign in is one nobody
+    can open — decisions.md #123. Worth saying before the click, not after.
+    """
+    counts = (
+        select(PortfolioMember.portfolio_id)
+        .group_by(PortfolioMember.portfolio_id)
+        .having(func.count() == 1)
+        .subquery()
+    )
+    rows = db.execute(
+        select(PortfolioMember.user_id, Portfolio.name)
+        .join(Portfolio, Portfolio.id == PortfolioMember.portfolio_id)
+        .join(counts, counts.c.portfolio_id == PortfolioMember.portfolio_id)
+    ).all()
+    out: dict[int, list[str]] = {}
+    for user_id, name in rows:
+        out.setdefault(user_id, []).append(name)
+    return out
+
+
 def _users_context(db, *, created: str = "", reset: str = "",
                    temp_password: str = "", error: str | None = None) -> dict:
     return {
         "active_nav": "admin",
         "users": db.scalars(select(User).order_by(User.id)).all(),
+        # Who signs in through a provider, so an administrator deciding who to
+        # disable can see which accounts the directory does not control.
+        "federated": {row.user_id for row in db.scalars(select(ExternalIdentity))},
+        "sole_of": _sole_memberships(db),
         "created": created,
         "reset": reset,
         "temp_password": temp_password,

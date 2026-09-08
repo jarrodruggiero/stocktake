@@ -40,12 +40,18 @@ they must change it at next login. It won't be shown again.</p>
         {% elif u.must_change_password %}<span class="badge">password not set</span>
         {% else %}active{% endif %}
         {% if u.totp_enabled_at %} <span class="badge">2FA</span>{% endif %}
+        {% if u.id in federated %} <span class="badge">SSO</span>{% endif %}
       </td>
       <td class="rowactions">
         {% if u.id != auth.user.id %}
         <form method="post" action="/users/{{ u.id }}/active">
           <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-          <button class="linkish" type="submit">{{ 'Enable' if not u.is_active else 'Disable' }}</button>
+          {# Said before the click: a portfolio only they are in goes out of
+             everyone's view, because membership is the only way to one. #}
+          <button class="linkish" type="submit"
+            {%- if u.is_active and sole_of.get(u.id) %} onclick="return confirm(
+              'Disabling {{ u.name }} takes {{ sole_of[u.id] | join(' and ') }} out of everyone\'s view — nobody else is in {{ 'them' if sole_of[u.id] | length > 1 else 'it' }}. Continue?')"
+            {%- endif %}>{{ 'Enable' if not u.is_active else 'Disable' }}</button>
         </form>
         <form method="post" action="/users/{{ u.id }}/reset" class="inline">
           <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
