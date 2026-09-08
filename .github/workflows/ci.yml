@@ -1,7 +1,7 @@
 # Lint and test on every push and pull request.
 #
 # Written for the PUBLIC repository layout, where this app is the whole repo:
-# `app/`, `appcore/` and `tests/` sit at the root. Nothing here depends on
+# `app/` and `tests/` sit at the root. Nothing here depends on
 # self-hosted runners, a private registry, or any home infrastructure — it runs
 # entirely on GitHub-hosted runners and public actions.
 name: CI
@@ -35,7 +35,7 @@ jobs:
         run: uv sync --dev
 
       - name: Ruff
-        run: uv run ruff check app appcore tests tools
+        run: uv run ruff check app tests tools
 
   # The other half of the two-way arrangement. This app pins a revision of
   # appcore, so its own tests prove nothing about appcore's current main —
