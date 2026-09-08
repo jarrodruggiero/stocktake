@@ -38,6 +38,7 @@ class FakeIdp:
         self.token_requests: list[dict] = []
         self.token_auth: list[tuple[str, str] | None] = []
         self.omit_id_token = False
+        self.omit_end_session = False
 
     # -- what the provider publishes ---------------------------------------- #
 
@@ -47,6 +48,8 @@ class FakeIdp:
             "authorization_endpoint": f"{self.issuer}/authorize",
             "token_endpoint": f"{self.issuer}/token",
             "jwks_uri": f"{self.issuer}/jwks",
+            **({} if self.omit_end_session
+               else {"end_session_endpoint": f"{self.issuer}/end-session"}),
             "id_token_signing_alg_values_supported": ["RS256"],
         }
 
