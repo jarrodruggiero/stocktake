@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import select
 
 import factories as fac
-from app import federation, invites
+from app import federation, invites, twofactor
 from app.models import ExternalIdentity, OidcState, PortfolioMember, User
 from app.settings import PortfolioSettings
 from appkit import oidc
@@ -264,3 +264,23 @@ def test_the_client_auth_setting_reaches_the_provider(settings):
     settings.auth.oidc.client_auth = "none"
 
     assert federation.provider(settings).client_auth == "none"
+
+
+def test_a_provisioned_account_can_get_back_in_without_the_provider(
+    session_factory, settings
+):
+    """It has no password, so recovery codes are the only self-service route
+    back if the provider goes away.
+
+    Every other path that creates an account issues them; this one did not,
+    which left the account with no password AND no codes — an admin reset was
+    the only way in. `recovery_codes_seen_at` stays NULL so the banner still
+    asks them to save a set of their own.
+    """
+    settings.auth.oidc.provisioning = "open"
+    with session_factory() as db:
+        user = federation.resolve(db, settings, an_identity(), None)
+
+        assert user.password_hash is None
+        assert twofactor.remaining_recovery_codes(db, user) > 0
+        assert user.recovery_codes_seen_at is None
