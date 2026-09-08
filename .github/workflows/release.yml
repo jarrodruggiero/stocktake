@@ -50,7 +50,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --dev
-      - run: uv run ruff check app appkit tests tools
+      - run: uv run ruff check app appcore tests tools
       - env:
           STOCKTAKE_TEST_DB: ${{ matrix.backend }}
           PGHOST: localhost

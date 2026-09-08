@@ -13,7 +13,7 @@ from sqlalchemy import select
 import factories as fac
 from app import federation
 from app.models import Portfolio, PortfolioMember, User
-from appkit import oidc
+from appcore import oidc
 from test_routes import make_login
 
 HTML = {"accept": "text/html"}

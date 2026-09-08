@@ -28,7 +28,7 @@ import secrets
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
-from appkit import ensure_utc
+from appcore import ensure_utc
 
 from .models import MEMBER_ROLES, PortfolioInvite, PortfolioMember, User
 

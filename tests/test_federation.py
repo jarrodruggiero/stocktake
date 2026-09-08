@@ -15,7 +15,7 @@ import factories as fac
 from app import federation, invites, twofactor
 from app.models import ExternalIdentity, OidcState, PortfolioMember, User
 from app.settings import PortfolioSettings
-from appkit import oidc
+from appcore import oidc
 
 ISSUER = "https://idp.example.test"
 

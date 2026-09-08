@@ -18,8 +18,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from appkit import make_session_factory, upgrade_to_head
-from appkit.config import DatabaseSettings
+from appcore import make_session_factory, upgrade_to_head
+from appcore.config import DatabaseSettings
 
 from . import tenancy
 

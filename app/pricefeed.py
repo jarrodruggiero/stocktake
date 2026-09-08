@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from appkit import dialect_insert, load_config, make_session_factory
+from appcore import dialect_insert, load_config, make_session_factory
 
 from . import clock, memory, providers, tenancy
 from .models import FxRate, Instrument, MarketDividend, Price, Trade

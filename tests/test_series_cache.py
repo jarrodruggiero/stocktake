@@ -28,7 +28,7 @@ from sqlalchemy import func, select, update
 import factories as fac
 from app import queries
 from app.models import Trade
-from appkit import ensure_utc
+from appcore import ensure_utc
 
 
 def _series_value(session) -> Decimal:

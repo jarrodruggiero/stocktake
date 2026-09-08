@@ -4,8 +4,8 @@ The whole round trip is exercised: the redirect out carries what it should, the
 callback is refused unless `state` matches the attempt that started it, and a
 verified identity ends up holding a real session.
 
-The provider is `test_oidc.FakeIdp`, which really signs. Nothing reaches the
-network.
+The provider is `appcore.testing.FakeIdp`, which really signs. Nothing reaches
+the network.
 """
 
 from __future__ import annotations
@@ -14,40 +14,29 @@ import urllib.parse
 
 import pytest
 from sqlalchemy import select
-from test_oidc import CLIENT_ID, ISSUER, FakeIdp
 
 from app import federation
 from app.models import ExternalIdentity, PortfolioMember, User
-from appkit import oidc
+from appcore import oidc
+from appcore.testing import FakeIdp
 from test_routes import make_login, session_csrf
 
 HTML = {"accept": "text/html"}
 REDIRECT = "https://stocktake.example.test/login/oidc/callback"
 
 
+ISSUER = "https://idp.example.test"
+CLIENT_ID = "stocktake"
+
+
 @pytest.fixture
 def idp(monkeypatch):
-    """The provider, with its signing key wired into PyJWT's key lookup."""
-    fake = FakeIdp()
-    monkeypatch.setattr(oidc, "_fetch", fake.fetch)
+    """A provider that really signs, from appcore rather than hand-rolled here.
 
-    from jwt import PyJWK, PyJWKClient
-
-    def signing_key(self, token):  # noqa: ARG001 - matches what it replaces
-        import base64
-
-        numbers = fake.key.public_key().public_numbers()
-
-        def b64(value: int) -> str:
-            raw = value.to_bytes((value.bit_length() + 7) // 8, "big")
-            return base64.urlsafe_b64encode(raw).decode().rstrip("=")
-
-        return PyJWK.from_dict({"kty": "RSA", "kid": fake.kid, "alg": "RS256",
-                                "use": "sig", "n": b64(numbers.n),
-                                "e": b64(numbers.e)})
-
-    monkeypatch.setattr(PyJWKClient, "get_signing_key_from_jwt", signing_key)
-    return fake
+    `install` redirects both the discovery fetch and PyJWT's key lookup, so the
+    verification under test is the real one and nothing reaches the network.
+    """
+    return FakeIdp(issuer=ISSUER, client_id=CLIENT_ID).install(monkeypatch)
 
 
 @pytest.fixture

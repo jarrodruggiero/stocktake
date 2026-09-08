@@ -35,7 +35,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from appkit import Base, JSONType
+from appcore import Base, JSONType
 
 # What a ticker and an exchange may contain. Enforced in code because SQLite
 # does not enforce a VARCHAR length: a 400-character "ticker" is accepted there

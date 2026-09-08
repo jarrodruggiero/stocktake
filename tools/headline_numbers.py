@@ -32,7 +32,7 @@ from dataclasses import fields, is_dataclass
 from pathlib import Path
 
 # `python tools/headline_numbers.py` puts tools/ on the path, not the root that
-# `app` and `appkit` sit in, so importing them needs this. Run it from anywhere
+# `app` and `appcore` sit in, so importing them needs this. Run it from anywhere
 # the repository is checked out; to run it against a container instead, mount
 # or copy the file into the application root rather than into /tmp.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -42,7 +42,7 @@ from sqlalchemy import select  # noqa: E402
 from app import clock, queries, tenancy  # noqa: E402
 from app.models import Portfolio  # noqa: E402
 from app.settings import PortfolioSettings  # noqa: E402
-from appkit import load_config, make_session_factory  # noqa: E402
+from appcore import load_config, make_session_factory  # noqa: E402
 
 
 def plain(value):

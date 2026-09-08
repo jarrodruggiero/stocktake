@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from appkit.config import CONFIG_FILE
+from appcore.config import CONFIG_FILE
 
 from . import features
 

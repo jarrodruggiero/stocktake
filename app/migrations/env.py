@@ -14,7 +14,7 @@ target_metadata = Base.metadata
 # app's settings, same as the app itself would. upgrade_to_head() sets it.
 if not config.get_main_option("sqlalchemy.url"):
     from app.settings import PortfolioSettings
-    from appkit import load_config
+    from appcore import load_config
 
     url = load_config(PortfolioSettings).database.url
     config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))

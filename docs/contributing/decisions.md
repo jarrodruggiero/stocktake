@@ -218,7 +218,7 @@ first-run wizard cannot ask you anything if the process will not start without
 the answers, and "create config.yaml before starting" is the instruction people
 skip. Every other setting already had a default, so this one makes the whole
 file optional and the wizard writes it. **Changing it moves the database**:
-appkit derives the SQLite path from `app_name`, so a rename points a running
+appcore derives the SQLite path from `app_name`, so a rename points a running
 install at a file that does not exist and it will cheerfully create an empty
 one. Set `database.path` explicitly if you ever change it.
 
@@ -878,7 +878,7 @@ it** rather than refusing. That is what moving a confidential client to a
 public one looks like halfway through, and refusing would strand a deployment
 between two working states.
 
-**122. `appkit/` names no application configuration key.** Its modules are
+**122. `appcore/` names no application configuration key.** Its modules are
 written to be lifted into applications that have not shipped yet, so an error
 telling somebody to set `auth.oidc.client_secret` is wrong the moment it is
 used by an app that calls the setting something else — and wrong in the way

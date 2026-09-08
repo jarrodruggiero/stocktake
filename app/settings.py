@@ -6,7 +6,7 @@ import datetime as dt
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from appkit.config import BaseAppSettings
+from appcore.config import BaseAppSettings
 
 # Where the portfolio lives. Every date decision is made in this zone (see
 # app/clock.py), and the price feed schedules against it. Australian by default

@@ -122,6 +122,6 @@ Dates are decided in the portfolio's configured timezone via `app/clock.py` —
 never `datetime.date.today()`, which in a UTC container is yesterday for most
 of an Australian morning. Timestamps (session expiry, audit fields) stay in UTC.
 
-`appkit.ensure_utc()` exists because SQLite returns naive datetimes where
+`appcore.ensure_utc()` exists because SQLite returns naive datetimes where
 Postgres returns aware ones. Any comparison against a stored timestamp goes
 through it, or it works on one backend and raises on the other.

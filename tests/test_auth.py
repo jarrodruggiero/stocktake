@@ -27,7 +27,7 @@ from sqlalchemy import select
 from app import auth
 from app.models import ApiKey, LoginAttempt, User, UserSession
 from app.settings import PortfolioSettings
-from appkit import ensure_utc
+from appcore import ensure_utc
 from factories import add_member, make_portfolio, make_user
 
 UTC = dt.timezone.utc
@@ -284,7 +284,7 @@ def test_expired_session_with_naive_expires_at_returns_none_not_typeerror(
     postgres. Comparing a naive value with an aware `now()` raises
     `TypeError: can't compare offset-naive and offset-aware datetimes` — a 500
     on every request carrying an old cookie. `load_session` runs the value
-    through `appkit.ensure_utc` first; this test is what keeps that call there.
+    through `appcore.ensure_utc` first; this test is what keeps that call there.
 
     The assertion is on the ANSWER, not on which representation the backend
     happened to return, so it holds on either.

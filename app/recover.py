@@ -20,7 +20,7 @@ import sys
 
 from sqlalchemy import select
 
-from appkit import load_config, make_session_factory
+from appcore import load_config, make_session_factory
 
 from . import auth, tenancy, twofactor
 from .models import User

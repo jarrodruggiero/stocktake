@@ -28,7 +28,7 @@ from fastapi import HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
-from appkit import ensure_utc
+from appcore import ensure_utc
 
 from . import tenancy
 from .models import (

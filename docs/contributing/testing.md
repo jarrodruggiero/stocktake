@@ -4,7 +4,7 @@
 pytest tests/ -q                    # SQLite, ~50s
 pytest tests/ -q --cov              # enforces the coverage gate
 pytest tests/ -m visual             # layout, in a real browser, ~2.5min
-ruff check app appkit tests tools
+ruff check app appcore tests tools
 ```
 
 ## Write the test first
@@ -87,7 +87,7 @@ SQLite is permissive where Postgres is strict.
 The two that will catch you:
 
 - **Datetimes.** SQLite returns naive, Postgres returns aware. Comparing a
-  stored timestamp against `now()` without `appkit.ensure_utc()` works on one
+  stored timestamp against `now()` without `appcore.ensure_utc()` works on one
   and raises `TypeError` on the other.
 - **Column widths.** SQLite ignores `VARCHAR(80)`; Postgres rejects the 81st
   character with a raw database error. Validate lengths in code.

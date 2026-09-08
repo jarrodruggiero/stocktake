@@ -144,7 +144,7 @@ def test_deleting_a_user_does_not_delete_their_trades(seeded: Path):
     SET NULL, so removing an account would have taken that person's trades and
     dividends out of a portfolio belonging to several people.
 
-    `appkit` sets `PRAGMA foreign_keys=ON` per connection, so this is live
+    `appcore` sets `PRAGMA foreign_keys=ON` per connection, so this is live
     behaviour rather than a dormant declaration — which is why the test turns
     it on too.
     """

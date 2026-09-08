@@ -24,7 +24,7 @@ import secrets
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as DbSession
 
-from appkit import ensure_utc
+from appcore import ensure_utc
 
 from .models import User, WebauthnChallenge, WebauthnCredential
 from .settings import PortfolioSettings

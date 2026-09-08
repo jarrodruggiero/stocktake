@@ -24,7 +24,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-from appkit import JSONType
+from appcore import JSONType
 
 revision = '0001'
 down_revision = None

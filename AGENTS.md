@@ -36,7 +36,7 @@ does.
   per-route session check; add it there.
 - **Dates come from `app/clock.py`**, never `datetime.date.today()`. The
   container runs UTC and the portfolio does not.
-- **Compare stored timestamps through `appkit.ensure_utc()`.** SQLite returns
+- **Compare stored timestamps through `appcore.ensure_utc()`.** SQLite returns
   naive datetimes, Postgres aware ones; the raw comparison raises on one.
 - **Never fabricate a number.** An unconvertible AUD figure is blank, not
   converted at 1:1. A missing rate excludes the holding and says so.
@@ -76,7 +76,7 @@ and `test_a_code_cannot_also_answer_the_2fa_challenge_it_led_to` went red" is.
 
 Run `pytest tests/ -q` **and** the Postgres variant before claiming a change
 works — see `docs/contributing/testing.md` for the command. Run
-`ruff check app appkit tests tools`.
+`ruff check app appcore tests tools`.
 
 If you changed a template or a stylesheet, also run `pytest tests/ -m visual`.
 Those are deselected by default and drive a real browser over every page at
