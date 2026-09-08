@@ -28,10 +28,10 @@ tell us.
 ## Two things that look like decoration and are not
 
 **`known-first-party` is set explicitly in `pyproject.toml`.** Ruff otherwise
-infers first-party packages from the layout, and `appcore` is a directory at the
-root here rather than an installed package. Inference that depends on layout
-sorts the same file differently depending on where it is checked out, which
-fails CI for a reason nobody can reproduce locally.
+infers first-party packages from the layout, and `appcore` is a dependency
+rather than a directory here — so inference would sort it as third-party in
+this repo and first-party in its own. Saying which packages are ours makes the
+same file sort the same way wherever it is checked out.
 
 **The image is built on every pull request**, not only at release. A Dockerfile
 that stopped working is otherwise discovered at the moment you most want a
