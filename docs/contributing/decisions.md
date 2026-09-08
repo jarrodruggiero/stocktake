@@ -887,3 +887,16 @@ names the *condition*; the caller names the settings that fix it, because only
 the caller knows what they are called. Raised by review on #25, where the same
 misconfiguration had two messages that disagreed about how many ways out there
 were.
+
+**123. Removing the last member offers to delete the portfolio.** They are one
+decision, so they are one action. A portfolio is reachable only through
+membership — `load_auth` builds the list from `portfolio_member` and there is
+no admin override — so removing the only member would leave one holding every
+trade and visible to nobody, admins included. It cannot be restored from the
+outside, only by re-adding a member nobody can see.
+
+Offered to the **owner**, not gated on admin. The only person who can be in
+this position is the sole member of a portfolio nobody else can reach, so
+requiring an administrator adds no protection — there is nobody else to
+protect — and would leave a non-admin unable to tidy up their own, with no one
+able to help them. The confirmation and the tickbox are the guard rails.

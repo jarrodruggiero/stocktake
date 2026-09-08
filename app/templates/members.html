@@ -80,9 +80,13 @@ all of them.</p>
         </td>
         <td class="rowactions">
           {% if auth.is_owner %}
-          <form method="post" action="/members/{{ m.id }}/remove">
+          {# The form still posts without JavaScript; the server enforces the
+             same rules either way. `removemember.js` turns it into a
+             confirmation, and into the delete offer when this is the last. #}
+          <form method="post" action="/members/{{ m.id }}/remove" class="removeform">
             <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-            <button class="linkish" type="submit">Remove</button>
+            <button class="linkish" type="submit" data-remove="{{ m.name }}"
+                    {% if rows | length == 1 %}data-last="1"{% endif %}>Remove</button>
           </form>
           {% endif %}
         </td>
@@ -91,7 +95,42 @@ all of them.</p>
     </tbody>
   </table>
   </div>
-  <p class="note">{% for r in roles %}<strong>{{ role_labels[r] }}</strong>
+  {%- set trades_tip %}
+  <p class="tipline">Trades stay. They belong to the portfolio, not to whoever
+  entered them.</p>
+{% endset -%}
+{%- set delete_tip %}
+  <p class="tipline">Removes its trades, plans, charts and keys. Not
+  recoverable — <a href="/imports-exports">export first</a> if you want a copy.</p>
+{% endset -%}
+<dialog id="removedialog">
+  <h2>Remove <span id="removename"></span>?</h2>
+  <form method="post" id="removeform">
+    <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+    <p class="optline" id="removeplain">
+      <span>They lose access to this portfolio.</span>
+      {%- with body = trades_tip, label = "What happens to their trades" %}
+        {% include "_tip.html" %}{% endwith %}
+    </p>
+    <p class="panel warn" id="removelast" hidden>This is the only member. A
+    portfolio needs an owner.</p>
+    <div class="optline" id="removedelete" hidden>
+      <label class="check">
+        <input type="checkbox" name="delete_portfolio" value="1" id="deletetick">
+        <span>Delete this portfolio instead</span>
+      </label>
+      {%- with body = delete_tip, label = "What deleting removes" %}
+        {% include "_tip.html" %}{% endwith %}
+    </div>
+    <div class="commitbar">
+      <button type="submit" class="danger" id="removeconfirm">Remove</button>
+      <button type="button" class="secondary" data-close-dialog>Cancel</button>
+    </div>
+  </form>
+</dialog>
+<script src="/static/removemember.js?v={{ asset_v }}" defer></script>
+
+<p class="note">{% for r in roles %}<strong>{{ role_labels[r] }}</strong>
   {{ role_blurbs[r] }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
 </section>
 
