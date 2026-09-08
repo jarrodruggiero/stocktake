@@ -30,7 +30,7 @@ from sqlalchemy import select
 from app import configfile, setupwizard, twofactor
 from app import db as database
 from app.models import Portfolio, RecoveryCode, User
-from appkit.config import DatabaseSettings
+from appcore.config import DatabaseSettings
 
 APP_ROOT = Path(__file__).resolve().parent.parent
 HTML = {"accept": "text/html"}
@@ -1381,7 +1381,7 @@ def test_a_completely_unconfigured_install_boots_into_the_wizard(tmp_path):
         os.environ.pop("STOCKTAKE_TEST_DB", None)
         os.environ["APP_CONFIG_FILE"] = {str(tmp_path / "config.yaml")!r}
         sys.path[:0] = [{str(APP_ROOT)!r},
-                        {str(APP_ROOT.parent.parent / "libs" / "appkit")!r}]
+                        {str(APP_ROOT.parent.parent / "libs" / "appcore")!r}]
 
         from fastapi.testclient import TestClient
         from app import db, main
@@ -1445,7 +1445,7 @@ def test_the_database_step_probes_before_it_connects_and_connects_before_it_writ
         os.environ.pop("STOCKTAKE_TEST_DB", None)
         os.environ["APP_CONFIG_FILE"] = {str(tmp_path / "config.yaml")!r}
         sys.path[:0] = [{str(APP_ROOT)!r},
-                        {str(APP_ROOT.parent.parent / "libs" / "appkit")!r}]
+                        {str(APP_ROOT.parent.parent / "libs" / "appcore")!r}]
 
         from pathlib import Path
         from fastapi.testclient import TestClient

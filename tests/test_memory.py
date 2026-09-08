@@ -40,7 +40,7 @@ def _in_fresh_interpreter(body: str) -> str:
     """
     script = textwrap.dedent(f"""
         import os, sys
-        sys.path[:0] = [{str(APP_ROOT)!r}, {str(APP_ROOT.parent.parent / "libs" / "appkit")!r}]
+        sys.path[:0] = [{str(APP_ROOT)!r}, {str(APP_ROOT.parent.parent / "libs" / "appcore")!r}]
         os.environ.setdefault("APP_CONFIG_FILE", {str(APP_ROOT / "tests" / "config.test.yaml")!r})
         os.environ.setdefault("APP_DATABASE__TYPE", "sqlite")
         os.environ.setdefault("APP_DATABASE__PATH", "/tmp/pf-memtest.db")

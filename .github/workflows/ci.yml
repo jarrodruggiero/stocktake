@@ -1,7 +1,7 @@
 # Lint and test on every push and pull request.
 #
 # Written for the PUBLIC repository layout, where this app is the whole repo:
-# `app/`, `appkit/` and `tests/` sit at the root. Nothing here depends on
+# `app/`, `appcore/` and `tests/` sit at the root. Nothing here depends on
 # self-hosted runners, a private registry, or any home infrastructure — it runs
 # entirely on GitHub-hosted runners and public actions.
 name: CI
@@ -35,7 +35,33 @@ jobs:
         run: uv sync --dev
 
       - name: Ruff
-        run: uv run ruff check app appkit tests tools
+        run: uv run ruff check app appcore tests tools
+
+  # The other half of the two-way arrangement. This app pins a revision of
+  # appcore, so its own tests prove nothing about appcore's current main —
+  # appcore's CI runs THIS suite for that. What this job catches is the reverse:
+  # a change here that assumes something appcore no longer does.
+  appcore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out appcore at the revision this app pins
+        uses: actions/checkout@v7
+        with:
+          repository: jarrodruggiero/appcore
+          path: appcore
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install appcore and its dev tools
+        working-directory: appcore
+        run: uv sync --dev
+
+      - name: Test appcore
+        working-directory: appcore
+        run: uv run pytest
 
   test:
     runs-on: ubuntu-latest

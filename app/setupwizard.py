@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
-from appkit.config import DatabaseSettings
+from appcore.config import DatabaseSettings
 
 log = logging.getLogger(__name__)
 

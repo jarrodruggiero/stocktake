@@ -1,6 +1,6 @@
 """Signing in through somebody else's identity provider.
 
-`appkit/oidc.py` does the protocol and knows nothing about this app. This file
+`appcore/oidc.py` does the protocol and knows nothing about this app. This file
 is the other half: which account an identity belongs to, whether a new one may
 be created, and what is remembered afterwards.
 
@@ -25,7 +25,7 @@ import secrets
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as DbSession
 
-from appkit import ensure_utc, oidc
+from appcore import ensure_utc, oidc
 
 from . import twofactor
 from .models import ExternalIdentity, OidcState, PortfolioInvite, User

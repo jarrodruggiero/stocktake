@@ -1,6 +1,6 @@
 """Shared fixtures. Three things here are load-bearing.
 
-1. **Environment before imports.** `appkit.config` reads `APP_CONFIG_FILE` at
+1. **Environment before imports.** `appcore.config` reads `APP_CONFIG_FILE` at
    module import time, so the env vars are set at the top of this file.
 2. **Schema from the real migration chain**, built once per session and copied
    per test. `Base.metadata.create_all` would test a schema production never
@@ -18,7 +18,7 @@ SQLite by default; Postgres is an untested claim otherwise:
     pytest tests/
 
 Isolation differs by backend, so assert on answers, never on a backend's
-representation — `appkit.ensure_utc` is what papers over the difference.
+representation — `appcore.ensure_utc` is what papers over the difference.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-# --- environment, before any appkit/app import (see note 1 above) ----------- #
+# --- environment, before any appcore/app import (see note 1 above) ----------- #
 TESTS_DIR = Path(__file__).parent
 APP_ROOT = TESTS_DIR.parent
 _TMP_ROOT = Path(tempfile.mkdtemp(prefix="portfolio-tests-"))
@@ -60,9 +60,9 @@ from sqlalchemy import text  # noqa: E402
 
 from app import providers, queries, tenancy  # noqa: E402
 from app.models import Portfolio, PortfolioMember, User  # noqa: E402
-from appkit import make_session_factory, upgrade_to_head  # noqa: E402
-from appkit.config import DatabaseSettings  # noqa: E402
-from appkit.db import make_engine  # noqa: E402
+from appcore import make_session_factory, upgrade_to_head  # noqa: E402
+from appcore.config import DatabaseSettings  # noqa: E402
+from appcore.db import make_engine  # noqa: E402
 
 # A frozen "today" for every test that depends on the current date. Chosen so
 # the reference portfolio (which starts 2019) fills the 1d/1m/6m/1y/3y/5y

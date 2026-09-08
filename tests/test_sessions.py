@@ -28,7 +28,7 @@ from test_auth import request_with
 from app import auth
 from app.models import UserSession
 from app.settings import PortfolioSettings
-from appkit import ensure_utc
+from appcore import ensure_utc
 from factories import make_portfolio, make_user
 
 APP_ROOT = Path(__file__).resolve().parent.parent

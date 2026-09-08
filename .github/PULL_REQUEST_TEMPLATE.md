@@ -23,7 +23,7 @@ names the files to touch and the test to write.
       Which mutation? _(one line — "removed the X check and test_Y failed")_
 - [ ] Tests pass on SQLite — `pytest tests/ -q`
 - [ ] Tests pass on **Postgres** — see `docs/contributing/testing.md`
-- [ ] `ruff check app appkit tests tools` is clean
+- [ ] `ruff check app appcore tests tools` is clean
 - [ ] Non-obvious decisions carry a comment saying *why*, not what
 - [ ] **No personal data.** Fictional tickers, redacted fixtures, no account
       numbers, names or addresses — including in test files and screenshots
@@ -41,7 +41,7 @@ names the files to touch and the test to write.
 - [ ] **AUD conversion** — figures that cannot be converted come out **blank**,
       never at 1:1. A blank is a question; a wrong number gets totalled
 - [ ] **Dates** — from `app/clock.py`, never `datetime.date.today()`
-- [ ] **A stored timestamp comparison** — through `appkit.ensure_utc()`
+- [ ] **A stored timestamp comparison** — through `appcore.ensure_utc()`
 - [ ] **A new config key** — documented in `config.yaml` with its default
       commented out, and in the reference
 - [ ] **A new dependency** — said below what it buys and what it costs at

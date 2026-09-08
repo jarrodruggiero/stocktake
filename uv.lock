@@ -56,6 +56,21 @@ wheels = [
 ]
 
 [[package]]
+name = "appcore"
+version = "0.1.0"
+source = { git = "https://github.com/jarrodruggiero/appcore?rev=03cf210cb38b5f36791ece58ebf4a5b761d7316d#03cf210cb38b5f36791ece58ebf4a5b761d7316d" }
+dependencies = [
+    { name = "alembic" },
+    { name = "fastapi" },
+    { name = "jinja2" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pyjwt", extra = ["crypto"] },
+    { name = "pyyaml" },
+    { name = "sqlalchemy" },
+]
+
+[[package]]
 name = "argon2-cffi"
 version = "25.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1235,6 +1250,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a3/5e/ecf12fdb62546d64385c158514e9b2b671f7832108ef2ecd2020ce0af2d1/pyjwt-2.13.0-py3-none-any.whl", hash = "sha256:66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728", size = 31274, upload-time = "2026-05-21T19:54:35.362Z" },
 ]
 
+[package.optional-dependencies]
+crypto = [
+    { name = "cryptography" },
+]
+
 [[package]]
 name = "pyopenssl"
 version = "26.4.0"
@@ -1553,6 +1573,7 @@ version = "0.64.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
+    { name = "appcore" },
     { name = "argon2-cffi" },
     { name = "fastapi" },
     { name = "jinja2" },
@@ -1587,6 +1608,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
+    { name = "appcore", git = "https://github.com/jarrodruggiero/appcore?rev=03cf210cb38b5f36791ece58ebf4a5b761d7316d" },
     { name = "argon2-cffi", specifier = ">=23.1" },
     { name = "fastapi", specifier = ">=0.111" },
     { name = "jinja2", specifier = ">=3.1" },

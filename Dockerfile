@@ -123,9 +123,8 @@ COPY --chown=1000:1000 config.yaml ./config.default.yaml
 # App source last: it changes most often, so everything above stays cached.
 # Migrations live inside app/migrations so they ship with the source.
 COPY --chown=1000:1000 app ./app
-# `appkit` is a package in this repository rather than a dependency to resolve,
-# so it is copied like any other source directory.
-COPY --chown=1000:1000 appkit ./appkit
+# `appcore` is no longer copied: it is a pinned git dependency, installed into
+# the virtualenv by `uv sync` in the layer above.
 ENV PATH="/srv/stocktake/.venv/bin:$PATH"
 
 # --------------------------------------------------------------------------- #
@@ -181,5 +180,5 @@ VOLUME ["/data"]
 EXPOSE 8000
 # config.yaml is mounted from a ConfigMap at /config/config.yaml in-cluster;
 # on compose/Unraid the wizard writes it there itself on first run.
-# Migrations run at startup (appkit.upgrade_to_head) before serving.
+# Migrations run at startup (appcore.upgrade_to_head) before serving.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

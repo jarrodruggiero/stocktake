@@ -37,13 +37,13 @@ from fastapi.responses import (
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session as DbSession
 
-from appkit import (
+from appcore import (
     create_app,
     ensure_utc,
     load_config,
     oidc,
 )
-from appkit.config import DatabaseSettings
+from appcore.config import DatabaseSettings
 
 from . import (
     auth,

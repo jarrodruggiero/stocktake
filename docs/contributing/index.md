@@ -43,7 +43,7 @@ a checklist you tick. If something on it does not apply, delete the line.
 2. **The test was written before the code, and you watched it fail.** Then
    break your change on purpose and watch the same test go red again. A
    test that passes either way is documentation, not a test.
-3. **`ruff check app appkit tests tools` is clean.**
+3. **`ruff check app appcore tests tools` is clean.**
 4. **Non-obvious decisions carry their reason in a comment.** Not what the code
    does — why it does it that way. See [house style](style.md).
 5. **No personal data.** Fixtures use fictional tickers (ALPHA, BETAX, GAMMA)

@@ -6,8 +6,10 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"
 dependencies = [
-    # The web/data scaffold. `appkit/` is a package in this repository, not a
-    # dependency to resolve, so its requirements are listed here directly.
+    # `appcore` brings its own requirements; these are what this application
+    # uses directly. Declaring them rather than relying on a dependency's
+    # dependencies means an appcore that stops needing one does not silently
+    # break this.
     "fastapi>=0.111",
     "uvicorn[standard]>=0.30",
     "pydantic>=2.7",
@@ -27,6 +29,7 @@ dependencies = [
     "pyotp>=2.9",      # TOTP second factor
     "qrcode>=7.4",     # TOTP enrolment QR, rendered locally as inline SVG
     "webauthn>=3.0.0", # passkeys: both ceremonies, and the signature checks
+    "appcore",         # the suite's shared scaffold — pinned below
     "pyjwt>=2.13.0",
 ]
 
@@ -36,12 +39,19 @@ Documentation = "https://jarrodruggiero.github.io/stocktake"
 Source = "https://github.com/jarrodruggiero/stocktake"
 Issues = "https://github.com/jarrodruggiero/stocktake/issues"
 
+[tool.uv.sources]
+# Pinned to a revision rather than tracking a branch: nothing here changes
+# because somebody pushed to appcore. Moving the pin is a deliberate act, and
+# appcore's own CI runs THIS suite against its main, so a break shows up there
+# before it ever reaches a pin.
+appcore = { git = "https://github.com/jarrodruggiero/appcore", rev = "03cf210cb38b5f36791ece58ebf4a5b761d7316d" }
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["app", "appkit"]
+packages = ["app"]
 
 # Test-only dependencies. NOT installed into the image (the Dockerfile installs
 # the runtime list directly), so this group is free to grow.
@@ -74,18 +84,16 @@ line-length = 100
 select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.ruff.lint.isort]
-# Say which packages are ours rather than letting ruff infer it: `appkit` is a
-# directory at the root here, and inference that depends on layout sorts the
-# same file differently depending on where it is checked out.
+# Say which packages are ours rather than letting ruff infer it: `appcore` is
+# an installed dependency, and inference that depends on layout sorts the same
+# file differently depending on where it is checked out.
 # `factories`/`fixture_portfolio` are the test suite's own top-level helpers.
-known-first-party = ["app", "appkit", "factories", "fixture_portfolio", "test_routes"]
+known-first-party = ["app", "appcore", "factories", "fixture_portfolio", "test_routes"]
 
 [tool.coverage.run]
-# `appkit` as well as `app`: the OIDC protocol lives in appkit/oidc.py, and
-# measuring only `app` reported 92.85% while the file doing the verifying
-# contributed nothing to it. Raised on #25 — two numbers that together read as
-# more cover than they were.
-source = ["app", "appkit"]
+# `app` only: appcore is a dependency now and measures itself, in its own
+# repository, against its own gate.
+source = ["app"]
 branch = true
 
 [tool.coverage.report]

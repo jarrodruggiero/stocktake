@@ -25,7 +25,7 @@ from pydantic import ValidationError
 from pydantic_settings import SettingsConfigDict
 
 from app.settings import DEFAULT_TIMEZONE, PortfolioSettings
-from appkit.config import DatabaseSettings
+from appcore.config import DatabaseSettings
 
 
 def _isolate_database_env(monkeypatch) -> None:

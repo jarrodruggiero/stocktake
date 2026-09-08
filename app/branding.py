@@ -2,7 +2,7 @@
 
 Separate from `settings.app_name` on purpose, even though both now read
 "stocktake". They answer different questions and change at different times:
-`app_name` is the *storage* key — appkit derives the SQLite path from it, so
+`app_name` is the *storage* key — appcore derives the SQLite path from it, so
 changing it moves the database — while this is what a person reads on a page.
 Keeping them apart means a wording change ("Stocktake" → "Stocktake Pro")
 cannot quietly repoint a running installation at an empty file.

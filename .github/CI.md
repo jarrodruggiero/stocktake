@@ -28,7 +28,7 @@ tell us.
 ## Two things that look like decoration and are not
 
 **`known-first-party` is set explicitly in `pyproject.toml`.** Ruff otherwise
-infers first-party packages from the layout, and `appkit` is a directory at the
+infers first-party packages from the layout, and `appcore` is a directory at the
 root here rather than an installed package. Inference that depends on layout
 sorts the same file differently depending on where it is checked out, which
 fails CI for a reason nobody can reproduce locally.
