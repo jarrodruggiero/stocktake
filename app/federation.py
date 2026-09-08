@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from appkit import ensure_utc, oidc
 
+from . import twofactor
 from .models import ExternalIdentity, OidcState, PortfolioInvite, User
 from .settings import OidcSettings, PortfolioSettings
 
@@ -204,6 +205,12 @@ def provision(db: DbSession, identity: oidc.Identity) -> User:
     user = User(email=email, name=identity.name or email, password_hash=None)
     db.add(user)
     db.flush()
+    # Issued here as on every other path that creates an account. It matters
+    # more here than anywhere: this account has no password either, so without
+    # them a provider that goes away leaves nothing but an admin reset.
+    # `recovery_codes_seen_at` stays NULL, so the banner asks them to save a
+    # set of their own on first sign-in.
+    twofactor.ensure_recovery_codes(db, user)
     link(db, user, identity)
     return user
 
