@@ -82,6 +82,18 @@ on it would be a way to sign in as somebody else. That is why linking an
 existing account is something you do while signed in, rather than something
 that happens by itself.
 
+## Signing out
+
+Signing out of Stocktake also ends your session at the provider, when you
+signed in through it. A password sign-in signs out locally only — you were
+never at the provider, so there is nothing to end there.
+
+**The directory is not the source of truth for access here.** Removing somebody
+from your provider stops them signing in; it does not end the session they
+already have, and it does not remove their account. To end their access now,
+disable them under Admin → Accounts: that destroys every session they hold
+immediately.
+
 ## Getting back in if the provider goes away
 
 An account created by a provider has no password. It does have **recovery

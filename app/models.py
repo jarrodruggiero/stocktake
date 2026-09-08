@@ -359,6 +359,13 @@ class UserSession(Base):
         DateTime(timezone=True), default=_utcnow
     )
     expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
+    # Whether this session began at an identity provider. Signing out then
+    # means signing out there too — but only for the sessions that did: a
+    # password sign-in must not bounce somebody out of a provider they were
+    # not using here.
+    via_oidc: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
     # The recovery-codes banner, put away for THIS session. Deliberately not on
     # the user: dismissing it should last until they sign in again, not
     # forever — codes nobody has saved are codes nobody has.

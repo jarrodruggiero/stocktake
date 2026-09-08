@@ -1776,15 +1776,26 @@ async def session_keepalive(request: Request):
 
 @app.post("/logout")
 async def logout(request: Request, next: str = ""):
+    provider_logout = None
     with anon() as db:
         await auth.verify_csrf(request, db)
-        auth.destroy_session(db, request.cookies.get(settings.auth.cookie_name))
+        token = request.cookies.get(settings.auth.cookie_name)
+        row = auth.load_session(db, token, settings)
+        # Read BEFORE the session is destroyed, and only for a session that
+        # began at the provider. Failing to reach the provider must not stop
+        # the local sign-out, so this is worked out first and used after.
+        if row is not None and row.via_oidc and federation.configured(settings):
+            try:
+                provider_logout = oidc.end_session_url(federation.provider(settings))
+            except oidc.OidcError:
+                provider_logout = None
+        auth.destroy_session(db, token)
     # `next` exists for one caller: the idle overlay, which sends people to
     # /login?timeout=1 so the page explains itself. Only same-site paths are
     # honoured — see `_safe_path`, which is also what the trade editor's
     # `?return=` uses.
     target = _safe_path(next, "/login")
-    resp = _redirect(target)
+    resp = _redirect(provider_logout or target)
     resp.delete_cookie(settings.auth.cookie_name, path="/")
     return resp
 
@@ -2166,6 +2177,10 @@ def login_oidc_callback(request: Request, code: str = "", state: str = "",
             db, user, settings, active_portfolio_id=_landing_portfolio(db, user),
             ip=ip, user_agent=request.headers.get("user-agent"),
         )
+        # So signing out can end the provider's session too — and only for the
+        # sessions that started there.
+        auth.load_session(db, raw, settings).via_oidc = True
+        db.flush()
         log.info("oidc sign-in for user %s", user.id)
     resp = _redirect(target)
     _set_session_cookie(resp, raw)
