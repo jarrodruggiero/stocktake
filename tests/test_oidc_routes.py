@@ -307,3 +307,67 @@ def test_a_signed_in_account_can_link_a_provider(
         link = db.scalar(select(ExternalIdentity))
         assert link is not None and link.issuer == ISSUER
     assert "Single sign-on" in client.get("/profile", headers=HTML).text
+
+
+# --------------------------------------------------------------------------- #
+# Signing out of both places
+# --------------------------------------------------------------------------- #
+
+def test_signing_out_of_a_provider_session_ends_it_at_the_provider_too(
+    client, session_factory, oidc_on, idp
+):
+    """What most people mean by "sign out". The local session is destroyed
+    first and the redirect is worked out before that, so a provider that
+    cannot be reached does not strand somebody signed in."""
+    make_login(client, session_factory)
+    with session_factory() as db:
+        federation.link(db, db.scalar(select(User)), oidc.Identity(
+            subject="idp-subject-1", issuer=ISSUER, email="user@example.test",
+            email_verified=True, name="User"))
+        db.commit()
+    client.post("/logout", data={"_csrf": session_csrf(session_factory)},
+                follow_redirects=False)
+    state = _begin(client)
+    _callback(client, idp, state)
+
+    resp = client.post("/logout", follow_redirects=False,
+                       data={"_csrf": session_csrf(session_factory)})
+
+    assert resp.headers["location"].startswith(f"{ISSUER}/end-session")
+    assert client.get("/", headers=HTML, follow_redirects=False).status_code == 303
+
+
+def test_a_password_session_is_not_bounced_to_the_provider(
+    client, session_factory, oidc_on, idp
+):
+    """Somebody who signed in with a password was never at the provider. Ending
+    a session they do not have there would be a surprise, not a courtesy."""
+    make_login(client, session_factory)
+
+    resp = client.post("/logout", follow_redirects=False,
+                       data={"_csrf": session_csrf(session_factory)})
+
+    assert resp.headers["location"] == "/login"
+
+
+def test_a_provider_with_no_end_session_endpoint_signs_out_locally(
+    client, session_factory, oidc_on, idp
+):
+    """It is optional in the discovery document and several providers omit it.
+    Absent means an ordinary local sign-out, not a failure."""
+    make_login(client, session_factory)
+    with session_factory() as db:
+        federation.link(db, db.scalar(select(User)), oidc.Identity(
+            subject="idp-subject-1", issuer=ISSUER, email="user@example.test",
+            email_verified=True, name="User"))
+        db.commit()
+    client.post("/logout", data={"_csrf": session_csrf(session_factory)},
+                follow_redirects=False)
+    idp.omit_end_session = True
+    state = _begin(client)
+    _callback(client, idp, state)
+
+    resp = client.post("/logout", follow_redirects=False,
+                       data={"_csrf": session_csrf(session_factory)})
+
+    assert resp.headers["location"] == "/login"

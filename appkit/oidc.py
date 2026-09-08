@@ -147,6 +147,26 @@ def _verifier() -> tuple[str, str]:
     return verifier, challenge
 
 
+def end_session_url(provider: Provider, *, id_token: str | None = None,
+                    redirect_to: str | None = None) -> str | None:
+    """Where to send somebody to sign out of the PROVIDER too, or None.
+
+    Optional in the discovery document and absent from several providers, so
+    None is an ordinary answer rather than a failure — the local sign-out has
+    already happened by the time this is asked.
+    """
+    document = discover(provider)
+    endpoint = document.get("end_session_endpoint")
+    if not endpoint:
+        return None
+    query = {"client_id": provider.client_id}
+    if id_token:
+        query["id_token_hint"] = id_token
+    if redirect_to:
+        query["post_logout_redirect_uri"] = redirect_to
+    return f"{endpoint}?{urllib.parse.urlencode(query)}"
+
+
 def begin(provider: Provider) -> tuple[str, dict[str, str]]:
     """Where to send the browser, and what the caller must remember.
 
