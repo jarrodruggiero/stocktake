@@ -2982,21 +2982,45 @@ async def members_role(request: Request, member_id: int, role: str = Form(...)):
 
 
 @app.post("/members/{member_id}/remove")
-async def members_remove(request: Request, member_id: int):
+async def members_remove(request: Request, member_id: int,
+                         delete_portfolio: str = Form("")):
+    """Remove somebody, or — when they are the last one — delete the portfolio.
+
+    The two are one action because they are one decision. Removing the only
+    member would leave a portfolio nobody can reach: membership is the only
+    route to one, so it would still hold every trade and be invisible to
+    everybody, admins included. Offering the deletion here is what stops that
+    state being reachable by accident — decisions.md #123.
+    """
     with scoped(request) as (ctx, db):
         _require_owner(ctx)
         await auth.verify_csrf(request, db)
         member = db.get(PortfolioMember, member_id)
         if member is None or member.portfolio_id != ctx.active_portfolio_id:
             raise HTTPException(404, "no such member")
-        owners = db.scalar(
-            select(func.count())
+        counts = db.execute(
+            select(func.count(),
+                   func.count().filter(PortfolioMember.role == "owner"))
             .select_from(PortfolioMember)
-            .where(
-                PortfolioMember.portfolio_id == ctx.active_portfolio_id,
-                PortfolioMember.role == "owner",
-            )
-        )
+            .where(PortfolioMember.portfolio_id == ctx.active_portfolio_id)
+        ).one()
+        members, owners = counts
+
+        if members <= 1:
+            if delete_portfolio.lower() not in ("1", "true", "on", "yes"):
+                return _redirect("/members?error=A+portfolio+needs+an+owner")
+            portfolio = db.get(Portfolio, ctx.active_portfolio_id)
+            log.info("portfolio %s deleted by user %s",
+                     ctx.active_portfolio_id, ctx.user.id)
+            # Everything it holds goes with it: trades, dividends, plans,
+            # charts, keys, invites. The session is left alone — `load_auth`
+            # already falls back when its active portfolio is not one of your
+            # memberships, which is the same code path as being removed from
+            # one, and it runs on every request rather than only this one.
+            db.delete(portfolio)
+            db.flush()
+            return _redirect("/")
+
         if member.role == "owner" and owners <= 1:
             return _redirect("/members?error=A+portfolio+needs+an+owner")
         db.delete(member)
