@@ -1150,27 +1150,28 @@ def setup_recovery(request: Request):
 def setup_twofactor(request: Request, error: str = ""):
     """Offered only when the account step asked for it.
 
-    The secret lives in the form rather than on the user row until a code
-    proves the app really holds it — decisions.md #39. Same ceremony as
-    `/profile/2fa`, in wizard chrome.
+    Same ceremony as `/profile/2fa`, in wizard chrome — including resuming an
+    enrolment already in progress, which matters more here: a wrong code
+    re-renders this page, and regenerating would invalidate the QR on the way
+    back from the mistake.
     """
     ctx = _wizard_step(request, "2fa")
-    secret = twofactor.new_secret()
-    uri = twofactor.provisioning_uri(secret, ctx.user.email, branding.NAME)
+    with scoped(request) as (inner, db):
+        enrol = _enrolment(db, inner.user)
     return _wizard_page(request, "2fa", {
         "error": error or None,
-        "secret": secret,
-        "qr": twofactor.qr_svg(uri),
+        "secret": enrol["secret"],
+        "qr": enrol["qr"],
     }, ctx=ctx, skip=_skipped_steps())
 
 
 @app.post("/setup/2fa")
-async def setup_twofactor_enable(
-    request: Request, secret: str = Form(...), code: str = Form(...)
-):
+async def setup_twofactor_enable(request: Request, code: str = Form(...)):
     _wizard_step(request, "2fa")
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
+        # The pending secret on the row, never one posted with the form.
+        secret = ctx.user.totp_secret
         if not twofactor.verify_code(secret, code):
             return _redirect("/setup/2fa?error=" + quote_plus(
                 "That code isn't right — check the app and try again."))
@@ -1922,14 +1923,15 @@ async def revoke_other_sessions(request: Request):
         return _redirect("/profile?saved=sessions-revoked")
 
 
-def _enrolment(user: User) -> dict:
-    """A fresh secret and its QR, for the enrolment form.
+def _enrolment(db: DbSession, user: User) -> dict:
+    """The pending secret and its QR, for the enrolment form.
 
-    Generated per render and never stored: it reaches the user row only once a
-    code proves the authenticator holds it — decisions.md #39. That is also why
-    rendering one on the profile page costs nothing but the drawing.
+    The secret is held on the user row until a code confirms it, so returning
+    here shows the SAME QR. It used to be generated per render, which meant a
+    refresh silently invalidated the code somebody had just scanned.
     """
-    secret = twofactor.new_secret()
+    secret = twofactor.begin_enrolment(user)
+    db.flush()
     return {"secret": secret,
             "qr": twofactor.qr_svg(
                 twofactor.provisioning_uri(secret, user.email, branding.NAME))}
@@ -1944,7 +1946,7 @@ def _twofactor_context(db: DbSession, user: User) -> dict:
         ),
         # The dialog on the profile page needs it up front; None once it is on,
         # which is what hides the "Set up" dialog entirely.
-        "enrol": None if twofactor.is_enabled(user) else _enrolment(user),
+        "enrol": None if twofactor.is_enabled(user) else _enrolment(db, user),
         "new_codes": None,  # shown exactly once, right after enabling
     }
 
@@ -1962,20 +1964,21 @@ def twofactor_setup(request: Request, error: str = ""):
         return _render(
             request, ctx, "twofactor_setup.html",
             {"error": error, "active_nav": "account",
-             "enrol": _enrolment(ctx.user)},
+             "enrol": _enrolment(db, ctx.user)},
         )
 
 
 @app.post("/profile/2fa/enable")
-async def twofactor_enable(
-    request: Request, secret: str = Form(...), code: str = Form(...)
-):
+async def twofactor_enable(request: Request, code: str = Form(...)):
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
         if twofactor.is_enabled(ctx.user):
             return _redirect("/profile")
-        # The code proves the authenticator really holds this secret. Skipping
-        # it is how people lock themselves out.
+        # The PENDING secret, not one posted with the form: a caller that
+        # supplied its own would be enrolling an authenticator this account
+        # never scanned. The code proves the app holds it — skipping that check
+        # is how people lock themselves out.
+        secret = ctx.user.totp_secret
         if not twofactor.verify_code(secret, code):
             return _redirect("/profile/2fa?error=" + quote_plus(
                 "That code isn't right — check the app and try again."))

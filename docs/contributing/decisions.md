@@ -262,11 +262,24 @@ Without this route, using a template meant putting a file on the container's
 disk by hand, which on Kubernetes means a read-only ConfigMap. **If templates
 ever gain an executable escape hatch, this route goes with it.**
 
-**39. Two-factor enrolment is two requests, and the unconfirmed secret never
-touches the user row.** Generating and showing a secret, then confirming with a
-code derived from it, is what stops somebody enabling 2FA with a secret they
-never successfully scanned and locking themselves out of their own portfolio.
-The pending secret rides in the form, so an abandoned enrolment leaves nothing.
+**39. Two-factor enrolment is two requests, and the pending secret is held on
+the user row.** Showing a secret and then confirming it with a code derived
+from it is what stops somebody enabling 2FA with a secret they never
+successfully scanned and locking themselves out.
+
+It used to ride in the form so that an abandoned enrolment left nothing. That
+was the wrong trade: the secret was regenerated on every render, so refreshing
+the page — or coming back to it after a mistyped code, which the wizard does on
+its own — silently invalidated the QR just scanned, and the phone's code stopped
+matching with nothing on screen to explain it. Found in sundries and present
+here twice, on the profile page and in the wizard.
+
+So an enrolment in progress is **resumed**: the secret is stored, and returning
+shows the same QR. Storing it enables nothing, because `is_enabled` wants
+`totp_enabled_at` as well — an unfinished enrolment is inert and signs nobody
+in. It also closed something the form version allowed: any secret posted with a
+matching code used to be accepted, so a caller could enrol an authenticator the
+account had never scanned.
 
 **40. A back button reads `?return=`, never `Referer` or `history.back()`.**
 The holding page is reached from the dashboard, an FY page, Manage holdings and

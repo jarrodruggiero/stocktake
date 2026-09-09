@@ -1758,13 +1758,36 @@ def test_enrolling_during_setup_turns_it_on(client, session_factory):
     _through_the_account(client, want_2fa=True)
     page = client.get("/setup/2fa", headers=HTML)
     assert page.status_code == 200
-    secret = re.search(r'name="secret" value="([^"]+)"', page.text).group(1)
+    secret = re.search(r"<code>([A-Z2-7]+)</code>", page.text).group(1)
     resp = client.post("/setup/2fa", headers=HTML, follow_redirects=False,
-                       data={"secret": secret, "code": pyotp.TOTP(secret).now(),
+                       data={"code": pyotp.TOTP(secret).now(),
                              "_csrf": _token(client)})
     assert resp.headers["location"] == "/setup/portfolio"
     with session_factory() as db:
         assert twofactor.is_enabled(db.query(User).one())
+
+
+def test_a_wrong_code_leaves_the_scanned_qr_working(client, session_factory):
+    """The wizard's version of the same bug, and the likelier way to meet it:
+    a wrong code re-renders this page, and regenerating the secret there would
+    invalidate the QR on the way back from a typo.
+    """
+    import pyotp
+
+    _through_the_account(client, want_2fa=True)
+    first = client.get("/setup/2fa", headers=HTML).text
+    secret = re.search(r"<code>([A-Z2-7]+)</code>", first).group(1)
+
+    client.post("/setup/2fa", headers=HTML, follow_redirects=False,
+                data={"code": "000000", "_csrf": _token(client)})
+
+    again = client.get("/setup/2fa", headers=HTML).text
+    assert f"<code>{secret}</code>" in again
+    # And the code from the phone that scanned the FIRST one still works.
+    resp = client.post("/setup/2fa", headers=HTML, follow_redirects=False,
+                       data={"code": pyotp.TOTP(secret).now(),
+                             "_csrf": _token(client)})
+    assert resp.headers["location"] == "/setup/portfolio"
 
 
 def test_a_wrong_code_does_not_enable_it(client, session_factory):
@@ -1772,10 +1795,14 @@ def test_a_wrong_code_does_not_enable_it(client, session_factory):
     enrolment without it is how somebody locks themselves out of their own app.
     """
     _through_the_account(client, want_2fa=True)
-    page = client.get("/setup/2fa", headers=HTML)
-    secret = re.search(r'name="secret" value="([^"]+)"', page.text).group(1)
+    # The page visit matters: it issues the pending secret, so the refusal
+    # below is about the wrong code rather than about there being nothing to
+    # check against.
+    client.get("/setup/2fa", headers=HTML)
+
     client.post("/setup/2fa", headers=HTML, follow_redirects=False,
-                data={"secret": secret, "code": "000000", "_csrf": _token(client)})
+                data={"code": "000000", "_csrf": _token(client)})
+
     with session_factory() as db:
         assert not twofactor.is_enabled(db.query(User).one())
 
@@ -1791,9 +1818,9 @@ def test_enrolling_does_not_reissue_the_codes_already_handed_out(client, session
     with session_factory() as db:
         before = {c.code_hash for c in db.query(RecoveryCode).all()}
     page = client.get("/setup/2fa", headers=HTML)
-    secret = re.search(r'name="secret" value="([^"]+)"', page.text).group(1)
+    secret = re.search(r"<code>([A-Z2-7]+)</code>", page.text).group(1)
     client.post("/setup/2fa", headers=HTML, follow_redirects=False,
-                data={"secret": secret, "code": pyotp.TOTP(secret).now(),
+                data={"code": pyotp.TOTP(secret).now(),
                       "_csrf": _token(client)})
     with session_factory() as db:
         assert {c.code_hash for c in db.query(RecoveryCode).all()} == before

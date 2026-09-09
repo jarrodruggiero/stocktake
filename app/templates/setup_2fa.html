@@ -10,7 +10,6 @@
 
 <form class="panel" method="post" action="/setup/2fa" autocomplete="off">
   <input type="hidden" name="_csrf" value="{{ csrf }}">
-  <input type="hidden" name="secret" value="{{ secret }}">
   <label>Code from your app
     <input name="code" inputmode="numeric" autocomplete="one-time-code"
            required maxlength="10" placeholder="123456" autofocus>
