@@ -354,7 +354,48 @@ def test_the_setup_page_offers_a_secret_and_a_qr(client, session_factory):
     page = client.get("/profile/2fa", headers=HTML).text
 
     assert "<svg" in page
-    assert 'name="secret"' in page
+    # The key, for somebody who cannot scan. The secret is NOT a form field any
+    # more: it is held on the row, and a posted one would let a caller enrol an
+    # authenticator this account never scanned.
+    assert "<code>" in page
+    assert 'name="secret"' not in page
+
+
+def test_a_secret_posted_with_the_form_is_ignored(client, session_factory):
+    """Only the secret this account was issued counts.
+
+    While it rode in the form, anything posted alongside a matching code turned
+    2FA on — so a caller could enrol an authenticator this account had never
+    scanned, and the real owner would be locked behind somebody else's phone.
+    Holding it on the row closed that; this is what keeps it closed.
+    """
+    make_login(client, session_factory)
+    client.get("/profile/2fa", headers=HTML)          # issues the real one
+    theirs = pyotp.random_base32()
+
+    client.post("/profile/2fa/enable", headers=HTML,
+                data={"secret": theirs, "code": code_for(theirs),
+                      "_csrf": session_csrf(session_factory)})
+
+    with session_factory() as s:
+        user = s.scalars(select(User)).one()
+        assert not twofactor.is_enabled(user)
+        assert user.totp_secret != theirs
+
+
+def test_returning_to_the_setup_page_shows_the_same_secret(client, session_factory):
+    """The bug this replaced: a secret generated per render meant a refresh —
+    or anything else that re-fetched the page — silently invalidated the QR
+    somebody had just scanned, and their code stopped matching with nothing on
+    screen to explain it. Found in sundries first.
+    """
+    make_login(client, session_factory)
+
+    first = client.get("/profile/2fa", headers=HTML).text
+    again = client.get("/profile/2fa", headers=HTML).text
+
+    key = re.search(r"<code>([A-Z2-7]+)</code>", first).group(1)
+    assert f"<code>{key}</code>" in again
 
 
 def test_enabling_needs_a_code_generated_from_that_secret(client, session_factory):
@@ -375,10 +416,14 @@ def test_enabling_needs_a_code_generated_from_that_secret(client, session_factor
 
 def test_enabling_with_a_real_code_turns_it_on_and_shows_the_codes_once(client, session_factory):
     make_login(client, session_factory)
-    secret = pyotp.random_base32()
+    # Through the page, because that is what issues the secret. Posting one of
+    # its own used to work, which is what let a caller enrol an authenticator
+    # this account had never scanned.
+    page = client.get("/profile/2fa", headers=HTML).text
+    secret = re.search(r"<code>([A-Z2-7]+)</code>", page).group(1)
 
     resp = client.post("/profile/2fa/enable",
-                       data={"secret": secret, "code": code_for(secret),
+                       data={"code": code_for(secret),
                              "_csrf": session_csrf(session_factory)},
                        headers=HTML)
 
@@ -391,15 +436,23 @@ def test_enabling_with_a_real_code_turns_it_on_and_shows_the_codes_once(client, 
     assert "only time these are shown" not in client.get("/profile", headers=HTML).text
 
 
-def test_an_abandoned_enrolment_leaves_nothing_behind(client, session_factory):
-    """The unconfirmed secret rides in the form, never the user row."""
+def test_an_abandoned_enrolment_leaves_nothing_ENABLED(client, session_factory):
+    """It leaves a secret now — that is what makes the QR survive a refresh —
+    but nothing that can be signed in with.
+
+    `is_enabled` wants `totp_enabled_at` as well, so an enrolment nobody
+    finished is inert: the login flow never asks for a code, and the account is
+    exactly as it was.
+    """
     make_login(client, session_factory)
 
     client.get("/profile/2fa", headers=HTML)
 
     with session_factory() as s:
         user = s.scalars(select(User)).one()
-        assert user.totp_secret is None
+        assert user.totp_secret is not None      # so returning shows the same QR
+        assert user.totp_enabled_at is None      # and it turns nothing on
+        assert twofactor.is_enabled(user) is False
 
 
 def test_turning_it_off_needs_both_the_password_and_a_code(client, session_factory, enrolled):

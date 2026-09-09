@@ -192,6 +192,23 @@ def is_enabled(user: User) -> bool:
     return bool(user.totp_secret and user.totp_enabled_at)
 
 
+def begin_enrolment(user: User) -> str:
+    """Issue a secret without turning anything on, or resume one in progress.
+
+    RESUMED rather than restarted, which is the whole point. A fresh secret on
+    every render means a refresh — or anything else that re-fetches the page —
+    silently invalidates the QR just scanned, and the code the phone shows stops
+    matching for a reason nothing on screen explains. decisions.md #39.
+
+    Storing it does not enable anything: `is_enabled` wants `totp_enabled_at`
+    as well, so a secret on its own is a half-finished enrolment that signs
+    nobody in.
+    """
+    if not (user.totp_secret and user.totp_enabled_at is None):
+        user.totp_secret = new_secret()
+    return user.totp_secret
+
+
 def enable(db: DbSession, user: User, secret: str) -> list[str]:
     """Turn it on. Caller has already verified a code from this secret — that
     check is what proves the app was really enrolled.

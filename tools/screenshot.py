@@ -135,9 +135,11 @@ def render_all() -> None:
     # and the later pages would then be showing the shorter one.
     page = client.get("/setup/2fa", headers=HTML)
     save("5-2fa", page.text)
-    secret = re.search(r'name="secret" value="([^"]+)"', page.text).group(1)
+    # The key shown for anyone who cannot scan. The secret stopped being a
+    # form field when enrolment started being resumable — decisions.md #39.
+    secret = re.search(r"<code>([A-Z2-7]+)</code>", page.text).group(1)
     client.post("/setup/2fa", headers=HTML, follow_redirects=False,
-                data={"_csrf": token("/setup/2fa"), "secret": secret,
+                data={"_csrf": token("/setup/2fa"),
                       "code": pyotp.TOTP(secret).now()})
     save("6-portfolio", client.get("/setup/portfolio", headers=HTML).text)
     client.post("/setup/portfolio",
