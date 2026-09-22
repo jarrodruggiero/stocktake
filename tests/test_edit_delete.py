@@ -146,8 +146,11 @@ def test_the_edit_form_rejects_nonsense_numbers(client, session_factory, ledger)
     "overrides, expected",
     [
         ({"type": "drp"}, "Choose+buy+or+sell"),
-        ({"quantity": "0"}, "greater+than+zero"),
-        ({"unit_price": "-1"}, "greater+than+zero"),
+        ({"quantity": "0"}, "Units+must+be+greater+than+zero"),
+        # Zero price is ACCEPTED now (a bonus issue, a reward-plan grant), so
+        # this pins the remaining floor rather than the old combined one —
+        # tests/test_trade_prefill.py holds the accepting half.
+        ({"unit_price": "-1"}, "Price+can%27t+be+negative"),
         ({"brokerage": "-5"}, "can%27t+be+negative"),
         ({"fx_rate": "0"}, "FX+must+be+positive"),
         ({"set_time": "1", "trade_time": "half+past+ten"}, "isn%27t+a+time"),

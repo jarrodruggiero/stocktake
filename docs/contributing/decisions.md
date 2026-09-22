@@ -913,3 +913,35 @@ this position is the sole member of a portfolio nobody else can reach, so
 requiring an administrator adds no protection — there is nobody else to
 protect — and would leave a non-admin unable to tidy up their own, with no one
 able to help them. The confirmation and the tickbox are the guard rails.
+
+**124. A price of zero is a real trade, and the form asks for the trade's
+date.** Zero was refused everywhere except the importers, which have always
+accepted it — so a bonus issue or an employer's grant could be imported but not
+typed. There is nothing in the database to relax: `quantity > 0` is a CHECK
+constraint, `unit_price` never had one. Every percentage already guards its
+divisor (`gain / cost if cost else None`, `percentage_applies`), so a zero cost
+base reports N/A rather than dividing — which is the right answer, not a gap.
+
+The second half is the reason this is here. The instrument picker used to carry
+each instrument's **latest** close and rate, and choosing one wrote them into
+the form. That is right only for a trade recorded today; on a backdated one it
+books the wrong cost base, and the wrong FX rate *permanently* — the price
+feed's repair pass fills `fx_rate IS NULL` and skips everything else, so a
+prefilled wrong rate is the one thing nothing will ever correct. Both figures
+now come from `/holdings/price` for the date on the form, and the option data
+was **deleted** rather than fixed: a field with two sources eventually takes
+the stale one again.
+
+Where nothing is stored for that date the fields are left EMPTY, and
+`queries.close_on_or_before` reaches backwards only. This is deliberately
+narrower than `FxBook.rate`, which reaches forward to the earliest stored rate
+when a *report* asks about a date before the series — a report must produce a
+figure or omit the holding, whereas a form can ask the person to read their
+contract note. It is #5 applied to an input rather than an output: an empty
+rate is repairable, a plausible wrong one is not.
+
+Zero is still not the right cost base for an employee share scheme, which is
+what prompted the change (issue #35). The ATO resets it to market value at the
+taxing point, and the taxing point also restarts the 12-month discount clock.
+That belongs in [the guide](../guides/free-and-discounted-shares.md), not in a
+validator — the app takes the number it is given.

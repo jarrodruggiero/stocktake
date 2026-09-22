@@ -225,7 +225,9 @@ class TradeIn(BaseModel):
     type: str = Field(pattern="^(buy|sell|drp)$")
     date: dt.date
     units: Decimal = Field(gt=0)
-    unit_price: Decimal = Field(gt=0)
+    # `ge`, not `gt`: a free parcel is a real thing (a bonus issue, a
+    # reward-plan grant), and the forms accept one. Negative is still refused.
+    unit_price: Decimal = Field(ge=0)
     brokerage: Decimal = Field(default=Decimal(0), ge=0)
     fx_rate: Decimal | None = Field(default=None, gt=0)
     note: str | None = None

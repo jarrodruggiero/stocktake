@@ -3249,29 +3249,18 @@ def _one_currency(holdings) -> str | None:
 def _instrument_options(db, instruments):
     """What each option in the instrument picker needs to carry.
 
-    The form fills in a price and an FX rate when you pick something, and doing
-    that with a fetch per selection would be a round trip for data the page
-    already had to load. So each option carries its own latest close and rate,
-    and `tradeform.js` reads them off the selected option.
+    The currency, because it decides whether the FX field applies and that
+    should not cost a round trip. NOT a price or a rate: those used to be here
+    as each instrument's latest close, which is wrong for any trade not dated
+    today. `/holdings/price` answers for the form's date — decisions.md #124.
     """
-    prices = queries.latest_prices(db, [i.id for i in instruments])
-    rates = queries.latest_fx_rates(db, money.REPORTING)
-    out = []
-    for inst in instruments:
-        price = prices.get(inst.id)
-        out.append({
-            "id": inst.id,
-            "ticker": inst.ticker,
-            "name": inst.name,
-            "asset_class": inst.asset_class,
-            "currency": inst.currency,
-            "price": f"{price.normalize():f}" if price is not None else "",
-            # Only for a foreign instrument: the reporting currency needs no
-            # conversion, and offering "1" would invite it being edited.
-            "fx": ("" if inst.currency == money.REPORTING
-                   else rates.get(inst.currency, "")),
-        })
-    return out
+    return [{
+        "id": inst.id,
+        "ticker": inst.ticker,
+        "name": inst.name,
+        "asset_class": inst.asset_class,
+        "currency": inst.currency,
+    } for inst in instruments]
 
 
 def _dca_prefill(db):
@@ -3854,8 +3843,8 @@ async def plan_complete(
             brk = Decimal(brokerage or "0")
         except (ValueError, InvalidOperation):
             raise HTTPException(400, "bad date/quantity/price/brokerage")
-        if qty <= 0 or price <= 0:
-            raise HTTPException(400, "quantity and price must be positive")
+        if qty <= 0 or price < 0:   # see the trade form: zero is a real price
+            raise HTTPException(400, "quantity must be positive, price not negative")
         nxt = _verify_next(db, ticker, due_date)
         inst = db.get(Instrument, nxt.instrument_id)
         if inst is None:
@@ -4129,8 +4118,12 @@ async def trade_create(
             fx = Decimal(fx_rate) if fx_rate.strip() else None
         except (ValueError, InvalidOperation):
             return _reject("Date, units, price, brokerage and FX must be numbers (date as YYYY-MM-DD).")
-        if qty <= 0 or price <= 0:
-            return _reject("Units and price must be greater than zero.")
+        if qty <= 0:
+            return _reject("Units must be greater than zero.")
+        # Zero is a real price: a bonus issue, a demerger allocation, an
+        # employer's reward-plan grant. Negative is not.
+        if price < 0:
+            return _reject("Price can't be negative.")
         if brk < 0 or (fx is not None and fx <= 0):
             return _reject("Brokerage can't be negative and FX must be positive.")
         if date > clock.today():
@@ -4340,8 +4333,12 @@ async def trade_edit(
             fx = Decimal(fx_rate) if fx_rate.strip() else None
         except (ValueError, InvalidOperation):
             return _reject("Date, units, price, brokerage and FX must be numbers (date as YYYY-MM-DD).")
-        if qty <= 0 or price <= 0:
-            return _reject("Units and price must be greater than zero.")
+        if qty <= 0:
+            return _reject("Units must be greater than zero.")
+        # Zero is a real price: a bonus issue, a demerger allocation, an
+        # employer's reward-plan grant. Negative is not.
+        if price < 0:
+            return _reject("Price can't be negative.")
         if brk < 0 or (fx is not None and fx <= 0):
             return _reject("Brokerage can't be negative and FX must be positive.")
         if date > clock.today():
@@ -4497,8 +4494,10 @@ async def dividend_edit(
                 price = Decimal(unit_price)
             except (ValueError, InvalidOperation):
                 return _reject("Units and price must be numbers.")
-            if qty <= 0 or price <= 0:
-                return _reject("Units and price must be greater than zero.")
+            if qty <= 0:
+                return _reject("Units must be greater than zero.")
+            if price < 0:   # see the trade form: zero is a real price
+                return _reject("Price can't be negative.")
             candidate = Trade(
                 instrument_id=inst.id,
                 date=date,
@@ -4704,6 +4703,35 @@ def instruments_lookup(request: Request, ticker: str = "", exchange: str = "ASX"
         if not ticker.strip():
             raise HTTPException(400, "ticker is required")
         return pricefeed.lookup(ticker, exchange)
+
+
+@app.get("/holdings/price")
+def instruments_price_on(request: Request, instrument: int, date: str = ""):
+    """The close and FX rate for one instrument on one date.
+
+    Backs the trade form, which re-asks whenever the date changes. Nulls mean
+    nothing is stored for that date and the form should stay empty rather than
+    offer the nearest figure to hand — decisions.md #124.
+
+    `as_at` is the date the figure is actually for, which is how the form names
+    the Friday close for a trade dated on a Saturday.
+    """
+    with scoped(request) as (ctx, db):
+        try:
+            on = dt.date.fromisoformat(date)
+        except ValueError:
+            raise HTTPException(400, "date must be YYYY-MM-DD")
+        inst = db.get(Instrument, instrument)
+        if inst is None:
+            raise HTTPException(404, "no such instrument")
+        close = queries.close_on_or_before(db, inst.id, on)
+        rate = queries.fx_on_or_before(db, inst.currency, on)
+        return {
+            "price": f"{close[0].normalize():f}" if close else None,
+            "as_at": close[1].isoformat() if close else None,
+            "fx": f"{rate[0].normalize():f}" if rate else None,
+            "fx_as_at": rate[1].isoformat() if rate else None,
+        }
 
 
 @app.post("/holdings/add")

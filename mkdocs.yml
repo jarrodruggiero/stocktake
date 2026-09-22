@@ -40,6 +40,7 @@ nav:
       - Overview: guides/index.md
       - Market data: guides/market-data.md
       - DCA Schedule: guides/dca-schedule.md
+      - Free and discounted shares: guides/free-and-discounted-shares.md
       - Invitations: guides/invitations.md
       - Recovery codes: guides/recovery-codes.md
       - Single sign-on: guides/single-sign-on.md
