@@ -69,10 +69,49 @@
       .catch(function () { if (status) { status.textContent = ""; } });
   }
 
-  /* Picking an instrument fills in what the app knows about it: the latest
-     close, and — only for a foreign one — the exchange rate. Both come off the
-     selected <option>, which the server already populated, so there is no
-     round trip.
+  /* What the price and FX fields should hold for the DATE on the form, asked
+     of the server whenever that date moves. Empty answers are left empty
+     rather than filled with the nearest figure — decisions.md #124.
+
+     Anything TYPED is never overwritten, the same rule `autofill` follows for
+     the instrument fields and `instrumentChosen` follows for units. */
+  function priceForDate() {
+    var form = document.querySelector("form[data-instrument]");
+    var date = document.getElementById("tradedate");
+    var picker = document.getElementById("instpick");
+    var id = picker ? picker.value : (form ? form.dataset.instrument : "");
+    if (!id || id === "new" || !date || !date.value) { return; }
+
+    var price = document.getElementById("unit_price");
+    var fx = document.getElementById("fx_rate");
+    var status = document.getElementById("price-status");
+    var url = "/holdings/price?instrument=" + encodeURIComponent(id) +
+              "&date=" + encodeURIComponent(date.value);
+    fetch(url)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) { return; }
+        if (price && !price.dataset.typed) { price.value = d.price || ""; }
+        if (fx && !fx.dataset.typed) { fx.value = d.fx || ""; }
+        if (!status) { return; }
+        if (!d.price) {
+          status.textContent = "no close stored for that date — enter it yourself";
+        } else if (d.as_at !== date.value) {
+          /* Say which day it came from rather than implying the market traded
+             on a Saturday. */
+          status.textContent = "the " + d.as_at + " close";
+        } else {
+          status.textContent = "";
+        }
+      })
+      .catch(function () { /* leave whatever is in the fields */ });
+  }
+
+  /* Picking an instrument decides whether the FX field applies at all, off the
+     selected <option>'s currency. The VALUES come from `priceForDate`, which
+     is the only thing that fills them — the option used to carry a price and a
+     rate of its own, and that is where the wrong-cost-base bug lived
+     (decisions.md #124).
 
      **Units are cleared when the instrument changes**, because a quantity
      worked out for one holding is meaningless against another. The exception
@@ -85,15 +124,14 @@
     var option = picker.options[picker.selectedIndex];
     if (!option) { return; }
 
-    var price = document.getElementById("unit_price");
-    if (price && option.dataset.price) { price.value = option.dataset.price; }
-
     var currency = option.dataset.currency || "";
     var field = document.getElementById("fxfield");
     var fx = document.getElementById("fx_rate");
     var foreign = currency && currency !== (window.reportingCurrency || "AUD");
     if (field) { field.hidden = !foreign; }
-    if (fx) { fx.value = foreign ? (option.dataset.fx || "") : ""; }
+    /* Cleared, not filled: an AUD instrument has nothing to convert, and for a
+       foreign one `priceForDate` supplies the rate for the trade's own date. */
+    if (fx && !foreign) { fx.value = ""; }
 
     var units = document.getElementById("quantity");
     if (units) {
@@ -106,14 +144,21 @@
     }
   }
 
-  /* Anything typed by hand is protected from the clearing above. */
+  /* Anything typed by hand is protected from the clearing above, and from the
+     date-driven refill. Price and FX join units here for that reason: the form
+     re-asks the server whenever the date moves, and someone who typed a figure
+     off their contract note should not watch it be replaced by a close. */
   document.addEventListener("input", function (event) {
-    if (event.target.id === "quantity") { event.target.dataset.typed = "1"; }
+    var id = event.target.id;
+    if (id === "quantity" || id === "unit_price" || id === "fx_rate") {
+      event.target.dataset.typed = "1";
+    }
   });
 
   document.addEventListener("change", function (event) {
     var target = event.target;
-    if (target.id === "instpick") { toggleNew(); instrumentChosen(); }
+    if (target.id === "instpick") { toggleNew(); instrumentChosen(); priceForDate(); }
+    if (target.id === "tradedate") { priceForDate(); }
     if (target.id === "settime") { toggleTime(); }
     if (target.dataset && target.dataset.autofill) { autofill(target.dataset.autofill); }
   });
@@ -143,6 +188,22 @@
     if (units && units.dataset.prefilledFor && !units.dataset.prefilledValue) {
       units.dataset.prefilledValue = units.value;
     }
+    /* On an EDIT, the price and rate in the fields are recorded values — what
+       this trade actually happened at. Treat them as typed, so moving the date
+       does not replace somebody's recorded figures with a close. A new trade
+       has nothing to protect and gets the date-driven fill. */
+    var form = document.querySelector("form[data-instrument]");
+    if (form && form.dataset.instrument) {
+      ["unit_price", "fx_rate"].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el && el.value.trim()) { el.dataset.typed = "1"; }
+      });
+    }
+    /* Reached from a holding's ledger (`/trade/new?ticker=ACME`) the instrument
+       is already chosen server-side, so no change event ever fires and the
+       price would sit empty. Safe to call unconditionally: it skips typed
+       fields, which is every field that matters on an edit. */
+    priceForDate();
   };
   window.syncTradeForm();
 })();

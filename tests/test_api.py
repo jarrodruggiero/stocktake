@@ -148,6 +148,32 @@ def test_a_write_key_can_record_a_trade(client, session_factory, furnished):
         assert latest.note == "via API"
 
 
+@freeze_time(ref.TODAY)
+def test_a_free_parcel_is_accepted_and_a_negative_price_is_not(
+    client, session_factory, furnished
+):
+    """A price of zero is legitimate — a bonus issue or a reward-plan grant.
+    Negative is not, and `units` keeps its own floor either way.
+
+    Here rather than in `test_trade_prefill.py` because the key-minting helpers
+    are here; the rule itself is the forms' rule, held in step by
+    `test_api_parity`.
+    """
+    portfolio_id, user_id = furnished
+    raw = issue_key(session_factory, portfolio_id, scopes="read,write",
+                    created_by=user_id)
+
+    def record(**overrides):
+        body = {"ticker": "ALPHA", "type": "buy", "date": "2026-07-01",
+                "units": "10", "unit_price": "0"}
+        body.update(overrides)
+        return client.post("/api/v1/trades", json=body, headers=bearer(raw))
+
+    assert record().status_code == 201
+    assert record(unit_price="-1").status_code == 422
+    assert record(units="0").status_code == 422
+
+
 # --------------------------------------------------------------------------- #
 # Tenancy at the API surface
 # --------------------------------------------------------------------------- #

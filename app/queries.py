@@ -84,6 +84,49 @@ def _latest_price(session: Session, instrument_id: int) -> tuple[Decimal, dt.dat
     return (row.close, row.date) if row else None
 
 
+def close_on_or_before(
+    session: Session, instrument_id: int, on: dt.date
+) -> tuple[Decimal, dt.date] | None:
+    """The close for `on`, or the last one before it, with the date it is for.
+
+    Backs the trade form's price prefill. Returns the date too, so the form can
+    say "the 18 Sep close" rather than implying the market traded on a Saturday.
+
+    Reaches BACKWARDS only, unlike `FxBook.rate` — decisions.md #124.
+    """
+    row = session.execute(
+        select(Price.close, Price.date)
+        .where(Price.instrument_id == instrument_id, Price.date <= on)
+        .order_by(Price.date.desc())
+        .limit(1)
+    ).first()
+    return (row.close, row.date) if row else None
+
+
+def fx_on_or_before(
+    session: Session, currency: str, on: dt.date
+) -> tuple[Decimal, dt.date] | None:
+    """The rate for `on`, or the last one before it. None for AUD, and None
+    when the stored series starts later than `on`.
+
+    Same query the price feed's repair pass uses, and the same backwards-only
+    rule as `close_on_or_before`: an empty rate is one the feed can still fix,
+    a wrong one is not — decisions.md #124.
+
+    AUD returns None rather than 1, because the form hides the field entirely
+    for the reporting currency and a 1 in it only invites being edited.
+    """
+    if currency == REPORTING_CURRENCY:
+        return None
+    row = session.execute(
+        select(FxRate.rate, FxRate.date)
+        .where(FxRate.pair == f"{currency}{REPORTING_CURRENCY}", FxRate.date <= on)
+        .order_by(FxRate.date.desc())
+        .limit(1)
+    ).first()
+    return (row.rate, row.date) if row else None
+
+
 def _last_two_closes(session: Session, instrument_id: int) -> list[Decimal]:
     return list(
         session.execute(
@@ -1159,30 +1202,3 @@ def latest_prices(session: Session, instrument_ids: list[int]) -> dict[int, Deci
         row.instrument_id: row.close
         for row in session.execute(select(ranked).where(ranked.c.rank == 1))
     }
-
-
-def latest_fx_rates(session: Session, reporting: str) -> dict[str, str]:
-    """The most recent stored rate for each currency, into the reporting one.
-
-    Keyed by the FOREIGN currency, because that is what the caller has — an
-    instrument knows it is USD, not that it wants "USDAUD". Values are strings
-    ready for a form field, normalised so a `Numeric(12,6)` does not fill the
-    box with `0.650000`.
-    """
-    ranked = (
-        select(
-            FxRate.pair,
-            FxRate.rate,
-            func.row_number()
-            .over(partition_by=FxRate.pair, order_by=FxRate.date.desc())
-            .label("rank"),
-        )
-        .where(FxRate.pair.like(f"%{reporting}"))
-        .subquery()
-    )
-    out: dict[str, str] = {}
-    for row in session.execute(select(ranked).where(ranked.c.rank == 1)):
-        foreign = row.pair[: -len(reporting)]
-        if foreign:
-            out[foreign] = f"{row.rate.normalize():f}"
-    return out

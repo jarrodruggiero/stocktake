@@ -249,11 +249,14 @@ def test_completing_the_wrong_buy_is_refused(client, session_factory, holdings):
 
 @freeze_time(TODAY)
 @pytest.mark.parametrize("field,value", [
-    ("quantity", "0"), ("unit_price", "0"), ("quantity", "-1"),
+    ("quantity", "0"), ("unit_price", "-1"), ("quantity", "-1"),
     ("trade_date", "not-a-date"), ("quantity", "many"),
 ])
 def test_bad_numbers_on_a_completed_buy_are_refused(client, session_factory, holdings,
                                                     field, value):
+    """`unit_price` of 0 was here and has moved to the accepted side — a free
+    parcel is a real trade, and this route records an ordinary buy like any
+    other. Negative is what is left to refuse."""
     save_plan(client, session_factory, start_date="2026-07-06")
     payload = {"ticker": "ACME", "due_date": "2026-07-06", "trade_date": "2026-07-06",
                "quantity": "10", "unit_price": "5.00",

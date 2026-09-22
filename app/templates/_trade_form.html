@@ -8,8 +8,12 @@
 
    Expects: edit, inst, form, instruments, ticker, today, auth.
    `edit` is None when recording something new. #}
+{# `data-instrument` is how the price lookup knows what to ask about when there
+   is no picker on the page: editing fixes the instrument, so the id has to
+   come from the markup rather than from a selected option. #}
 <form class="panel narrow" method="post"
       action="{% if edit %}/trade/{{ edit.id }}/edit{% else %}/trade/new{% endif %}"
+      data-instrument="{{ inst.id if edit else '' }}"
       autocomplete="off">
   <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
   {# Today's scheduled buy, filled in — and SHOWING ITS WORKING.
@@ -38,11 +42,11 @@
   <label>Instrument
     <select name="instrument_id" id="instpick" required>
       <option value="">— choose —</option>
-      {# Each option carries its own latest close and exchange rate, so picking
-         one fills the fields with no round trip — see `tradeform.js`. #}
+      {# The currency is here so the FX field can appear or disappear without a
+         round trip. The price and the rate are NOT: they depend on the trade's
+         date, and `tradeform.js` asks the server for them. #}
       {% for i in options %}
-      <option value="{{ i.id }}"
-        data-price="{{ i.price }}" data-currency="{{ i.currency }}" data-fx="{{ i.fx }}"
+      <option value="{{ i.id }}" data-currency="{{ i.currency }}"
         {% if form.instrument_id and form.instrument_id|string == i.id|string %}selected
         {% elif ticker and i.ticker == ticker %}selected
         {% elif prefill and not form and prefill.instrument_id == i.id %}selected{% endif %}>
@@ -100,7 +104,8 @@
       </select>
     </label>
     <label>Date
-      <input type="date" name="trade_date" value="{{ form.trade_date or today }}" required>
+      <input type="date" name="trade_date" id="tradedate"
+             value="{{ form.trade_date or today }}" required>
     </label>
   </div>
 
@@ -120,8 +125,24 @@
     <label>Units <input name="quantity" inputmode="decimal" id="quantity"
            data-prefilled-for="{{ prefill.instrument_id if prefill and not form else '' }}"
            value="{{ form.quantity or (prefill.units if prefill and not form else '') }}" required></label>
-    <label>Price per unit <input name="unit_price" inputmode="decimal" id="unit_price"
-           value="{{ form.unit_price or (prefill.unit_price | qty if prefill and not form else '') }}" required></label>
+    {# Zero is allowed: a bonus issue or an employer's reward-plan grant really
+       did cost nothing. `min="0"` keeps the negative out without re-stating the
+       rule in prose, and the (?) carries the part that needs saying — that for
+       an employer's plan zero is usually the WRONG number. #}
+    {% set price_tip %}
+    <p class="tipline">Zero is allowed, for a bonus issue or a free grant.</p>
+    <p class="tipline">Shares from an employer's plan are the exception: their
+    cost base is normally the market value when you got them, not what you
+    paid. <a href="{{ docs_url }}/guides/free-and-discounted-shares/">More
+    information</a>.</p>
+    {% endset %}
+    <label>Price per unit
+      {% with body = price_tip, label = "Free or discounted shares" %}
+        {% include "_tip.html" %}
+      {% endwith %}
+      <input name="unit_price" inputmode="decimal" id="unit_price" min="0"
+           value="{{ form.unit_price or (prefill.unit_price | qty if prefill and not form else '') }}" required>
+      <span class="sub" id="price-status"></span></label>
     <label>Brokerage <input name="brokerage" inputmode="decimal"
            value="{{ form.brokerage or (prefill.brokerage | qty if prefill and not form else '9.50') }}"></label>
   </div>
