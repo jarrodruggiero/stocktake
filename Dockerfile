@@ -147,6 +147,9 @@ COPY --chown=1000:1000 tests ./tests
 #   docs/, AGENTS.md — the documentation tests: every setting appears in the
 #                      configuration reference, every module on the
 #                      architecture map, every route documented is served.
+#   mkdocs.yml       — test_doc_links.py: every "More information" link in the
+#                      app resolves to a page that exists AND is in the nav.
+#                      The nav half is the part that needs this file.
 #   tools/           — test_branding.py imports tools/render_brand.py to prove
 #                      every generated brand file still matches branding.py.
 #                      It went missing once, and it did not fail loudly: the
@@ -160,6 +163,7 @@ COPY --chown=1000:1000 deploy ./deploy
 COPY --chown=1000:1000 tools ./tools
 COPY --chown=1000:1000 docs ./docs
 COPY --chown=1000:1000 AGENTS.md ./AGENTS.md
+COPY --chown=1000:1000 mkdocs.yml ./mkdocs.yml
 # This file, because test_pagemap checks the image really does create the
 # scratch directory the settings point at.
 COPY --chown=1000:1000 Dockerfile ./Dockerfile
