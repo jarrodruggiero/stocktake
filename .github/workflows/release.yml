@@ -50,7 +50,10 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --dev
-      - run: uv run ruff check app appcore tests tools
+      # The same paths CI lints, held in step by `tests/test_workflows.py`:
+      # `appcore` stayed here after it became a dependency, and a tag was the
+      # first thing to run this workflow and find out.
+      - run: uv run ruff check app tests tools
       - env:
           STOCKTAKE_TEST_DB: ${{ matrix.backend }}
           PGHOST: localhost
