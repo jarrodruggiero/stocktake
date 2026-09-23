@@ -79,6 +79,32 @@ Rows can be edited and deleted here. Two rules apply:
 - **A DRP row is edited through its dividend**, because the cash and the units
   are one event.
 
+### Moving a holding to another portfolio
+
+If a trade went into the wrong portfolio, **Move to another portfolio** on the
+edit page hands it over. The control only appears when you belong to a second
+portfolio you can write to.
+
+It opens a list of everything that portfolio holds for that instrument —
+trades and distributions — and you tick what goes. Nothing is copied and no new
+instrument is created: it is the same holding in both places.
+
+Three things to know:
+
+- **Anything a remaining sell depends on arrives already ticked.** You can
+  untick it, but the move is then refused — leaving it behind would put the
+  holding below zero units, and it names the sell that would be short.
+- **A reinvested distribution moves with its units.** They are one event and
+  cannot be separated, so they share a single tickbox.
+- **Cash distributions are yours to choose.** Nothing forces them either way.
+
+If the destination cannot take the selection — a sell arriving somewhere that
+holds nothing — it says so and names the trade, rather than guessing which
+buys you meant to bring.
+
+Both portfolios' reports change to match, including for financial years already
+past. See the [disclaimer](../about/disclaimer.md).
+
 ## Account
 
 Password, appearance (yours alone), two-factor, and **active sessions** — every

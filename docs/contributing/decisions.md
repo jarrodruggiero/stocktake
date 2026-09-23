@@ -945,3 +945,66 @@ what prompted the change (issue #35). The ATO resets it to market value at the
 taxing point, and the taxing point also restarts the 12-month discount clock.
 That belongs in [the guide](../guides/free-and-discounted-shares.md), not in a
 validator — the app takes the number it is given.
+
+**125. A move between portfolios is one column, and the hard part is deciding
+what goes with it.** Reported (#36) on the assumption that the destination
+needs its own instrument row and the trade details copied onto it. It does not:
+`Instrument` is a shared catalogue, unique on `(exchange, ticker)` and
+deliberately not portfolio-scoped, so the move is `portfolio_id = target` and
+nothing is copied.
+
+Three rules decide what travels, and only two of them are enforced.
+
+*Balance* pulls rows in. Take a buy out and a sell left behind can exceed what
+is still held, and `balance_breach` reports only the FIRST such point — so the
+set is a fixpoint, not a query. **It can only ever add a sell**: `_walk` drives
+the running total down on sells alone, buys and DRPs add to it, and
+`quantity > 0` is a CHECK constraint. That is why one coupling pass is enough,
+which is otherwise a very easy thing to get wrong in the safe direction.
+
+*Pairs* are inseparable. A reinvested distribution is one event across `trade`
+and `dividend`, joined by `reinvest_trade_id`, and every reader assumes the
+halves share a portfolio. So the dialog offers a pair as ONE row — the `drp`
+trade, which carries the units — and the coupling is applied server-side in
+both directions anyway, because the posted ids are user input and must not be
+able to split it. This is also why the move does NOT go through
+`_trade_for_edit`: that refuses a DRP trade, correctly, because editing half a
+pair leaves the units and the cash disagreeing. Moving both halves does not.
+
+*Cash* is offered and never assumed. A distribution does not touch the unit
+balance, so nothing forces it — but a portfolio that no longer holds the units
+has no business holding the income either, so it is on the list. Which DRP buy
+"belongs" to which portfolio is likewise not derivable: a DRP arose from units
+held at a record date, and once those units are being split the attribution is
+a judgement. A person decides; the app enforces only what would otherwise leave
+the data inconsistent.
+
+**The pre-tick is a default, not a decision.** `expand(pull_in=True)` fills the
+dialog's tickboxes with the rows that cannot be left behind; the submitted form
+uses `pull_in=False`, because re-running the pull-in there would silently
+restore anything somebody unticked and make the page do the opposite of what it
+was told. Unticking is honoured and then REFUSED, by `source_problem`, naming
+the sell that would be left short. Pairs are coupled either way: unticking a
+balance dependent is a judgement somebody may make and be refused for, while
+splitting a reinvested distribution is not a judgement but a shape the data
+cannot hold.
+
+Neither side is ever auto-corrected. A sell moved somewhere holding nothing
+goes negative there, and the fix is to tick more buys — a choice, so it refuses
+and names the trade. Reading the destination at all needs
+`tenancy.as_portfolio`, which is narrower than `unscoped_session` on purpose
+and **checks the membership itself**: a primitive that rebinds the filter on
+request is a cross-tenant read waiting for one careless call site, so the
+authorisation lives with the scope change rather than in whichever template
+decided to draw a button.
+
+A financial year already lodged is explicitly NOT a reason to refuse. Moving a
+trade can change a prior year's realised gain through FIFO re-ordering, and
+that was considered and rejected as a guard: the app computes from the data it
+holds, a return asks the person filing it to attest to what they supply, and a
+tool cannot un-lodge anything. See [the disclaimer](../about/disclaimer.md).
+
+A `PlannedPurchase` whose trade leaves goes back to **planned**, unlike the
+delete path which keeps it at "done" because a deleted trade still happened.
+A moved trade did not happen *here*, so the slot is genuinely unfilled and the
+schedule should offer it again.

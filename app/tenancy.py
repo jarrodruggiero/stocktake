@@ -20,15 +20,17 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Iterator
 
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy import false as sql_false
 from sqlalchemy.orm import Session, with_loader_criteria
 
 from .models import (
+    MEMBER_ROLES,
     Dividend,
     HoldingPref,
     InvestmentPlan,
     PlannedPurchase,
+    PortfolioMember,
     SavedChart,
     Trade,
 )
@@ -203,6 +205,55 @@ def allow_unscoped(session: Session) -> Session:
     them) and the price feed's cross-portfolio FX repair."""
     session.info[_BYPASS_KEY] = True
     return session
+
+
+@contextmanager
+def as_portfolio(
+    session: Session,
+    portfolio_id: int,
+    *,
+    user_id: int | None,
+    roles: tuple[str, ...] = MEMBER_ROLES,
+) -> Iterator[Session]:
+    """Read another of THIS USER's portfolios for the length of the block.
+
+    The one operation that spans two portfolios is moving a holding between
+    them, and it must validate the destination's timeline before writing there.
+    `unscoped_session` is the wrong tool for it: that drops the filter for
+    every portfolio at once and says never to serve a request with it.
+
+    The membership check is HERE, not in the caller. A primitive that rebinds
+    the filter on request is a cross-tenant read waiting for one careless call
+    site — so it refuses unless `user_id` holds a role in `roles`, and callers
+    that are about to WRITE pass `roles=WRITE_ROLES` rather than checking
+    separately and hoping the two agree.
+
+    Reads inside the block must use `select()`. `session.get()` can answer from
+    the identity map without going near the filter, so it would hand back a row
+    belonging to whichever portfolio loaded it first.
+    """
+    if user_id is None:
+        raise TenancyError("cannot reach another portfolio with no user")
+    role = session.scalar(
+        select(PortfolioMember.role).where(
+            PortfolioMember.portfolio_id == portfolio_id,
+            PortfolioMember.user_id == user_id,
+        )
+    )
+    if role is None or role not in roles:
+        # One message for "not a member" and "not allowed to write", because
+        # telling them apart would confirm the portfolio exists.
+        raise TenancyError(
+            f"user {user_id} may not reach portfolio {portfolio_id} as {roles}"
+        )
+    was = session.info.get(_PORTFOLIO_KEY)
+    session.info[_PORTFOLIO_KEY] = portfolio_id
+    try:
+        yield session
+    finally:
+        # Restored even when the block raises: a failed validation must not
+        # leave the rest of the request reading the wrong portfolio.
+        session.info[_PORTFOLIO_KEY] = was
 
 
 @contextmanager
