@@ -1,0 +1,61 @@
+{# Choosing what moves to another portfolio, shared by the /trade/{id}/move
+   page and the dialog on the edit page — one include so the two cannot drift.
+
+   Trades and distributions are ONE list, because they are one decision. A
+   reinvested distribution has no row of its own: it is half of the `drp` trade
+   that carries the units, and they move together whatever is ticked.
+
+   Expects: inst, edit, rows, targets, ticked, added, error, auth. #}
+<form class="panel narrow" method="post"
+      action="/trade/{{ edit.id }}/move" autocomplete="off">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+
+  {% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+
+  <label>Move to
+    <select name="target" required>
+      {% for m in targets %}
+      <option value="{{ m.portfolio_id }}">{{ m.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  {% if pulled_in %}
+  {# Said once, here, rather than a warning beside every row it applies to.
+
+     Counts TRADES only. A coupled distribution is also something `expand`
+     added, but it has no tickbox of its own — it travels inside the `drp` row
+     — so announcing it would name a row nobody can see, and blame the unit
+     balance for something that is really about the pair. #}
+  <p class="sub warn">{{ pulled_in }} more
+    {{ "row" if pulled_in == 1 else "rows" }} ticked:
+    {{ inst.ticker }} would go below zero units here without
+    {{ "it" if pulled_in == 1 else "them" }}.</p>
+  {% endif %}
+
+  <table>
+    <thead>
+      <tr><th></th><th>Date</th><th></th><th>Units</th><th>Value</th><th>Note</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><input type="checkbox" name="row" value="{{ r.token }}"
+                   {% if r.token in ticked %}checked{% endif %}></td>
+        <td>{{ r.date }}{% if r.time %} {{ r.time.strftime('%H:%M') }}{% endif %}</td>
+        <td>{{ {'buy': 'Buy', 'sell': 'Sell', 'drp': 'Reinvested',
+                'dividend': 'Distribution'}[r.kind] }}</td>
+        {# `qty` already renders None as an em dash. #}
+        <td>{{ r.units | qty }}</td>
+        <td>{{ r.value | cash(inst.currency) }}</td>
+        <td class="notecell">{{ r.note or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="menuactions">
+    <button type="submit">Move</button>
+    <button type="button" class="secondary" data-close-dialog>Cancel</button>
+  </p>
+</form>

@@ -25,6 +25,25 @@ with it.</p>
 
 {% include "_trade_form.html" %}
 
+{% if edit and move_targets %}
+{# Only when there is somewhere to put it: with one portfolio the control could
+   only ever explain why it does nothing. #}
+<p class="menuactions">
+  <button type="button" id="openmove">Move to another portfolio</button>
+</p>
+<dialog id="movedialog">
+  <h2>Move {{ inst.ticker }} to another portfolio</h2>
+  <p class="note">Tick what moves. A reinvested distribution goes with its units.</p>
+  {% with rows = move_rows, targets = move_targets, ticked = move_ticked,
+          pulled_in = move_pulled_in, error = "" %}
+    {% include "_move_form.html" %}
+  {% endwith %}
+</dialog>
+{# Without scripting the button cannot open a dialog, so the route is the way
+   in — and it renders the same include. #}
+<noscript><a href="/trade/{{ edit.id }}/move">Move to another portfolio</a></noscript>
+{% endif %}
+
 {% if edit %}
 <form class="panel narrow danger" method="post" action="/trade/{{ edit.id }}/delete"
       onsubmit="return confirm('Delete this {{ edit.type }} of {{ edit.quantity | qty }} {{ inst.ticker }} on {{ edit.date }}? The charts, reports and exports all change to match.');">
@@ -39,5 +58,8 @@ with it.</p>
 {% endif %}
 
 <script src="/static/tradeform.js?v={{ asset_v }}" defer></script>
+{% if edit and move_targets %}
+<script src="/static/movedialog.js?v={{ asset_v }}" defer></script>
+{% endif %}
 
 {% endblock %}

@@ -36,6 +36,7 @@ Two consequences worth internalising:
 | `charts_build.py`, `fields.py`, `chart_templates.py` | The chart vocabulary. |
 | `exports.py` | Every downloadable report. |
 | `plans.py`, `calendarview.py` | The DCA rotation and the month calendar. |
+| `moves.py` | Handing a holding's rows to another portfolio: what has to travel with what. |
 | `money.py` | Rendering an amount so it says which currency it is. |
 
 ### Getting data in

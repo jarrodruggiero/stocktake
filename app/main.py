@@ -68,6 +68,7 @@ from . import (
     memory,
     metrics,
     money,
+    moves,
     navigation,
     passkeys,
     plans,
@@ -92,6 +93,7 @@ from .models import (
     ROLE_LABELS,
     THEMES,
     TIME_ZONES_SHOWN,
+    WRITE_ROLES,
     ApiKey,
     Dividend,
     ExternalIdentity,
@@ -4214,6 +4216,22 @@ def _owning_dividend(db: DbSession, trade_id: int) -> Dividend | None:
     return db.scalar(select(Dividend).where(Dividend.reinvest_trade_id == trade_id))
 
 
+def _trade_for_move(db: DbSession, trade_id: int) -> Trade:
+    """The trade the move dialog was opened from.
+
+    Unlike `_trade_for_edit` this ACCEPTS a reinvested distribution. Editing
+    half of a pair would leave the units and the cash disagreeing, but moving
+    it does not: `moves.expand` carries both halves across together, so the
+    pair stays whole and simply lives somewhere else.
+    """
+    trade = db.get(Trade, trade_id)
+    # `db.get` can answer from the identity map without going near the tenancy
+    # filter, so ownership is checked explicitly — same reason as below.
+    if trade is None or trade.portfolio_id != tenancy.current_portfolio_id(db):
+        raise HTTPException(404, "no such trade")
+    return trade
+
+
 def _trade_for_edit(db: DbSession, trade_id: int) -> Trade:
     """The trade, or a 404/409 explaining why it can't be edited directly."""
     trade = db.get(Trade, trade_id)
@@ -4263,6 +4281,9 @@ def trade_edit_form(request: Request, trade_id: int, error: str = ""):
         # trusted: it ends up in a Location header.
         back_to = _safe_path(request.query_params.get("return"),
                              f"/holding/{inst.ticker}")
+        # The move dialog's contents, prepared here so the page can carry it —
+        # `move_targets` empty means the control is not drawn at all.
+        move = _move_context(db, ctx, trade, inst)
         return _render(
             request,
             ctx,
@@ -4276,6 +4297,10 @@ def trade_edit_form(request: Request, trade_id: int, error: str = ""):
                 "edit": trade,
                 "inst": inst,
                 "return_to": back_to,
+                "move_rows": move["rows"],
+                "move_targets": move["targets"],
+                "move_ticked": move["ticked"],
+                "move_pulled_in": move["pulled_in"],
                 # The back button goes wherever the delete button already
                 # goes. Two controls on one page that both mean "I am finished
                 # here" must not land in different places.
@@ -4393,6 +4418,187 @@ def _release_planned_purchases(db: DbSession, trade_id: int) -> None:
         purchase.trade_id = None
         note = " ".join(filter(None, [purchase.note, "(trade removed)"]))
         purchase.note = note[:200]  # the column's width, not a guess
+
+
+# --------------------------------------------------------------------------- #
+# Moving a holding's rows to another portfolio — decisions.md #125, issue #36.
+# --------------------------------------------------------------------------- #
+
+def _move_targets(ctx) -> list:
+    """Portfolios this person could move something INTO.
+
+    Their own memberships, minus the one they are in, minus the ones they can
+    only read — a move writes at the far end. The POST checks this list again
+    rather than trusting the posted id.
+    """
+    return [
+        m for m in ctx.memberships
+        if m.portfolio_id != ctx.active_portfolio_id and m.role in WRITE_ROLES
+    ]
+
+
+def _parse_rows(values: list[str]) -> tuple[set[int], set[int]]:
+    """`trade:12` and `dividend:5` tickboxes into two sets of ids.
+
+    One checkbox name for both tables, because on screen they are one list.
+    Anything unparseable is dropped rather than raising: the ids are re-checked
+    against this portfolio's own rows before anything moves, so junk in the
+    form cannot reach a row, and a 500 would be a worse answer than ignoring it.
+    """
+    trades: set[int] = set()
+    dividends: set[int] = set()
+    for value in values:
+        kind, _, raw = value.partition(":")
+        if not raw.isdigit():
+            continue
+        if kind == "trade":
+            trades.add(int(raw))
+        elif kind == "dividend":
+            dividends.add(int(raw))
+    return trades, dividends
+
+
+def _release_for_move(db: DbSession, trade_ids: set[int]) -> None:
+    """A plan step whose trade has left this portfolio goes back to planned.
+
+    Deliberately different from `_release_planned_purchases`, which keeps the
+    step at "done" because a deleted trade still happened. A MOVED trade did
+    not happen *here* — the source portfolio has no record of that buy any
+    more, so the slot is genuinely unfilled and the schedule should offer it
+    again. Leaving it "done" would show a purchase backed by nothing.
+    """
+    if not trade_ids:
+        return
+    for purchase in db.scalars(
+        select(PlannedPurchase).where(PlannedPurchase.trade_id.in_(trade_ids))
+    ).all():
+        purchase.trade_id = None
+        purchase.status = "planned"
+        note = " ".join(filter(None, [purchase.note, "(trade moved out)"]))
+        purchase.note = note[:200]  # the column's width, not a guess
+
+
+def _move_context(db: DbSession, ctx, trade, inst, *, ticked=None, error=""):
+    """What the dialog needs, or just enough to know not to draw it.
+
+    The edit page asks for this on every load, and for the ordinary install —
+    one portfolio — there is nowhere to move anything. So an empty `targets`
+    returns early rather than walking the instrument's whole timeline to build
+    a list no page will render.
+    """
+    targets = _move_targets(ctx)
+    if not targets:
+        return {"active_nav": "holdings", "inst": inst, "edit": trade,
+                "rows": [], "targets": [], "ticked": set(), "pulled_in": 0,
+                "error": error, "return_to": f"/holding/{inst.ticker}"}
+    rows = moves.movable_rows(db, inst.id)
+    # `pull_in=True` on purpose, including when re-rendering after a refusal:
+    # the form arrives with the fix applied and the message above it saying
+    # why. The POST path is the one that must NOT pull in — there the ticks are
+    # somebody's answer, not a starting point.
+    chosen = moves.expand(
+        db, inst.id,
+        trades={trade.id} if ticked is None else ticked[0],
+        dividends=set() if ticked is None else ticked[1],
+        pull_in=True,
+    )
+    return {
+        "active_nav": "holdings",
+        "inst": inst,
+        "edit": trade,
+        "rows": rows,
+        "targets": targets,
+        # What arrives ticked: what was asked for, plus whatever `expand` had
+        # to add. The dialog says so rather than moving rows nobody chose.
+        "ticked": ({f"trade:{i}" for i in chosen.trades}
+                   | {f"dividend:{i}" for i in chosen.dividends}),
+        # Trades only: a coupled distribution has no tickbox of its own, so
+        # counting it would announce a row nobody can see — see _move_form.html.
+        "pulled_in": sum(1 for kind, _ in chosen.added if kind == "trade"),
+        "error": error,
+        "return_to": f"/holding/{inst.ticker}",
+    }
+
+
+@app.get("/trade/{trade_id}/move", response_class=HTMLResponse)
+def trade_move_form(request: Request, trade_id: int, error: str = ""):
+    """The selection page, and the same include the dialog shows.
+
+    A real route so the control works without scripting and a refusal has
+    somewhere to land — the pattern Record trade uses.
+    """
+    with scoped(request) as (ctx, db):
+        _require_write(ctx)
+        trade = _trade_for_move(db, trade_id)
+        inst = db.get(Instrument, trade.instrument_id)
+        context = _move_context(db, ctx, trade, inst, error=error)
+        if not context["targets"]:
+            # Nowhere to move anything, so there is no such page — rather than
+            # a form whose only control is an empty dropdown.
+            raise HTTPException(404, "no other portfolio to move this into")
+        return _render(request, ctx, "trade_move.html", context)
+
+
+@app.post("/trade/{trade_id}/move")
+async def trade_move(
+    request: Request,
+    trade_id: int,
+    target: int = Form(...),
+    row: list[str] = Form(default=[]),
+):
+    with scoped(request) as (ctx, db):
+        await auth.verify_csrf(request, db)
+        _require_write(ctx)
+        trade = _trade_for_move(db, trade_id)
+        inst = db.get(Instrument, trade.instrument_id)
+
+        def _reject(message: str):
+            return _render(
+                request, ctx, "trade_move.html",
+                _move_context(db, ctx, trade, inst,
+                              ticked=_parse_rows(row), error=message),
+            )
+
+        if target not in {m.portfolio_id for m in _move_targets(ctx)}:
+            raise HTTPException(403, "you can't move anything into that portfolio")
+
+        asked_trades, asked_dividends = _parse_rows(row)
+        # Only rows this portfolio actually holds for this instrument. The form
+        # is user input, and without this a posted id could reach a row the
+        # dialog never offered.
+        offered = moves.movable_rows(db, inst.id)
+        allowed_trades = {r.row_id for r in offered if r.is_trade}
+        allowed_dividends = ({r.row_id for r in offered if not r.is_trade}
+                             | {r.pairs_with for r in offered if r.pairs_with})
+        asked_trades &= allowed_trades
+        asked_dividends &= allowed_dividends
+        if not (asked_trades or asked_dividends):
+            return _reject("Nothing was ticked, so nothing moved.")
+
+        # `pull_in=False`: the ticks are the answer. The dialog pre-ticks the
+        # rows that cannot be left behind, and unticking one is a judgement
+        # somebody is allowed to make — so it is honoured and then refused,
+        # rather than silently put back. Pairs are still coupled.
+        chosen = moves.expand(db, inst.id, trades=asked_trades,
+                              dividends=asked_dividends, pull_in=False)
+        problem = (
+            moves.source_problem(db, inst.id, trades=chosen.trades)
+            or moves.target_problem(
+                db, inst.id, target, user_id=ctx.user.id,
+                trades=chosen.trades, dividends=chosen.dividends,
+            )
+        )
+        if problem:
+            return _reject(problem)
+
+        _release_for_move(db, chosen.trades)
+        moves.perform(db, target, user_id=ctx.user.id,
+                      trades=chosen.trades, dividends=chosen.dividends)
+        log.info("moved %s: trades=%s dividends=%s -> portfolio %s",
+                 inst.ticker, sorted(chosen.trades), sorted(chosen.dividends),
+                 target)
+        db.flush()
+        return _redirect(f"/holding/{inst.ticker}")
 
 
 @app.post("/trade/{trade_id}/delete")

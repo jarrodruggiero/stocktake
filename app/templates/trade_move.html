@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Move {{ inst.ticker }} — Stocktake{% endblock %}
+{% block content %}
+
+<a class="backlink" href="{{ return_to }}"><button type="button"
+   class="secondary">&larr; {{ inst.ticker }}</button></a>
+
+<h1>Move {{ inst.ticker }} to another portfolio</h1>
+{% set move_tip %}
+<p class="tipline">The rows you tick change hands. Nothing is copied and no new
+instrument is created — {{ inst.ticker }} is the same holding in both
+portfolios.</p>
+<p class="tipline">A reinvested distribution moves with its units; they are one
+event and cannot be split. Cash distributions are yours to choose.</p>
+<p class="tipline">Anything a remaining sell depends on comes too, or
+{{ inst.ticker }} would go below zero units here.</p>
+{% endset %}
+<p class="note">Both portfolios keep their own history.
+  {% with body = move_tip, label = "What moving does" %}
+    {% include "_tip.html" %}
+  {% endwith %}
+</p>
+
+{% include "_move_form.html" %}
+
+{% endblock %}
