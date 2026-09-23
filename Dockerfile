@@ -150,6 +150,11 @@ COPY --chown=1000:1000 tests ./tests
 #   mkdocs.yml       — test_doc_links.py: every "More information" link in the
 #                      app resolves to a page that exists AND is in the nav.
 #                      The nav half is the part that needs this file.
+#   .github/         — test_workflows.py: every path a workflow lints has to
+#                      exist, and the release has to lint what CI lints. Its
+#                      own smoke test is what caught this omission — with the
+#                      directory missing the sweep found no workflows, and a
+#                      guard over nothing passes.
 #   tools/           — test_branding.py imports tools/render_brand.py to prove
 #                      every generated brand file still matches branding.py.
 #                      It went missing once, and it did not fail loudly: the
@@ -164,6 +169,7 @@ COPY --chown=1000:1000 tools ./tools
 COPY --chown=1000:1000 docs ./docs
 COPY --chown=1000:1000 AGENTS.md ./AGENTS.md
 COPY --chown=1000:1000 mkdocs.yml ./mkdocs.yml
+COPY --chown=1000:1000 .github ./.github
 # This file, because test_pagemap checks the image really does create the
 # scratch directory the settings point at.
 COPY --chown=1000:1000 Dockerfile ./Dockerfile
