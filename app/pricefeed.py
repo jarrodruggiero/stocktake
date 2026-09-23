@@ -267,6 +267,24 @@ def settled_through(exchange: str, now: dt.datetime | None = None) -> dt.date:
     return known if known is not None else clock.today() - dt.timedelta(days=1)
 
 
+def fx_settled_through(today: dt.date | None = None) -> dt.date:
+    """The last date an exchange rate is final.
+
+    FX has no exchange, so `settled_through` cannot be asked about it — and its
+    no-known-bell fallback, `today - 1`, is wrong here in a way that shows:
+    on a Monday that is a Sunday, which has no rate at all. So roll back over
+    the weekend, the way `last_close_date` does for a market it knows.
+
+    Without this the feed asked for `today` on its first run of every day and
+    logged Yahoo's answer — "possibly delisted; no price data found" — at ERROR
+    for a currency pair that was neither. decisions.md #126.
+    """
+    day = (today or clock.today()) - dt.timedelta(days=1)
+    while day.weekday() >= 5:  # Saturday, Sunday
+        day -= dt.timedelta(days=1)
+    return day
+
+
 def is_trading(exchange: str, now: dt.datetime | None = None) -> bool:
     """Whether this exchange is in session right now.
 
@@ -412,11 +430,15 @@ def run_feed(session: Session, settings: PortfolioSettings) -> dict[str, int]:
     for pair, symbol in pairs.items():
         first, last, count = _series_shape(session, FxRate, FxRate.pair == pair)
         start = _fetch_start(first, last, count, settings.price_feed.backfill_start)
-        if start > today:
+        # Only what has FINISHED, the same rule the price loop above follows.
+        # Asking up to `today` meant the first run of each day requested a day
+        # with no close yet — see `fx_settled_through`.
+        end = fx_settled_through(today)
+        if start > end:
             continue
         # Frankfurter takes the 6-letter pair, Yahoo takes USDAUD=X; the
         # provider layer is handed both and each uses the one it understands.
-        result = providers.fetch_fx(pair, symbol, start, today)
+        result = providers.fetch_fx(pair, symbol, start, end)
         sources[f"fx:{pair}"] = result.summary()
         if not result.ok:
             log.warning("fx fetch failed for %s: %s", pair, result.summary())

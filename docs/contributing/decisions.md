@@ -1008,3 +1008,26 @@ A `PlannedPurchase` whose trade leaves goes back to **planned**, unlike the
 delete path which keeps it at "done" because a deleted trade still happened.
 A moved trade did not happen *here*, so the slot is genuinely unfilled and the
 schedule should offer it again.
+
+**126. The FX leg asks only for days that have finished.** A live pod logged
+`$USDAUD=X: possibly delisted; no price data found (1d 2026-09-24 ->
+2026-09-25)` on every startup. Nothing was delisted and nothing was missing:
+the series was current to the 23rd and the feed was asking for the 24th, a day
+that had not closed. Yahoo has no answer for an unfinished day and says so in
+the only vocabulary it has.
+
+The price loop has never done this — it stops at `settled_through(exchange)`,
+the last date that cannot still move. The FX loop ran to `today`, so the first
+run of any day asked for that day.
+
+`fx_settled_through` is separate from `settled_through` rather than reusing its
+fallback, and the reason is the weekend. That fallback answers `today - 1` for
+a market with no known bell, which on a Monday is a Sunday — a day with no rate
+at all, producing the same error for a different reason. So it rolls back over
+the weekend the way `last_close_date` does for a market it knows.
+
+Worth fixing for the log rather than the data: the stored series is unchanged,
+because a rate for an unfinished day was never going to arrive. But "possibly
+delisted" at ERROR is indistinguishable at a glance from a pair the app has
+genuinely lost, and a log that cries wolf daily is one nobody reads on the day
+it is right.
