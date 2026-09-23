@@ -86,13 +86,11 @@
     <label>Name <span class="sub">optional</span>
       <input name="new_name" value="{{ form.new_name or '' }}" placeholder="Vanguard Australian Shares Index ETF">
     </label>
-    <label>Yahoo price symbol <span class="sub">blank = guessed (ASX codes become CODE.AX)</span>
+    <label>Yahoo price symbol
       <input name="new_yahoo" value="{{ form.new_yahoo or '' }}" placeholder="ALPHA.AX">
     </label>
     <label class="check"><input type="checkbox" name="new_drp" value="1" {% if form.new_drp %}checked{% endif %}> I reinvest its distributions</label>
     <p class="sub" id="new_lookup-status"></p>
-    <p class="sub">Name, currency and price symbol fill in from the ticker —
-    override any of them.</p>
   </fieldset>
   {% endif %}
 
@@ -125,21 +123,10 @@
     <label>Units <input name="quantity" inputmode="decimal" id="quantity"
            data-prefilled-for="{{ prefill.instrument_id if prefill and not form else '' }}"
            value="{{ form.quantity or (prefill.units if prefill and not form else '') }}" required></label>
-    {# Zero is allowed: a bonus issue or an employer's reward-plan grant really
-       did cost nothing. `min="0"` keeps the negative out without re-stating the
-       rule in prose, and the (?) carries the part that needs saying — that for
-       an employer's plan zero is usually the WRONG number. #}
-    {% set price_tip %}
-    <p class="tipline">Zero is allowed, for a bonus issue or a free grant.</p>
-    <p class="tipline">Shares from an employer's plan are the exception: their
-    cost base is normally the market value when you got them, not what you
-    paid. <a href="{{ docs_url }}/guides/free-and-discounted-shares/">More
-    information</a>.</p>
-    {% endset %}
+    {# Zero is allowed — a bonus issue or a free grant really did cost nothing.
+       `min="0"` keeps the negative out without saying so in prose; what it
+       means for an employer's plan is in the guide, not on the form. #}
     <label>Price per unit
-      {% with body = price_tip, label = "Free or discounted shares" %}
-        {% include "_tip.html" %}
-      {% endwith %}
       <input name="unit_price" inputmode="decimal" id="unit_price" min="0"
            value="{{ form.unit_price or (prefill.unit_price | qty if prefill and not form else '') }}" required>
       <span class="sub" id="price-status"></span></label>

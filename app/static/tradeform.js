@@ -65,6 +65,11 @@
             ? "found: " + (d.name || d.symbol) + (d.currency ? " (" + d.currency + ")" : "")
             : "no match for " + d.symbol + " — check the ticker and exchange";
         }
+        /* Now that the symbol is known, the price for the date can be. Here
+           rather than beside the ticker's own handler because the symbol
+           arrives with this response — asking any earlier has nothing to ask
+           about. */
+        if (d.found) { priceForDate(); }
       })
       .catch(function () { if (status) { status.textContent = ""; } });
   }
@@ -80,12 +85,31 @@
     var date = document.getElementById("tradedate");
     var picker = document.getElementById("instpick");
     var id = picker ? picker.value : (form ? form.dataset.instrument : "");
-    if (!id || id === "new" || !date || !date.value) { return; }
+    if (!date || !date.value) { return; }
+
+    /* "Something not listed" has no id to ask about, so ask by SYMBOL — the
+       one the lookup just filled in, or the ticker for the server to guess
+       from. Without this the first trade for anything new got an empty price
+       field, which is the trade most likely to be typed off a contract note
+       and the one nobody can check against a holding page yet. */
+    var query;
+    if (id && id !== "new") {
+      query = "instrument=" + encodeURIComponent(id);
+    } else if (id === "new") {
+      var symbol = byName("new_yahoo");
+      var ticker = byName("new_ticker");
+      var which = (symbol && symbol.value.trim()) ||
+                  (ticker && ticker.value.trim());
+      if (!which) { return; }
+      query = "symbol=" + encodeURIComponent(which);
+    } else {
+      return;                              // nothing chosen yet
+    }
 
     var price = document.getElementById("unit_price");
     var fx = document.getElementById("fx_rate");
     var status = document.getElementById("price-status");
-    var url = "/holdings/price?instrument=" + encodeURIComponent(id) +
+    var url = "/holdings/price?" + query +
               "&date=" + encodeURIComponent(date.value);
     fetch(url)
       .then(function (r) { return r.ok ? r.json() : null; })

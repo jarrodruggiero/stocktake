@@ -1101,6 +1101,10 @@ a.button { background: var(--accent-grad); color: var(--on-accent); border-radiu
 button.secondary { background: var(--sunken); color: var(--text); border: 1px solid var(--line);
   box-shadow: none; }
 button.secondary:hover { border-color: var(--accent); color: var(--accent); filter: none; }
+/* For a button inside a table row, where the full size dominates the data it
+   sits beside. Size only — it does not change what a button MEANS, so it
+   combines with `.secondary` or `.danger` rather than replacing either. */
+button.small { padding: 0.2rem 0.55rem; font-size: var(--fs-small); }
 
 .spinner { display: inline-block; width: 0.9rem; height: 0.9rem; margin-right: 0.5rem;
   vertical-align: -0.1rem; border: 2px solid var(--line); border-top-color: var(--accent);

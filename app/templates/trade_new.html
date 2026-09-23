@@ -9,11 +9,29 @@
    class="secondary">&larr; {{ back_label }}</button></a>
 
 {% if edit %}
-<h1>Edit {{ inst.ticker }} trade</h1>
-<p class="note">Correcting a mistake in what was recorded. The whole {{ inst.ticker }}
-timeline is re-checked when you save, so a change that would leave a later sell
-with nothing to sell is refused and tells you which trade to fix first.
-To move this trade to a different instrument, delete it and record it again.</p>
+{# Heading and the row's other two actions together, so Move and Delete are the
+   same size and in the same place as every other page's controls. The refusals
+   they can produce explain themselves when they happen; the form does not
+   describe them in advance — style.md. #}
+<div class="pagehead">
+  <div><h1>Edit {{ inst.ticker }} trade</h1></div>
+  {# `.headactions`, not `.menuactions`: the latter puts `flex: 1` on a form so
+     its rows fill a menu's width, which here would push Delete off the corner. #}
+  <div class="headactions">
+    {% if move_targets %}
+    {# Only when there is somewhere to put it: with one portfolio the control
+       could only ever explain why it does nothing. #}
+    <button type="button" class="secondary" id="openmove">Move</button>
+    {% endif %}
+    <form method="post" action="/trade/{{ edit.id }}/delete"
+          onsubmit="return confirm('Delete this {{ edit.type }} of {{ edit.quantity | qty }} {{ inst.ticker }} on {{ edit.date }}? The charts, reports and exports all change to match.');">
+      <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+      {# Back where you came from, carried explicitly — see `trade_delete`. #}
+      <input type="hidden" name="return_to" value="{{ return_to }}">
+      <button type="submit" class="danger">Delete</button>
+    </form>
+  </div>
+</div>
 {% else %}
 <h1>Record a trade</h1>
 <p class="note">For anything outside the plan. A buy that belongs to your rotation is better
@@ -26,11 +44,6 @@ with it.</p>
 {% include "_trade_form.html" %}
 
 {% if edit and move_targets %}
-{# Only when there is somewhere to put it: with one portfolio the control could
-   only ever explain why it does nothing. #}
-<p class="menuactions">
-  <button type="button" id="openmove">Move to another portfolio</button>
-</p>
 <dialog id="movedialog">
   <h2>Move {{ inst.ticker }} to another portfolio</h2>
   <p class="note">Tick what moves. A reinvested distribution goes with its units.</p>
@@ -42,19 +55,6 @@ with it.</p>
 {# Without scripting the button cannot open a dialog, so the route is the way
    in — and it renders the same include. #}
 <noscript><a href="/trade/{{ edit.id }}/move">Move to another portfolio</a></noscript>
-{% endif %}
-
-{% if edit %}
-<form class="panel narrow danger" method="post" action="/trade/{{ edit.id }}/delete"
-      onsubmit="return confirm('Delete this {{ edit.type }} of {{ edit.quantity | qty }} {{ inst.ticker }} on {{ edit.date }}? The charts, reports and exports all change to match.');">
-  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-  {# Back to wherever you came from, carried explicitly — see `trade_delete`. #}
-  <input type="hidden" name="return_to" value="{{ return_to }}">
-  <h2>Delete this trade</h2>
-  <p class="note">Removes it from the ledger. If a later sell depends on these units the
-  delete is refused, and says which sell to fix.</p>
-  <button type="submit" class="danger">Delete trade</button>
-</form>
 {% endif %}
 
 <script src="/static/tradeform.js?v={{ asset_v }}" defer></script>

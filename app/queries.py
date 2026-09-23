@@ -649,7 +649,14 @@ def _series_fingerprint(session: Session) -> tuple:
     from .models import Dividend
 
     return (
-        session.execute(select(func.max(Price.date))).scalar(),
+        # Count AND max date, for the reason the FX line below already gives:
+        # a BACKFILL writes rows behind a date some other holding has already
+        # reached, so the maximum does not move. That is not hypothetical — it
+        # is what happens every time an instrument is added to a portfolio that
+        # is already priced to today, and it served a chart showing a −83%
+        # cliff against a +214% Gain tile until the count went in.
+        session.execute(select(func.count(), func.max(Price.date))
+                        .select_from(Price)).one(),
         # FX gets its own terms rather than riding on the price date. A holding
         # excluded for want of a rate comes back the moment one is stored, and
         # a feed run that fetches only FX — or backfills an old pair — moves no
@@ -902,6 +909,12 @@ def portfolio_series(session: Session) -> dict:
     steppers = {iid: _Stepper(rows) for iid, rows in prices.items()}
     units: dict[int, Decimal] = {}
     invested = proceeds = divs = Decimal(0)
+    # The same three running totals, kept PER INSTRUMENT as well, so a holding
+    # that cannot be valued on a given day can be removed from that day whole
+    # rather than only from `value` — see the loop below.
+    spent: dict[int, Decimal] = {}
+    taken: dict[int, Decimal] = {}
+    earned: dict[int, Decimal] = {}
     ei = 0
     out_dates, out_invested, out_value, out_gain, out_gain_pct = [], [], [], [], []
     out_flow, out_flow_in, out_cash_div = [], [], []
@@ -917,27 +930,53 @@ def portfolio_series(session: Session) -> dict:
                 if obj.type in ("buy", "drp"):
                     units[inst.id] = units.get(inst.id, ZERO) + obj.quantity
                     if obj.type == "buy":
-                        invested += (obj.quantity * obj.unit_price + obj.brokerage) * fxr
+                        cost = (obj.quantity * obj.unit_price + obj.brokerage) * fxr
+                        invested += cost
+                        spent[inst.id] = spent.get(inst.id, ZERO) + cost
                 else:
                     units[inst.id] = units.get(inst.id, ZERO) - obj.quantity
-                    proceeds += (obj.quantity * obj.unit_price - obj.brokerage) * fxr
+                    got = (obj.quantity * obj.unit_price - obj.brokerage) * fxr
+                    proceeds += got
+                    taken[inst.id] = taken.get(inst.id, ZERO) + got
             else:
                 # Reinvested distributions are already in `value` as units.
                 if obj.reinvest_trade_id is None:
-                    divs += obj.cash_amount * fxr
-                    day_cash_div += obj.cash_amount * fxr
+                    cash = obj.cash_amount * fxr
+                    divs += cash
+                    day_cash_div += cash
+                    earned[inst.id] = earned.get(inst.id, ZERO) + cash
             ei += 1
 
         value = Decimal(0)
+        # A holding whose stored prices start AFTER it was bought cannot be
+        # valued on this day. Withholding its value is right — decisions.md #5,
+        # never fabricate a number — but leaving its cost in the denominator is
+        # not, and it took roughly the whole position off the percentage: a
+        # live portfolio charted a −83% cliff against a +214% Gain tile.
+        #
+        # So it leaves the day ENTIRELY: cost, proceeds and cash income
+        # together, the same way an instrument with no FX rate at all leaves
+        # every figure. Removing only the cost would be worse than the bug for
+        # a part-sold holding, whose proceeds would then stand against nothing.
+        #
+        # `if not u` comes first on purpose. A closed position has no units to
+        # price and contributes `proceeds`, so it is never "unvalued" and its
+        # realised result is never rewritten.
+        drop_cost = drop_proceeds = drop_divs = Decimal(0)
         for inst in priced:
             u = units.get(inst.id, ZERO)
             if not u:
                 continue
             close = steppers[inst.id].at(d) if inst.id in steppers else None
             if close is None:
+                drop_cost += spent.get(inst.id, ZERO)
+                drop_proceeds += taken.get(inst.id, ZERO)
+                drop_divs += earned.get(inst.id, ZERO)
                 continue
             value += u * close * fxbook.rate(inst.currency, d)
-        gain = value + proceeds + divs - invested
+        invested_now = invested - drop_cost
+        gain = (value + (proceeds - drop_proceeds) + (divs - drop_divs)
+                - invested_now)
         # Two flows, deliberately: NET (buys less sale proceeds) is what a
         # time-weighted return must remove, but GROSS buys are what "money you
         # put in" means to a person — netting sales off it shrinks the
@@ -947,12 +986,14 @@ def portfolio_series(session: Session) -> dict:
         out_cash_div.append(round(float(day_cash_div), 2))
         prev_invested, prev_proceeds = invested, proceeds
         out_dates.append(d.isoformat())
-        out_invested.append(round(float(invested), 2))
+        out_invested.append(round(float(invested_now), 2))
         out_value.append(round(float(value), 2))
         out_gain.append(round(float(gain), 2))
         # Return on what went in — the honest denominator for "how am I doing",
         # and what the sheet's percentage columns meant.
-        out_gain_pct.append(round(float(gain / invested), 4) if invested else 0.0)
+        out_gain_pct.append(
+            round(float(gain / invested_now), 4) if invested_now else 0.0
+        )
     return {
         "dates": out_dates,
         "invested": out_invested,

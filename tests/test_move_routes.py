@@ -111,7 +111,7 @@ def test_with_one_portfolio_there_is_nowhere_to_move_to(client, session_factory)
 
     page = client.get(f"/trade/{rows['buy']}/edit", headers=HTML).text
 
-    assert "Move to another portfolio" not in page
+    assert 'id="openmove"' not in page
     # And the route behind it is not a page either, rather than a form whose
     # only control is an empty dropdown.
     assert client.get(f"/trade/{rows['buy']}/move",
@@ -128,7 +128,10 @@ def test_the_control_appears_once_there_is_somewhere_to_put_it(
 
     page = client.get(f"/trade/{rows['buy']}/edit", headers=HTML).text
 
-    assert "Move to another portfolio" in page
+    # The BUTTON, by id. Matching its label would also match the dialog's
+    # heading and the noscript link, so the control could vanish and this
+    # would stay green.
+    assert 'id="openmove"' in page
 
 
 @freeze_time(TODAY)
@@ -142,8 +145,8 @@ def test_read_only_membership_elsewhere_is_not_somewhere_to_move_to(
     rows = _furnish(session_factory)
     _second_portfolio(session_factory, name="Read only", role="viewer")
 
-    assert client.get(f"/trade/{rows['buy']}/edit",
-                      headers=HTML).text.count("Move to another portfolio") == 0
+    assert 'id="openmove"' not in client.get(
+        f"/trade/{rows['buy']}/edit", headers=HTML).text
     assert client.get(f"/trade/{rows['buy']}/move",
                       headers=HTML).status_code == 404
 

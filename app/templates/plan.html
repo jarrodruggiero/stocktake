@@ -209,6 +209,17 @@
       </div>
     </form>
 
+    {# Only once there is a plan to remove. Its own form because it posts
+       somewhere else, and `delete` rather than a confirm-in-prose: what is
+       kept and what goes is explained by the confirm, once. #}
+    {% if plan %}
+    <form class="commitbar" method="post" action="/schedule/delete"
+          onsubmit="return confirm('Delete this plan and its rotation? Buys you have already recorded are kept.');">
+      <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+      <button type="submit" class="danger">Delete plan</button>
+    </form>
+    {% endif %}
+
     {# What the plan actually produces, which is the thing worth checking
        before saving: dates and tickers, in order. One scrolling list, because
        a rotation of tickers with no dates does not answer "when do I next buy
