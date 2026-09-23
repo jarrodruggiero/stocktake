@@ -167,6 +167,10 @@ PUBLIC_PATHS = {"/healthz", "/readyz", "/login", "/login/code", "/login/recover"
                 # The provider redirects the browser back here before there is
                 # a session; `state` is what makes the callback trustworthy.
                 "/login/oidc", "/login/oidc/callback",
+                # The provider POSTs here with no cookie and no CSRF token.
+                # The signature on the `logout_token` is the authentication —
+                # see `oidc_backchannel_logout`, and decisions.md #127.
+                "/oidc/backchannel-logout",
                 "/setup", "/session/status", "/metrics"}
 # Two prefixes the login middleware waves through, each of which guards
 # itself. **Both failure modes are silent publication of an endpoint:**
@@ -2185,14 +2189,59 @@ def login_oidc_callback(request: Request, code: str = "", state: str = "",
             ip=ip, user_agent=request.headers.get("user-agent"),
         )
         # So signing out can end the provider's session too — and only for the
-        # sessions that started there.
-        auth.load_session(db, raw, settings).via_oidc = True
+        # sessions that started there. `oidc_sid` is what a back-channel logout
+        # matches on; None when the provider issues no `sid`, which leaves only
+        # the blunter subject-keyed path.
+        row = auth.load_session(db, raw, settings)
+        row.via_oidc = True
+        row.oidc_sid = identity.session_id
         db.flush()
         log.info("oidc sign-in for user %s", user.id)
     resp = _redirect(target)
     _set_session_cookie(resp, raw)
     resp.delete_cookie(OIDC_STATE_COOKIE, path="/")
     return resp
+
+
+@app.post("/oidc/backchannel-logout")
+async def oidc_backchannel_logout(request: Request,
+                                  logout_token: str = Form("")):
+    """The provider telling us one of its sessions has ended — issue #28.
+
+    **Unauthenticated on purpose.** No cookie, no CSRF token, no API key: a
+    provider has none of those, and the spec is explicit that the signature on
+    the token is what proves the request came from a legitimate party. That is
+    also what lets a PUBLIC client use this — there is no client secret to
+    send. `appcore.oidc.verify_logout_token` is the whole gate, and it refuses
+    an ID token dressed as a logout among other things.
+
+    **Session propagation, not revocation.** This ends sessions and never
+    touches `is_active`: letting a provider disable an account is a far larger
+    authority to hand over, and it would break the promise that local accounts
+    keep working when the provider is down. Somebody with a password signs
+    straight back in, which is the intended behaviour — decisions.md #127.
+
+    Always 200 once the token verifies, whether or not it matched a session.
+    A provider retrying because we said 404 about a session that had already
+    expired would be noise about nothing.
+    """
+    if not federation.configured(settings):
+        # Not "bad request" — there is no such endpoint on an installation
+        # with no provider, and saying otherwise invites probing.
+        raise HTTPException(404, "not found")
+    if not logout_token.strip():
+        raise HTTPException(400, "logout_token is required")
+    with anon() as db:
+        try:
+            notice = oidc.verify_logout_token(federation.provider(settings),
+                                              logout_token)
+        except oidc.OidcError as exc:
+            log.warning("back-channel logout refused: %s", exc)
+            raise HTTPException(400, "that logout could not be verified") from exc
+        ended = federation.end_sessions_for(db, notice)
+        log.info("back-channel logout from %s ended %s session(s)",
+                 notice.issuer, ended)
+    return PlainTextResponse("", status_code=200)
 
 
 @app.post("/profile/oidc/link")

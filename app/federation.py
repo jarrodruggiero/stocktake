@@ -262,3 +262,60 @@ def unlink(db: DbSession, user: User, identity_id: int) -> bool:
     db.delete(row)
     db.flush()
     return True
+
+
+def end_sessions_for(db: DbSession, notice: oidc.LogoutNotice) -> int:
+    """End the sessions a verified logout notice names. Returns how many.
+
+    **Sessions only.** `is_active` is deliberately untouched: letting a
+    provider disable an account is a far larger authority than ending a
+    session, and it would break the promise that local accounts keep working
+    when the provider is down. Somebody holding a password signs straight back
+    in, and that is the intended behaviour — decisions.md #127.
+
+    Two keys, in order of precision:
+
+    * `sid` — exactly the session the provider meant. One browser signing out
+      there must not sign the person out of every other one.
+    * `sub` — every session for that identity, which is more than the provider
+      asked for but all that can be done with a token carrying only a subject.
+
+    Both are scoped to sessions that actually began at the provider
+    (`via_oidc`). A password sign-in has no provider session, so nothing the
+    provider says about one can reach it.
+    """
+    from .models import UserSession
+
+    if notice.session_id:
+        # No `via_oidc` filter here, deliberately: `oidc_sid` is written in
+        # exactly one place and always alongside `via_oidc`, so a local session
+        # holds NULL and cannot match a sid at all. Adding the clause looked
+        # like defence in depth and was unreachable — a guard no test can fail
+        # is one that implies a threat that does not exist.
+        # `test_only_a_provider_session_ever_carries_a_sid` pins the invariant
+        # that makes this safe.
+        rows = list(db.scalars(
+            select(UserSession).where(UserSession.oidc_sid == notice.session_id)
+        ))
+    elif notice.subject:
+        # The identities this subject holds HERE — matched on (issuer, subject)
+        # and never on email, the same rule `resolve` follows.
+        user_ids = list(db.scalars(
+            select(ExternalIdentity.user_id).where(
+                ExternalIdentity.issuer == notice.issuer,
+                ExternalIdentity.subject == notice.subject,
+            )
+        ))
+        rows = list(db.scalars(
+            select(UserSession).where(
+                UserSession.user_id.in_(user_ids or [-1]),
+                UserSession.via_oidc.is_(True),
+            )
+        )) if user_ids else []
+    else:  # pragma: no cover - appcore refuses a token naming neither
+        rows = []
+
+    for row in rows:
+        db.delete(row)
+    db.flush()
+    return len(rows)

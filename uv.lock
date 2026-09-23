@@ -58,7 +58,7 @@ wheels = [
 [[package]]
 name = "appcore"
 version = "0.1.0"
-source = { git = "https://github.com/jarrodruggiero/appcore?rev=03cf210cb38b5f36791ece58ebf4a5b761d7316d#03cf210cb38b5f36791ece58ebf4a5b761d7316d" }
+source = { git = "https://github.com/jarrodruggiero/appcore?rev=3638b61ef2d2abe345d46156da646d484bf3d1f8#3638b61ef2d2abe345d46156da646d484bf3d1f8" }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
@@ -1608,7 +1608,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
-    { name = "appcore", git = "https://github.com/jarrodruggiero/appcore?rev=03cf210cb38b5f36791ece58ebf4a5b761d7316d" },
+    { name = "appcore", git = "https://github.com/jarrodruggiero/appcore?rev=3638b61ef2d2abe345d46156da646d484bf3d1f8" },
     { name = "argon2-cffi", specifier = ">=23.1" },
     { name = "fastapi", specifier = ">=0.111" },
     { name = "jinja2", specifier = ">=3.1" },

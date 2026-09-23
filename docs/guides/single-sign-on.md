@@ -89,10 +89,57 @@ signed in through it. A password sign-in signs out locally only — you were
 never at the provider, so there is nothing to end there.
 
 **The directory is not the source of truth for access here.** Removing somebody
-from your provider stops them signing in; it does not end the session they
-already have, and it does not remove their account. To end their access now,
-disable them under Admin → Accounts: that destroys every session they hold
-immediately.
+from your provider stops them signing in; it does not remove their account. To
+end their access now, disable them under Admin → Accounts: that destroys every
+session they hold immediately.
+
+## Back-channel logout
+
+Some providers can tell Stocktake when they end a session, so that signing out
+there — or having a session ended by an administrator — signs you out here too,
+without waiting for the idle window.
+
+Give your provider this address:
+
+```text
+https://your-stocktake-address/oidc/backchannel-logout
+```
+
+Nothing else is needed. There is no secret to configure: the provider signs the
+notification and that signature is what proves it came from your provider, so
+this works on a **public client** as well as a confidential one.
+
+### It ends sessions. It does not disable accounts
+
+Worth being precise about, because the name invites the stronger reading.
+
+A back-channel logout is **session propagation, not revocation**. It ends the
+matching Stocktake sessions and changes nothing else. So somebody who has a
+Stocktake password *as well as* a provider identity is signed out and can sign
+straight back in with their password a moment later — which is deliberate:
+letting your provider disable accounts here is a much larger authority to hand
+over, and it would mean a provider outage could lock everybody out of their own
+records.
+
+If you want somebody's access to stop, disable them under Admin → Accounts.
+That is immediate and total, and it does not depend on the provider at all.
+
+### Which providers support it
+
+| Provider | |
+| --- | --- |
+| **Authentik** | Yes. Its documented triggers are a user logging out, an administrator deleting a session, a user being **deactivated**, and a session expiring or being revoked |
+| **Keycloak** | Yes, including on an administrator-triggered logout |
+| **Authelia** | **No** — on its roadmap behind Dynamic Client Registration, not started |
+| **Pocket ID** | Publishes `end_session_endpoint`, so signing out of Stocktake ends the provider session; no back-channel support found |
+
+Configuring the address on a provider that does not support it does nothing at
+all — it is not an error, and nothing will ever arrive.
+
+One case is **untested**: Authentik's documented triggers name deactivation and
+session deletion, and say nothing about a hard *delete* of a user. Deleting
+presumably revokes their sessions and therefore notifies, but that is inference
+rather than something we have confirmed.
 
 ## Getting back in if the provider goes away
 
