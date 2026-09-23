@@ -1031,3 +1031,47 @@ because a rate for an unfinished day was never going to arrive. But "possibly
 delisted" at ERROR is indistinguishable at a glance from a pair the app has
 genuinely lost, and a log that cries wolf daily is one nobody reads on the day
 it is right.
+
+**127. A back-channel logout ends sessions and nothing else.** Issue #28. A
+provider that ends a session POSTs a signed `logout_token`; appcore verifies it
+and `federation.end_sessions_for` acts on it.
+
+It **never** sets `is_active = False`, and that is the whole shape of the
+feature rather than a missing half. Letting a provider disable an account here
+is a far larger authority than ending a session, and it would mean a provider
+outage could lock everybody out of their own records. So somebody holding both
+a password and a provider identity is signed out and signs straight back in
+locally. It is **session propagation, not revocation** — and the app already
+has revocation, which is stronger and needs no provider: disabling a user calls
+`destroy_sessions_for()` and `load_auth` deletes an inactive user's session on
+their next request.
+
+Keyed on `sid`, falling back to `sub`. `sid` ends exactly the session the
+provider named; `sub` ends every session that identity holds, which is more
+than it asked for and all that can be done with a token carrying only a
+subject. The `sub` path matches on `(issuer, subject)` and never on subject
+alone — subjects are unique only *within* a provider, and an installation that
+changed provider keeps the old `external_identity` rows.
+
+That `sid` needs storing is what crossed a boundary. `oidc.Identity`'s
+docstring says claims beyond its five stay unread, so `session_id` was added
+there deliberately: `sid` is not a claim about the person but an identifier for
+the provider's own session, and the boundary exists to refuse *authorisation*
+decisions taken from claims — groups mapped to roles — which this is not.
+
+**The endpoint is unauthenticated, and that is the specification.** No cookie,
+no CSRF token, no API key: the signature on the token is what proves the caller
+is the provider. That is also what lets a public client use it, which is how
+the reporter's deployment is configured. Two checks stop an ID token being
+accepted as a logout instruction — a required `events` member and a forbidden
+`nonce` — because an ID token carries the same signature, issuer and audience
+and is the one an attacker is likeliest to have seen.
+
+`jti` is required and not remembered: replaying an ID token would be a sign-in,
+whereas replaying a logout token ends a session that is already ended.
+
+The `sid` lookup deliberately does **not** filter on `via_oidc`. `oidc_sid` is
+written in exactly one place and always alongside it, so a local session holds
+NULL and cannot match; the clause was there first, was unreachable, and a guard
+no test can fail implies a threat that does not exist. The `sub` path does
+filter on it, and that one is load-bearing.

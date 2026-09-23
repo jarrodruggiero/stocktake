@@ -44,7 +44,7 @@ Issues = "https://github.com/jarrodruggiero/stocktake/issues"
 # because somebody pushed to appcore. Moving the pin is a deliberate act, and
 # appcore's own CI runs THIS suite against its main, so a break shows up there
 # before it ever reaches a pin.
-appcore = { git = "https://github.com/jarrodruggiero/appcore", rev = "03cf210cb38b5f36791ece58ebf4a5b761d7316d" }
+appcore = { git = "https://github.com/jarrodruggiero/appcore", rev = "3638b61ef2d2abe345d46156da646d484bf3d1f8" }
 
 [build-system]
 requires = ["hatchling"]

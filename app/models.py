@@ -366,6 +366,11 @@ class UserSession(Base):
     via_oidc: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false()
     )
+    # The PROVIDER'S id for its own session, from the ID token's `sid`. What a
+    # back-channel logout is keyed on: it ends exactly the session the provider
+    # named, where `sub` would end every session this identity holds. NULL for
+    # a local sign-in, and for a provider that issues no `sid` — decisions.md #127.
+    oidc_sid: Mapped[str | None] = mapped_column(String(255), index=True)
     # The recovery-codes banner, put away for THIS session. Deliberately not on
     # the user: dismissing it should last until they sign in again, not
     # forever — codes nobody has saved are codes nobody has.

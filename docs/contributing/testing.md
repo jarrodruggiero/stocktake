@@ -162,6 +162,12 @@ the session absolute cap passed with the cap removed, because another mechanism
 was masking it — the real hole only showed up when the check was deleted and
 nothing complained.
 
+**The eight shapes this takes**, each with a real case from this repository,
+are in `.claude/skills/tests-that-can-fail/` — an assertion that matches
+something else on the page, a fixture that never creates the state the bug
+would damage, a guard no mutation can reach, and five more. Read it before
+writing a test, not after a mutation survives.
+
 ## The visual tests
 
 `tests/test_visual.py` renders every page through `tools/screenshot.py` and

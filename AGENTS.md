@@ -20,6 +20,8 @@ statement layout", there is a page naming the exact files and the test to write.
 `.claude/skills/stocktake-style/` is the same style rules as a skill, so an
 agent working here picks them up without being asked. The doc is the authority;
 the skill is the short version of the half that gets got wrong.
+`.claude/skills/tests-that-can-fail/` is its counterpart for tests: the ways a
+test passes while proving nothing, each with a real case from this repository.
 
 **Comments are for two things only** — code a competent reader would find
 genuinely hard, and a decision that looks wrong until you know why. Keep them to
