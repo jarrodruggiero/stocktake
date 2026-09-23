@@ -73,6 +73,7 @@ from . import (
     passkeys,
     plans,
     pricefeed,
+    providers,
     queries,
     setupwizard,
     sorting,
@@ -2355,14 +2356,27 @@ async def account_password(
 # User administration (admin only)
 # --------------------------------------------------------------------------- #
 
-def _kick_feed() -> None:
+def _kick_feed() -> bool:
     """Nudge the price feed after a new instrument appears, so its history
-    shows up without waiting for the daily run."""
-    if not feed_status["running"]:
-        try:
-            asyncio.get_running_loop().run_in_executor(None, _run_feed)
-        except RuntimeError:  # no loop (CLI/tests) — the schedule will catch it
-            pass
+    shows up without waiting for the daily run. True if it dispatched.
+
+    Gated on `price_feed.enabled`, which `lifespan` applies to the scheduled
+    LOOPS only. Without it here, adding an instrument reached a price provider
+    on an install that had deliberately switched the feed off — and "only
+    ticker symbols leave the machine, and only if you let them" is the headline
+    promise (decisions.md #9).
+
+    Returns a bool so both sides of that gate are observable: with no running
+    loop the dispatch is skipped anyway, so a caller cannot otherwise tell
+    "refused" from "nothing to hand it to".
+    """
+    if not settings.price_feed.enabled or feed_status["running"]:
+        return False
+    try:
+        asyncio.get_running_loop().run_in_executor(None, _run_feed)
+        return True
+    except RuntimeError:  # no loop (CLI/tests) — the schedule will catch it
+        return False
 
 
 # Jurisdictions worth offering. Deliberately short: the financial-year and
@@ -3901,6 +3915,26 @@ async def plan_skip(request: Request, ticker: str = Form(...), due_date: str = F
         return _redirect("/schedule")
 
 
+@app.post("/schedule/delete")
+async def plan_delete(request: Request):
+    """Remove the plan and its rotation, keeping what was already bought.
+
+    `investment_plan_entry` is `delete-orphan` off the plan, so the rotation
+    goes with it. `planned_purchase.plan_entry_id` is `ON DELETE SET NULL`, so
+    the record of what was bought or skipped survives with its slot nulled —
+    the purchase happened whatever became of the schedule that suggested it,
+    and tidying a plan away must not rewrite the ledger's history.
+    """
+    with scoped(request) as (ctx, db):
+        await auth.verify_csrf(request, db)
+        _require_write(ctx)
+        plan = db.scalars(select(InvestmentPlan)).first()
+        if plan is None:
+            raise HTTPException(404, "no plan to delete")
+        db.delete(plan)
+        db.flush()
+        log.info("investment plan %s deleted", plan.id)
+        return _redirect("/schedule")
 
 
 # --------------------------------------------------------------------------- #
@@ -4911,27 +4945,70 @@ def instruments_lookup(request: Request, ticker: str = "", exchange: str = "ASX"
         return pricefeed.lookup(ticker, exchange)
 
 
+def _provider_close(symbol: str, on: dt.date):
+    """The provider's close for a symbol on or before `on`, or None.
+
+    For a ticker with no catalogue row yet. The symbol has already gone to the
+    provider by the time this is asked — the name and currency on the same form
+    came from `pricefeed.lookup` — so this is no new disclosure, but it is a
+    network call and `price_feed.enabled` governs those.
+
+    A fortnight's window rather than a day: one close is all the form wants,
+    and reaching back is only for a weekend, a holiday or a suspension. Any
+    failure is an empty field. A provider being unreachable must not turn into
+    a 500 on somebody's trade form.
+    """
+    if not settings.price_feed.enabled:
+        return None
+    try:
+        result = providers.fetch(providers.kind_for("ASX"), symbol,
+                                 on - dt.timedelta(days=14), on)
+    except Exception:  # noqa: BLE001 - a provider is allowed to be broken
+        log.warning("price lookup failed for %s", symbol, exc_info=True)
+        return None
+    if not result.ok:
+        return None
+    # Provider rows are (date, close); the caller wants (close, date) — the
+    # same shape `queries.close_on_or_before` returns, so the two are
+    # interchangeable at the call site.
+    usable = [(close, when) for when, close in result.rows if when <= on]
+    return max(usable, key=lambda row: row[1]) if usable else None
+
+
 @app.get("/holdings/price")
-def instruments_price_on(request: Request, instrument: int, date: str = ""):
+def instruments_price_on(request: Request, date: str = "", instrument: int = 0,
+                         symbol: str = ""):
     """The close and FX rate for one instrument on one date.
 
     Backs the trade form, which re-asks whenever the date changes. Nulls mean
-    nothing is stored for that date and the form should stay empty rather than
+    nothing is known for that date and the form should stay empty rather than
     offer the nearest figure to hand — decisions.md #124.
 
     `as_at` is the date the figure is actually for, which is how the form names
     the Friday close for a trade dated on a Saturday.
+
+    Two ways in, because the form has two states. `instrument` reads what is
+    STORED, which is the normal case and costs nothing. `symbol` is for an
+    instrument that does not exist yet — the inline "something not listed"
+    fieldset — where there is no history to read and the alternative is an
+    empty field on the one trade somebody is most likely to be typing from a
+    contract note. It asks the provider, so it is gated on the feed being on.
     """
     with scoped(request) as (ctx, db):
         try:
             on = dt.date.fromisoformat(date)
         except ValueError:
             raise HTTPException(400, "date must be YYYY-MM-DD")
-        inst = db.get(Instrument, instrument)
-        if inst is None:
-            raise HTTPException(404, "no such instrument")
-        close = queries.close_on_or_before(db, inst.id, on)
-        rate = queries.fx_on_or_before(db, inst.currency, on)
+        if not instrument and not symbol.strip():
+            raise HTTPException(400, "instrument or symbol is required")
+        if instrument:
+            inst = db.get(Instrument, instrument)
+            if inst is None:
+                raise HTTPException(404, "no such instrument")
+            close = queries.close_on_or_before(db, inst.id, on)
+            rate = queries.fx_on_or_before(db, inst.currency, on)
+        else:
+            close, rate = _provider_close(symbol.strip(), on), None
         return {
             "price": f"{close[0].normalize():f}" if close else None,
             "as_at": close[1].isoformat() if close else None,

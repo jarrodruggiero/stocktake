@@ -10,12 +10,16 @@ the code and it records decisions the code cannot show.
 | --- | --- |
 | `docs/contributing/architecture.md` | The one idea (everything computes from trades) and the two safety rules |
 | `docs/contributing/testing.md` | **Test-first is a rule here** — plus both backends, and the conventions that waste an afternoon |
-| `docs/contributing/style.md` | What deserves a comment here, and what user-facing text should sound like |
+| `docs/contributing/style.md` | **How much to say on a page**, what deserves a comment, buttons, dialogs, colour |
 | `docs/contributing/decisions.md` | **Choices that look wrong until you know why.** Read before "fixing" anything surprising |
 
 The recipes (`recipe-*.md`) are task-shaped. If the job is "add a broker", "add
 a column", "add a report", "add a price source", "add a chart field" or "add a
 statement layout", there is a page naming the exact files and the test to write.
+
+`.claude/skills/stocktake-style/` is the same style rules as a skill, so an
+agent working here picks them up without being asked. The doc is the authority;
+the skill is the short version of the half that gets got wrong.
 
 **Comments are for two things only** — code a competent reader would find
 genuinely hard, and a decision that looks wrong until you know why. Keep them to

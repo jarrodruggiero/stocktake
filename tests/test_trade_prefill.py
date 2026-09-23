@@ -31,7 +31,8 @@ import pytest
 from sqlalchemy import select
 
 import factories as fac
-from app import queries
+from app import main as main_mod
+from app import providers, queries
 from app.models import Trade
 from test_routes import (
     bind_to_only_portfolio,
@@ -41,6 +42,12 @@ from test_routes import (
 )
 
 HTML = {"accept": "text/html"}
+
+
+def _provider_rows(rows, *, ok: bool = True) -> providers.Fetch:
+    """A `providers.Fetch` the way a real one comes back. `source` is what
+    `ok` reads, so a refusal is `source=None` rather than a flag."""
+    return providers.Fetch(rows=list(rows), source="test" if ok else None)
 
 
 @pytest.fixture
@@ -223,6 +230,81 @@ def test_the_endpoint_rejects_a_date_that_is_not_a_date(client, session_factory)
     )
 
     assert answer.status_code == 400
+
+
+# --------------------------------------------------------------------------- #
+# An instrument that does not exist yet
+# --------------------------------------------------------------------------- #
+# The case the date-driven prefill could not serve, and the one most likely to
+# be met: recording the FIRST trade for something, created inline by the form.
+# There is no local history for it — the feed has not run — so the stored-close
+# lookup has nothing, and the field stayed empty.
+#
+# The ticker has already gone to the provider by this point: the name, currency
+# and symbol on the same form came from `pricefeed.lookup`. So asking that same
+# provider for a close on the date is no new disclosure, and it is gated on
+# `price_feed.enabled` like everything else that reaches the network.
+
+def test_a_symbol_not_yet_in_the_catalogue_can_be_priced(
+    client, session_factory, monkeypatch
+):
+    make_login(client, session_factory)
+    asked = {}
+
+    def _fetch(kind, symbol, start, end):
+        asked.update(kind=kind, symbol=symbol, start=start, end=end)
+        return _provider_rows([(dt.date(2024, 9, 23), Decimal("29.31"))])
+
+    monkeypatch.setattr(main_mod.providers, "fetch", _fetch)
+    monkeypatch.setattr(main_mod.settings.price_feed, "enabled", True)
+
+    body = client.get("/holdings/price?symbol=ANZ.AX&date=2024-09-23").json()
+
+    assert body["price"] == "29.31"
+    assert body["as_at"] == "2024-09-23"
+    assert asked["symbol"] == "ANZ.AX"
+    # A short window, not the whole history: one close is all the form wants,
+    # and a weekend or a holiday is the only reason to look back at all.
+    assert (asked["end"] - asked["start"]).days <= 14
+
+
+def test_a_symbol_lookup_reaches_nothing_when_the_feed_is_off(
+    client, session_factory, monkeypatch
+):
+    """`price_feed.enabled: false` is a promise about the network."""
+    make_login(client, session_factory)
+
+    def _fetch(*_args, **_kwargs):
+        raise AssertionError("reached the provider with the feed disabled")
+
+    monkeypatch.setattr(main_mod.providers, "fetch", _fetch)
+    monkeypatch.setattr(main_mod.settings.price_feed, "enabled", False)
+
+    body = client.get("/holdings/price?symbol=ANZ.AX&date=2024-09-23").json()
+
+    assert body["price"] is None
+
+
+def test_a_symbol_the_provider_cannot_serve_offers_nothing(
+    client, session_factory, monkeypatch
+):
+    """A failed fetch is an empty field, not a 500 on somebody's trade form."""
+    make_login(client, session_factory)
+    monkeypatch.setattr(main_mod.providers, "fetch",
+                        lambda *a, **k: _provider_rows([], ok=False))
+    monkeypatch.setattr(main_mod.settings.price_feed, "enabled", True)
+
+    answer = client.get("/holdings/price?symbol=NOSUCH.AX&date=2024-09-23")
+
+    assert answer.status_code == 200
+    assert answer.json()["price"] is None
+
+
+def test_the_endpoint_needs_an_instrument_or_a_symbol(client, session_factory):
+    make_login(client, session_factory)
+
+    assert client.get("/holdings/price?date=2024-09-23",
+                      headers=HTML).status_code == 400
 
 
 def test_the_endpoint_404s_on_an_unknown_instrument(client, session_factory):

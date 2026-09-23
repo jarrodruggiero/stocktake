@@ -76,10 +76,13 @@
         {# Viewers see the ledger and no way to change it. #}
         {% if auth.can_write %}
         <td class="num">
+          {# A link that acts gets wrapped in a button — style.md. #}
           {% if e.row_kind == 'trade' %}
-          <a href="/trade/{{ e.row_id }}/edit">edit</a>
+          <a href="/trade/{{ e.row_id }}/edit"><button type="button"
+             class="secondary small">Edit</button></a>
           {% elif e.row_kind == 'dividend' %}
-          <a href="/dividend/{{ e.row_id }}/edit">edit</a>
+          <a href="/dividend/{{ e.row_id }}/edit"><button type="button"
+             class="secondary small">Edit</button></a>
           {% endif %}
         </td>
         {% endif %}
