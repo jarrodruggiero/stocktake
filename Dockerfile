@@ -24,7 +24,7 @@
 # 534 MB. Nothing needs that toolchain — every dependency in uv.lock resolves
 # from a wheel, verified by running `uv sync --frozen` on bare slim with no
 # compiler present.
-FROM python@sha256:8edbf9e42c7fb168b9c523718ed907117e6d2e60f5889c0c499bbda3a787da53 AS base
+FROM python@sha256:be8ccd085666c34273c9dc5607c9842f8b2e3116128aae45148ce164c07ce09d AS base
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 # uv, also pinned by digest.
