@@ -95,6 +95,18 @@ class Extracted:
     problem: str = ""
 
 
+# A dividend statement is a page or two, a combined advice a handful. Past this
+# the upload is REFUSED, not truncated: reading every page ties up a worker,
+# and reading only the first ones would drop rows without saying so (#46).
+MAX_PAGES = 30
+
+
+class TooManyPages(Exception):
+    def __init__(self, pages: int):
+        super().__init__(pages)
+        self.pages = pages
+
+
 def _pdf_text(data: bytes) -> str:
     # Imported here, not at module scope: uploading a statement is a rare,
     # deliberate act, and this module is imported at startup by main.py.
@@ -103,6 +115,9 @@ def _pdf_text(data: bytes) -> str:
     import pdfplumber
 
     with pdfplumber.open(io.BytesIO(data)) as pdf:
+        # Counted before any page is read: the point is not doing the work.
+        if len(pdf.pages) > MAX_PAGES:
+            raise TooManyPages(len(pdf.pages))
         return "\n".join(page.extract_text() or "" for page in pdf.pages)
 
 
@@ -117,7 +132,12 @@ def extract(data: bytes, *, ocr_enabled: bool = True) -> Extracted:
     who uploaded the file, because all of them are things about *their file*
     rather than faults in the app.
     """
-    text = _pdf_text(data)
+    try:
+        text = _pdf_text(data)
+    except TooManyPages as exc:
+        return Extracted(text="", problem=(
+            f"This PDF has {exc.pages} pages; statements are read up to "
+            f"{MAX_PAGES}. Split it and upload the pages you need."))
     if not looks_scanned(text):
         return Extracted(text=text)
 
