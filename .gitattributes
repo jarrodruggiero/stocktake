@@ -1,0 +1,5 @@
+# Every text file is stored with LF endings, whatever the contributor's machine
+# or editor does — and checked out as LF too, so a fresh clone on Windows is the
+# same as one anywhere else. Binary files are detected and left alone. Without
+# this a one-line fix can arrive as every line of 325 files changed (#44).
+* text=auto eol=lf
