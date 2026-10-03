@@ -480,6 +480,9 @@ async def statement_designer_check(
     with auth.scoped_session(request) as (ctx, s):
         await auth.verify_csrf(request, s)
         _require_write(ctx)
+        if type not in docformats.TYPE_PATTERNS:
+            return {"value": None, "problem": "Pick a type: "
+                    + ", ".join(sorted(docformats.TYPE_PATTERNS)) + "."}
         reading = docformats.read_with(text, label, type)
         return {"value": None if reading.value is None else str(reading.value),
                 "problem": reading.problem}
@@ -496,15 +499,9 @@ async def statement_designer_export(
     with auth.scoped_session(request) as (ctx, s):
         await auth.verify_csrf(request, s)
         _require_write(ctx)
-        try:
-            fields = json.loads(mapping)
-        except ValueError:
-            raise HTTPException(400, "could not read the mapping")
-        body = docformats.template_yaml(
-            name=name.strip() or "My registry",
-            fields=fields,
-            match=[m.strip() for m in marker.splitlines() if m.strip()],
-        )
+        # Through the shared builder, as its docstring always said: this one
+        # had its own copy, and so missed the checks the other two got.
+        body = _designed_yaml(name, mapping, marker)
         slug = _slug(name) or "template"
         return PlainTextResponse(
             body,
@@ -522,6 +519,15 @@ def _designed_yaml(name: str, mapping: str, marker: str) -> str:
         fields = json.loads(mapping)
     except ValueError:
         raise HTTPException(400, "could not read the mapping") from None
+    # What the designer posts: field name -> {"after": [labels], "type": type}.
+    # Anything else was a hand-made request, and reached `.items()` as a 500.
+    if not (isinstance(fields, dict) and all(
+            isinstance(spec, dict)
+            and spec.get("type") in docformats.TYPE_PATTERNS
+            and isinstance(spec.get("after"), list)
+            and all(isinstance(label, str) for label in spec["after"])
+            for spec in fields.values())):
+        raise HTTPException(400, "could not read the mapping")
     return docformats.template_yaml(
         name=name.strip() or "My registry",
         fields=fields,
@@ -820,6 +826,9 @@ def _require_admin(ctx) -> None:
         raise HTTPException(403, "Admins only")
 
 
+SLUG_MAX = 60
+
+
 def _slug(name: str) -> str:
     """A filename reduced to the shipped convention: lowercase, hyphenated.
 
@@ -829,7 +838,9 @@ def _slug(name: str) -> str:
     because relying on one sanitiser to be perfect is how these go wrong.
     """
     stem = Path(name or "").name.rsplit(".", 1)[0]
-    return re.sub(r"[^a-z0-9]+", "-", stem.lower()).strip("-")
+    # Cut, because the app picks this name, not a person: a long one is a
+    # filesystem error otherwise (decisions.md #131).
+    return re.sub(r"[^a-z0-9]+", "-", stem.lower()).strip("-")[:SLUG_MAX].strip("-")
 
 
 def _template_path(settings, kind: str, slug: str) -> Path:

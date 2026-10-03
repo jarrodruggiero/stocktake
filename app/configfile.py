@@ -334,7 +334,8 @@ def coerce(option: Option, raw: str) -> Any:
     if option.path == ("timezone",):
         try:
             ZoneInfo(raw)
-        except (ZoneInfoNotFoundError, ValueError):
+        # OSError: a name too long for the filesystem, which ZoneInfo looks up.
+        except (ZoneInfoNotFoundError, ValueError, OSError):
             raise ValueError(
                 f"{raw!r} is not a known timezone. Use an IANA name such as "
                 "Australia/Melbourne."

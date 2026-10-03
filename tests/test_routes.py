@@ -402,6 +402,29 @@ def test_download_sets_a_filename(client, session_factory, fmt):
     assert resp.headers["content-disposition"].endswith(f'.{fmt}"')
 
 
+@pytest.mark.parametrize("fy", ["9" * 5000, "\u00b2\u2070\u00b2\u2076"],
+                         ids=["5000 digits", "superscript digits"])
+def test_a_financial_year_is_four_digits(client, session_factory, fy):
+    """isdigit() takes both of these; int() refused one and could not parse
+    the other, and either was a 500."""
+    make_login(client, session_factory)
+
+    resp = client.get("/export/download", params={"report": "holdings", "fmt": "csv", "fy": fy})
+
+    assert resp.status_code == 400
+
+
+def test_the_ticker_filter_has_to_be_a_ticker(client, session_factory):
+    """It becomes part of the download's filename, in a header, which takes
+    Latin-1 only: anything else was a 500."""
+    make_login(client, session_factory)
+
+    resp = client.get("/export/download",
+                      params={"report": "holdings", "fmt": "csv", "ticker": "\u0130" * 10})
+
+    assert resp.status_code == 400
+
+
 def test_an_unknown_report_is_rejected(client, session_factory):
     make_login(client, session_factory)
 

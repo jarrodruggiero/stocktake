@@ -1231,6 +1231,14 @@ only works for a value that is still itself when cut:
 And the callback rolls back whatever a refused sign-in started, so an account
 made for an identity that then fails to link is not left behind with no way in.
 
+**135. A plan starts within the next ten years.** A plan saved with a start in
+9999 was accepted, and then `/schedule` failed on every load, overflowing the
+date arithmetic that draws the rotation. That is the page where the plan would
+be edited, so the portfolio was stuck until somebody changed the database. The
+start date anchors a rotation that may have begun years ago, so the past is
+left open. The future is bounded at `PLAN_START_YEARS_AHEAD`, ten years, far
+past any plan anybody makes and well short of the overflow.
+
 **136. A migration on SQLite runs in one transaction, so a failure leaves
 nothing behind.** pysqlite opens a transaction only before INSERT, UPDATE and
 DELETE, so Alembic ran SQLite's DDL outside one ("Will assume non-transactional

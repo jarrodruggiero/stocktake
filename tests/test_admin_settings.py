@@ -162,6 +162,13 @@ def test_a_bad_timezone_is_refused_with_a_usable_message():
         configfile.coerce(option("timezone"), "Australia/Nowhere")
 
 
+def test_a_timezone_too_long_for_the_filesystem_is_refused_the_same_way():
+    """ZoneInfo looks the name up as a file, so one too long is an OSError
+    rather than not-found, and it was a 500 from the settings page."""
+    with pytest.raises(ValueError, match="not a known timezone"):
+        configfile.coerce(option("timezone"), "x" * 5000)
+
+
 def test_a_good_timezone_passes():
     assert configfile.coerce(option("timezone"), "Europe/Dublin") == "Europe/Dublin"
 
