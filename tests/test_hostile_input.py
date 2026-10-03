@@ -30,7 +30,7 @@ A route is covered the moment it exists. One the walker cannot drive is in
 `KNOWN`. Both fail when an entry goes stale, so they only ever shrink.
 
 An identity provider's claims and Yahoo's lookup are input too, and get the
-same treatment: `test_what_a_provider_says_fits_too`, and `FOUND`.
+same treatment: `test_what_a_provider_says_fits_too`, and `YAHOO_SAYS`.
 """
 
 from __future__ import annotations
@@ -49,10 +49,11 @@ from fastapi.routing import APIRoute
 from sqlalchemy import JSON, BigInteger, Integer, Numeric, String, select
 from sqlalchemy.types import TypeDecorator
 from test_api import bearer, issue_key
+from test_pricefeed import stub_yf
 
 import factories as fac
 from app import auth as auth_mod
-from app import configfile, invites, plans, pricefeed, tenancy, theming
+from app import configfile, invites, plans, tenancy, theming
 from app import main as main_mod
 from app.models import (
     ApiKey,
@@ -213,9 +214,11 @@ MID_WIZARD = {"/setup/2fa", "/setup/2fa/skip", "/setup/portfolio", "/setup/featu
               "/setup/environment", "/setup/finish"}
 SCHEDULE = {"/schedule/complete", "/schedule/skip", "/schedule/delete"}
 
-# What Yahoo's lookup hands back while this runs: a provider is input too. A
-# blank name or symbol falls back to these, and the columns are 80 and 20.
-FOUND = {"symbol": "S" * 5000, "name": "N" * 5000, "currency": "AUD", "found": True}
+# What Yahoo answers while this runs: a provider is input too. Stubbed where
+# yfinance would be, so `pricefeed.lookup` itself runs. Only the name is
+# Yahoo's own (the symbol is ours, from the ticker), and a blank name on a
+# form falls back to it, into an 80-character column.
+YAHOO_SAYS = {"longName": "N" * 5000, "currency": "AUD", "regularMarketPrice": 1.5}
 
 TODAY = dt.date.today()
 WHEN = (TODAY - dt.timedelta(days=5)).isoformat()
@@ -598,7 +601,6 @@ KNOWN: set[tuple[str, str, str]] = {
     ('POST /charts/save', 'template_key', 'too long'),
     ('POST /holdings/add', 'name', 'too long'),
     ('POST /trade/new', 'new_name', 'too long'),
-    ('POST /trade/new', 'new_yahoo', 'too long'),
     ('provider email-a new account', 'email', 'too long'),
     ('provider email-a returning identity', 'email', 'too long'),
     ('provider name-a new account', 'name', 'too long'),
@@ -789,14 +791,14 @@ def _failure(exc: BaseException) -> str:
 @pytest.fixture
 def sandbox(monkeypatch, tmp_path):
     """Everything outside the database a route can touch, pointed somewhere
-    harmless, and Yahoo's lookup answering with `FOUND`.
+    harmless, and Yahoo answering with `YAHOO_SAYS`.
 
     The restart is the one that matters most: the real `request_stop` sends
     SIGTERM to this process, which ends the whole test session.
     """
     from app import imports_web, lifecycle
 
-    monkeypatch.setattr(pricefeed, "lookup", lambda ticker, exchange: dict(FOUND))
+    stub_yf(monkeypatch, info=dict(YAHOO_SAYS))
     monkeypatch.setattr(lifecycle, "request_stop", lambda reason: None)
     real = Path(main_mod.APP_DIR.parent, "tests", "config.test.yaml")
     original = real.read_text()
