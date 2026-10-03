@@ -153,8 +153,14 @@ def test_the_release_check_says_whether_one_exists(tmp_path, listed, gh_exit, ex
         assert output.read_text().strip() == expected
 
 
-# `owner/repo@<40-hex commit>  # vX.Y.Z`, as Dependabot writes and updates them.
-PINNED = re.compile(r"^\s*-?\s*uses:\s+[\w.-]+/[\w./-]+@[0-9a-f]{40}\s+#\s+v\d+\.\d+\.\d+\s*$")
+def _action_refs(workflow: Path) -> list[str]:
+    """Every action and reusable workflow a workflow runs, read from the parsed
+    YAML, so text that merely says `uses:` (a CodeQL query suite inside an
+    input) is not mistaken for one. Local `./` actions are this repository's."""
+    jobs = (yaml.safe_load(workflow.read_text()).get("jobs") or {}).values()
+    refs = [job["uses"] for job in jobs if "uses" in job]
+    refs += [step["uses"] for _job, step in _steps(workflow) if "uses" in step]
+    return [ref for ref in refs if not ref.startswith("./")]
 
 
 @pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda w: w.name)
@@ -163,7 +169,11 @@ def test_every_action_is_pinned_to_a_commit(workflow: Path):
     repository, and the next run here would run it with this repository's
     tokens. A commit cannot be moved. Dependabot keeps the pins current, and
     the comment says which release each one is, so a pin stays reviewable."""
-    loose = [line.strip() for line in workflow.read_text().splitlines()
-             if re.match(r"^\s*-?\s*uses:", line) and not PINNED.match(line)]
+    text = workflow.read_text()
+    # `owner/repo@<40-hex commit>  # vX.Y.Z`, as Dependabot writes and updates them.
+    loose = [ref for ref in _action_refs(workflow)
+             if not re.fullmatch(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}", ref)
+             or not re.search(rf"uses:\s+{re.escape(ref)}\s+#\s+v\d+\.\d+\.\d+\s*$",
+                              text, re.M)]
 
     assert not loose, f"{workflow.name} uses actions by tag: {loose}"
