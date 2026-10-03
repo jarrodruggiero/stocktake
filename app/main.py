@@ -5033,8 +5033,8 @@ def instruments_price_on(request: Request, date: str = "", instrument: int = 0,
     nothing is known for that date and the form should stay empty rather than
     offer the nearest figure to hand — decisions.md #124.
 
-    `as_at` is the date the figure is actually for, which is how the form names
-    the Friday close for a trade dated on a Saturday.
+    `as_at` is the date the figure is actually for — the Friday close for a
+    trade dated on a Saturday.
 
     Two ways in, because the form has two states. `instrument` reads what is
     STORED, which is the normal case and costs nothing. `symbol` is for an

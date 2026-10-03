@@ -108,7 +108,6 @@
 
     var price = document.getElementById("unit_price");
     var fx = document.getElementById("fx_rate");
-    var status = document.getElementById("price-status");
     var url = "/holdings/price?" + query +
               "&date=" + encodeURIComponent(date.value);
     fetch(url)
@@ -117,16 +116,6 @@
         if (!d) { return; }
         if (price && !price.dataset.typed) { price.value = d.price || ""; }
         if (fx && !fx.dataset.typed) { fx.value = d.fx || ""; }
-        if (!status) { return; }
-        if (!d.price) {
-          status.textContent = "no close stored for that date — enter it yourself";
-        } else if (d.as_at !== date.value) {
-          /* Say which day it came from rather than implying the market traded
-             on a Saturday. */
-          status.textContent = "the " + d.as_at + " close";
-        } else {
-          status.textContent = "";
-        }
       })
       .catch(function () { /* leave whatever is in the fields */ });
   }

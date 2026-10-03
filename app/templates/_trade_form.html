@@ -126,10 +126,11 @@
     {# Zero is allowed — a bonus issue or a free grant really did cost nothing.
        `min="0"` keeps the negative out without saying so in prose; what it
        means for an employer's plan is in the guide, not on the form. #}
+    {# No hint under the field. The row bottom-aligns its labels, so a line
+       below one input pushed Units and Brokerage out of line with it. #}
     <label>Price per unit
       <input name="unit_price" inputmode="decimal" id="unit_price" min="0"
-           value="{{ form.unit_price or (prefill.unit_price | qty if prefill and not form else '') }}" required>
-      <span class="sub" id="price-status"></span></label>
+           value="{{ form.unit_price or (prefill.unit_price | qty if prefill and not form else '') }}" required></label>
     <label>Brokerage <input name="brokerage" inputmode="decimal"
            value="{{ form.brokerage or (prefill.brokerage | qty if prefill and not form else '9.50') }}"></label>
   </div>
@@ -151,7 +152,7 @@
            value="{{ form.fx_rate or '' }}">
   </label>
 
-  <label>Note <span class="sub">optional, private to you</span>
+  <label>Note
     <input name="note" value="{{ form.note or '' }}" maxlength="400">
   </label>
 
