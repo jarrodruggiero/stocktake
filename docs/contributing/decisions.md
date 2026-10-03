@@ -1178,6 +1178,21 @@ an account. Adding a text field means `textfield.fit` at the route and a test
 that asserts nothing was saved: SQLite cannot show the failure, and CI's
 Postgres run is where it would.
 
+**132. Every route is walked with values a form cannot send.** Issues #53 and
+#60 were the same bug in different fields: a value the page's own form could
+not produce got past the server. Fixing fields one at a time leaves the next one
+open, so `tests/test_hostile_input.py` takes its routes from the app rather than
+from a list, and checks the database rather than the status code, because
+SQLite stores what Postgres refuses. A careful control request goes first and
+last on every route, because a walker whose requests are all refused at the
+door passes without having tested anything.
+
+Its first run, on top of #61's fixes, found 102 more: NUL characters (which
+Postgres refuses even in a lookup), ids past what a column holds, values from
+Yahoo or an identity provider past their column, and assorted crashes. They are
+listed in `KNOWN` and fixed in follow-ups. The list fails when an entry stops
+happening, so it can only shrink, and a new finding never goes on it.
+
 **136. A migration on SQLite runs in one transaction, so a failure leaves
 nothing behind.** pysqlite opens a transaction only before INSERT, UPDATE and
 DELETE, so Alembic ran SQLite's DDL outside one ("Will assume non-transactional
