@@ -182,6 +182,16 @@ def validate(spec: dict) -> str | None:
     Called before saving and before executing, so a bad spec is refused at the
     door rather than producing an empty chart nobody can explain.
     """
+    # The builder only ever sends strings and a list of them. Anything else is
+    # a hand-made request, and `x in BY_KEY` on a list was a 500.
+    if not isinstance(spec, dict):
+        return "That is not a chart."
+    if any(not isinstance(spec.get(k), (str, type(None))) for k in ("grain", "x", "type", "split")):
+        return "That is not a chart."
+    measures = spec.get("measures")
+    if measures is not None and (not isinstance(measures, list)
+                                 or not all(isinstance(m, str) for m in measures)):
+        return "That is not a chart."
     grain = spec.get("grain")
     if grain not in ("timeseries", "positions", "periods"):
         return "Pick what the chart is about: over time, by holding, or by period."
