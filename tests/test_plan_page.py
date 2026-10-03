@@ -252,6 +252,25 @@ def test_the_preview_projects_a_draft_without_saving_it(client, session_factory)
 
 
 @freeze_time(TODAY)
+def test_a_plan_cannot_start_further_ahead_than_ten_years(client, session_factory):
+    """A start in 9999 was saved, and then /schedule overflowed drawing it on
+    every load: the page where the plan would be fixed was the one that broke."""
+    _plan(client, session_factory, tickers="ALPHA")
+    token = re.search(
+        r'name="_csrf" value="([^"]+)"', client.get("/schedule", headers=HTML).text).group(1)
+    far = {"_csrf": token, "interval_days": "28", "start_date": "9999-12-31",
+           "tickers": "ALPHA"}
+
+    preview = client.post("/schedule/preview", data=far)
+    saved = client.post("/schedule/save", headers=HTML, follow_redirects=False,
+                        data={**far, "name": "Far", "amount": "500", "brokerage": "9.50"})
+
+    assert "within the next 10 years" in preview.json()["why"]
+    assert saved.status_code == 400
+    assert client.get("/schedule", headers=HTML).status_code == 200
+
+
+@freeze_time(TODAY)
 def test_the_preview_uses_the_same_arithmetic_as_the_real_schedule(
         client, session_factory):
     """The reason it is a round trip to the server rather than a few lines of

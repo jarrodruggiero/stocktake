@@ -333,6 +333,60 @@ def test_a_parsed_statement_reports_which_template_read_it(pf, monkeypatch):
     assert parsed.full_text == SAMPLE
 
 
+def test_a_file_that_is_not_a_pdf_gets_a_sentence_not_a_500(client, session_factory):
+    """`extract` promises never to raise: every failure is about the person's
+    file, and is said to them. A file pdfplumber cannot open broke that."""
+    from test_routes import make_login, session_csrf
+
+    make_login(client, session_factory)
+
+    resp = client.post(
+        "/imports-exports/statement",
+        files={"file": ("advice.pdf", b"Payment date 1 July, not a PDF", "application/pdf")},
+        data={"_csrf": session_csrf(session_factory)},
+        headers={"accept": "text/html"},
+    )
+
+    assert resp.status_code == 200
+    assert "This file is not a PDF" in resp.text
+
+
+@pytest.mark.parametrize("mapping", ["NaN", "[1, 2]", '{"net_amount": "money"}',
+                                     '{"net_amount": {"after": "x", "type": "money"}}',
+                                     '{"net_amount": {"after": ["x"], "type": "bogus"}}'],
+                         ids=["a number", "a list", "a string for a field",
+                              "a string for the labels", "an unknown type"])
+@pytest.mark.parametrize("route", ["export", "install", "contribute"])
+def test_the_designer_refuses_a_mapping_of_the_wrong_shape(
+        client, session_factory, mapping, route):
+    """The three share one builder, which checks the shape. The download had
+    its own copy and checked nothing, and `.items()` on a number was a 500."""
+    from test_routes import make_login, session_csrf
+
+    make_login(client, session_factory)
+
+    resp = client.post(f"/imports-exports/statement/design/{route}",
+                       data={"name": "Registry", "mapping": mapping,
+                             "_csrf": session_csrf(session_factory)},
+                       headers={"accept": "text/html"}, follow_redirects=False)
+
+    assert resp.status_code == 400
+
+
+def test_the_designer_check_names_the_types_for_an_unknown_one(client, session_factory):
+    from test_routes import make_login, session_csrf
+
+    make_login(client, session_factory)
+
+    resp = client.post("/imports-exports/statement/design/check",
+                       data={"text": SAMPLE, "label": "Net amount", "type": "<b>bogus</b>",
+                             "_csrf": session_csrf(session_factory)})
+
+    assert resp.status_code == 200
+    assert resp.json()["problem"].startswith("Pick a type:")
+    assert "bogus" not in resp.text        # what was sent is not echoed back
+
+
 def test_the_preview_shows_the_layout_and_the_text(client, session_factory, monkeypatch):
     from app import statements
     from test_routes import make_login, session_csrf
@@ -536,6 +590,24 @@ def test_the_exported_template_is_loadable_and_works(tmp_path):
 
     assert loaded.matches(SAMPLE)
     assert loaded.extract(SAMPLE)["net_amount"] == Decimal("1042.75")
+
+
+def test_what_was_typed_stays_text_in_the_exported_template(tmp_path):
+    """Every value came from a form. Written plain, a colon or a newline in a
+    name added keys of its own, a date-shaped label became a date (an
+    impossible one a crash), and 5000 digits an int too long to parse."""
+    name = "Registry: one\nfields: {}"
+    labels = ["2026-02-30", "9" * 5000, "# not a comment"]
+    path = tmp_path / "typed.yaml"
+    path.write_text(fmt.template_yaml(
+        name=name, fields={"net_amount": {"after": labels, "type": "money"}},
+        match=["true"]))
+
+    loaded = fmt.load_statement_template(path)
+
+    assert loaded.name == name
+    assert loaded.fields["net_amount"].after == labels
+    assert loaded.match_any == ["true"]
 
 
 def test_the_exported_template_explains_itself():

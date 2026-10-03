@@ -3874,6 +3874,27 @@ def feed_status_json(request: Request):
         })
 
 
+# How far ahead a plan may start. A start in 9999 was saved happily and then
+# made /schedule fail on every load, overflowing the date arithmetic that
+# draws it: the page where the plan would be fixed was the one that broke.
+PLAN_START_YEARS_AHEAD = 10
+
+
+def _plan_start(raw: str) -> dt.date | None:
+    """A plan's start date from the form, or None when blank. ValueError, with
+    the message to show, when it is not one a plan can have."""
+    if not raw.strip():
+        return None
+    try:
+        start = dt.date.fromisoformat(raw.strip())
+    except ValueError:
+        raise ValueError("start date must be YYYY-MM-DD") from None
+    if start.year > clock.today().year + PLAN_START_YEARS_AHEAD:
+        raise ValueError(
+            f"A plan has to start within the next {PLAN_START_YEARS_AHEAD} years.")
+    return start
+
+
 @app.post("/schedule/preview")
 async def plan_preview(
     request: Request,
@@ -3897,12 +3918,10 @@ async def plan_preview(
         _require_write(ctx)
         if interval_days < 1 or interval_days > 365:
             return JSONResponse({"rows": [], "why": "interval must be 1–365 days"})
-        start = None
-        if start_date.strip():
-            try:
-                start = dt.date.fromisoformat(start_date.strip())
-            except ValueError:
-                return JSONResponse({"rows": [], "why": "start date must be YYYY-MM-DD"})
+        try:
+            start = _plan_start(start_date)
+        except ValueError as exc:
+            return JSONResponse({"rows": [], "why": str(exc)})
 
         wanted = [t.strip().upper() for t in tickers.replace("\n", ",").split(",") if t.strip()]
         known = {
@@ -3949,12 +3968,10 @@ async def plan_save(
                                         "Brokerage")
         except money.FigureError as exc:
             raise HTTPException(400, str(exc))
-        start = None
-        if start_date.strip():
-            try:
-                start = dt.date.fromisoformat(start_date.strip())
-            except ValueError:
-                raise HTTPException(400, "start date must be YYYY-MM-DD")
+        try:
+            start = _plan_start(start_date)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
 
         wanted = [t.strip().upper() for t in tickers.replace("\n", ",").split(",") if t.strip()]
         by_ticker = {
@@ -4158,7 +4175,9 @@ def export_download(
         raise HTTPException(400, "format must be csv or xlsx")
     year: int | None = None
     if fy.strip():
-        if not fy.strip().isdigit():
+        # Four ASCII digits: isdigit() alone takes 5000 of them, which int()
+        # then refuses, and superscript digits, which it cannot parse at all.
+        if not re.fullmatch(r"[0-9]{4}", fy.strip()):
             raise HTTPException(400, "financial year must be a year, e.g. 2026")
         year = int(fy)
     wanted = [report] if report != "all" else list(exports.TITLES)
@@ -4168,6 +4187,11 @@ def export_download(
     if report == "all" and fmt == "csv":
         raise HTTPException(400, "choose Excel for the combined workbook")
 
+    # The filter becomes part of the download's filename, in a header, so it
+    # has to be a ticker: anything else matches nothing anyway.
+    if ticker.strip() and ticker_problem(ticker):
+        raise HTTPException(400, "that is not a ticker")
+    ticker = ticker.strip()
     with scoped(request) as (ctx, db):
         sheets = exports.build(db, wanted, fy=year, ticker=ticker.upper() or None)
         stem = "everything" if report == "all" else report

@@ -118,6 +118,19 @@ def test_the_name_is_slugged_to_the_shipped_convention(client, session_factory, 
     assert (tmp_path / "statements" / "vanguard-drp-advice.yaml").is_file()
 
 
+def test_a_name_too_long_to_be_a_filename_is_cut(client, session_factory, admin, tmp_path):
+    """The app picks the filename, so a long one is cut rather than refused,
+    and it was a filesystem error before (decisions.md #131). Pasted, because
+    a name this long in an upload's own header is refused by the framework."""
+    resp = client.post(
+        "/imports-exports/formats", headers=HTML, follow_redirects=False,
+        data={"kind": "statement", "filename": "a" * 5000,
+              "body": GOOD_STATEMENT.decode(), "_csrf": session_csrf(session_factory)})
+
+    assert resp.status_code == 303
+    assert (tmp_path / "statements" / ("a" * 60 + ".yaml")).is_file()
+
+
 # --------------------------------------------------------------------------- #
 # It refuses what it should
 # --------------------------------------------------------------------------- #

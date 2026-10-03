@@ -53,7 +53,7 @@ from test_pricefeed import stub_yf
 
 import factories as fac
 from app import auth as auth_mod
-from app import configfile, invites, plans, tenancy, theming
+from app import configfile, invites, plans, statements, tenancy, theming
 from app import main as main_mod
 from app.models import (
     ApiKey,
@@ -532,29 +532,7 @@ def _wipe(session_factory) -> None:
 # Every finding as (route, field, what), each one waiting on a fix. A finding
 # not listed fails, and so does a listed one that has stopped happening: fix
 # something and its lines here have to go, so this list only ever shrinks.
-KNOWN: set[tuple[str, str, str]] = {
-    # Postgres refuses any text with a NUL in it, even to look something up;
-    # SQLite stores it.
-    # An id or a number past what its column holds: OverflowError on SQLite,
-    # "integer out of range" on Postgres.
-    # Text past its column: a value the app takes from Yahoo or an identity
-    # provider, or a field nothing checks.
-    # Anything else that ends in a 500.
-    ('GET /export/download', 'fy', 'crash'),
-    ('GET /export/download', 'ticker', 'crash'),
-    ('POST /admin/settings', 'timezone', 'crash'),
-    ('POST /imports-exports/formats', 'filename', 'crash'),
-    ('POST /imports-exports/statement', 'control', 'crash'),
-    ('POST /imports-exports/statement', 'template', 'crash'),
-    ('POST /imports-exports/statement/design/check', 'type', 'crash'),
-    ('POST /imports-exports/statement/design/contribute', 'mapping', 'crash'),
-    ('POST /imports-exports/statement/design/contribute', 'marker', 'crash'),
-    ('POST /imports-exports/statement/design/contribute', 'name', 'crash'),
-    ('POST /imports-exports/statement/design/export', 'mapping', 'crash'),
-    ('POST /imports-exports/statement/design/install', 'name', 'crash'),
-    ('POST /imports-exports/statement/design/install', 'mapping', 'crash'),
-    ('POST /schedule/preview', 'start_date', 'crash'),
-}
+KNOWN: set[tuple[str, str, str]] = set()      # nothing outstanding
 # Findings only Postgres shows, such as a lookup SQLite answers and Postgres
 # refuses. Checked for staleness on Postgres only.
 POSTGRES_ONLY: set[tuple[str, str, str]] = set()
@@ -708,6 +686,10 @@ def sandbox(monkeypatch, tmp_path):
     from app import imports_web, lifecycle
 
     stub_yf(monkeypatch, info=dict(YAHOO_SAYS))
+    # The statement upload reads its file as text, as the statement tests do:
+    # the careful file is a shipped sample, and turning it into a PDF would
+    # only test pdfplumber.
+    monkeypatch.setattr(statements, "_pdf_text", lambda data: data.decode("utf-8", "replace"))
     monkeypatch.setattr(lifecycle, "request_stop", lambda reason: None)
     real = Path(main_mod.APP_DIR.parent, "tests", "config.test.yaml")
     original = real.read_text()

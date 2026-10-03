@@ -107,14 +107,23 @@ class TooManyPages(Exception):
         self.pages = pages
 
 
+class NotAPdf(Exception):
+    """The upload is not a PDF pdfplumber can open."""
+
+
 def _pdf_text(data: bytes) -> str:
     # Imported here, not at module scope: uploading a statement is a rare,
     # deliberate act, and this module is imported at startup by main.py.
     # pdfplumber costs ~8 MiB in the container — small next to yfinance, but it
     # is the same principle, and this is the only function that touches it.
     import pdfplumber
+    from pdfplumber.utils.exceptions import PdfminerException
 
-    with pdfplumber.open(io.BytesIO(data)) as pdf:
+    try:
+        pdf = pdfplumber.open(io.BytesIO(data))
+    except PdfminerException:
+        raise NotAPdf from None
+    with pdf:
         # Counted before any page is read: the point is not doing the work.
         if len(pdf.pages) > MAX_PAGES:
             raise TooManyPages(len(pdf.pages))
@@ -134,6 +143,10 @@ def extract(data: bytes, *, ocr_enabled: bool = True) -> Extracted:
     """
     try:
         text = _pdf_text(data)
+    except NotAPdf:
+        return Extracted(text="", problem=(
+            "This file is not a PDF, or not one that can be opened. Upload the "
+            "statement as the PDF your registry sent."))
     except TooManyPages as exc:
         return Extracted(text="", problem=(
             f"This PDF has {exc.pages} pages; statements are read up to "
