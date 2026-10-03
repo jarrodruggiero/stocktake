@@ -79,10 +79,9 @@ recovery path for a self-hosted app; it also means the admin is trusted.
 
 ## Reporting a vulnerability
 
-Please report privately rather than opening a public issue, and give a
-reasonable window to fix it before disclosing: use **Report a vulnerability**
-on the repository's
-[Security tab](https://github.com/jarrodruggiero/stocktake/security/advisories/new).
+Please report privately rather than opening a public issue. The
+[security policy](https://github.com/jarrodruggiero/stocktake/security/policy)
+says how, what happens next, and which versions get fixes.
 
 Useful reports say what an attacker can do that they should not be able to.
 "Anyone with the database file can read holdings" is documented above and not a
