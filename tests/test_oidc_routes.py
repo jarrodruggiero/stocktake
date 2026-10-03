@@ -16,7 +16,7 @@ import pytest
 from sqlalchemy import select
 
 from app import federation
-from app.models import ExternalIdentity, PortfolioMember, User
+from app.models import ExternalIdentity, PortfolioMember, User, UserSession
 from appcore import oidc
 from appcore.testing import FakeIdp
 from test_routes import make_login, session_csrf
@@ -216,6 +216,122 @@ def test_open_provisioning_creates_the_account(
         assert made is not None
         # No password at all, rather than one nobody can use.
         assert made.password_hash is None
+
+
+# --------------------------------------------------------------------------- #
+# What a provider says, held to the columns it goes into (decisions.md #134)
+# --------------------------------------------------------------------------- #
+
+def _provisioning_on(client, session_factory, oidc_on):
+    make_login(client, session_factory)
+    client.post("/logout", data={"_csrf": session_csrf(session_factory)},
+                follow_redirects=False)
+    oidc_on.provisioning = "open"
+
+
+def _sign_in(client, idp, **claims):
+    """The round trip, with the provider saying `claims`."""
+    state = _begin(client)
+    idp.claims = {"nonce": _nonce_for(client, idp), **claims}
+    try:
+        return client.get(f"/login/oidc/callback?code=abc&state={state}",
+                          follow_redirects=False)
+    finally:
+        client.cookies.clear()
+
+
+def _refusal(resp) -> str:
+    assert resp.headers["location"].startswith("/login?error=")
+    return urllib.parse.unquote_plus(resp.headers["location"])
+
+
+def test_a_provider_name_too_long_is_cut_to_fit(client, session_factory, oidc_on, idp):
+    """A display name is the app's to fit: nobody typed it here (#131)."""
+    _provisioning_on(client, session_factory, oidc_on)
+
+    resp = _sign_in(client, idp, name="N" * 500)
+
+    assert resp.headers["location"] == "/"
+    with session_factory() as db:
+        made = db.scalar(select(User).where(User.email == "member@example.test"))
+        assert made.name == "N" * User.name.type.length
+
+
+def test_a_new_account_whose_email_cannot_be_stored_is_refused(
+        client, session_factory, oidc_on, idp):
+    """Cut short, an email is somebody else's address, so it is not cut."""
+    _provisioning_on(client, session_factory, oidc_on)
+
+    resp = _sign_in(client, idp, email="a" * 320 + "@example.test")
+
+    assert "email address this app cannot store" in _refusal(resp)
+    with session_factory() as db:
+        assert db.scalars(select(User)).all()[1:] == []          # only the admin
+        assert db.scalars(select(ExternalIdentity)).all() == []
+
+
+def test_a_returning_identity_keeps_its_email_when_the_new_one_cannot_be_stored(
+        client, session_factory, oidc_on, idp):
+    """The email only describes them, so it is no reason to refuse the sign-in."""
+    _provisioning_on(client, session_factory, oidc_on)
+    _sign_in(client, idp)
+
+    resp = _sign_in(client, idp, email="a\x00b@example.test")
+
+    assert resp.headers["location"] == "/"
+    with session_factory() as db:
+        assert db.scalar(select(ExternalIdentity)).email == "member@example.test"
+
+
+@pytest.mark.parametrize("subject", ["s" * 256, "a\x00b"], ids=["too long", "NUL"])
+def test_a_subject_that_cannot_be_stored_refuses_the_sign_in(
+        client, session_factory, oidc_on, idp, subject):
+    """The subject IS the identity: cut, it would be somebody else's."""
+    _provisioning_on(client, session_factory, oidc_on)
+
+    resp = _sign_in(client, idp, sub=subject)
+
+    assert "account id this app cannot store" in _refusal(resp)
+    with session_factory() as db:
+        assert db.scalars(select(ExternalIdentity)).all() == []
+        # Refused before an account is made for it, not after: one made and
+        # then left without a link would have no way in at all.
+        assert db.scalars(select(User)).all()[1:] == []
+
+
+def test_a_sign_in_refused_after_the_account_was_made_leaves_no_account(
+        client, session_factory, oidc_on, idp, monkeypatch):
+    """The callback rolls back whatever a refused sign-in started. Here the
+    refusal comes from linking, after `provision` has already made the account,
+    which would otherwise be kept with no identity and no password."""
+    _provisioning_on(client, session_factory, oidc_on)
+
+    def refuse(db, user, identity):
+        raise federation.FederationError("Refused for this test.")
+
+    monkeypatch.setattr(federation, "link", refuse)
+
+    resp = _sign_in(client, idp)
+
+    assert "Refused for this test." in _refusal(resp)
+    with session_factory() as db:
+        assert db.scalars(select(User)).all()[1:] == []
+
+
+@pytest.mark.parametrize("sid, kept", [("session-9", "session-9"), ("x" * 256, None)],
+                         ids=["kept", "too long, dropped"])
+def test_a_provider_session_id_is_kept_only_when_it_fits(
+        client, session_factory, oidc_on, idp, sid, kept):
+    """Kept for back-channel logout. One that cannot be stored is dropped, and
+    that session then ends only here: no reason to refuse the sign-in."""
+    _provisioning_on(client, session_factory, oidc_on)
+
+    resp = _sign_in(client, idp, sid=sid)
+
+    assert resp.headers["location"] == "/"
+    with session_factory() as db:
+        newest = db.scalars(select(UserSession).order_by(UserSession.id.desc())).first()
+        assert newest.oidc_sid == kept
 
 
 def test_an_invite_carries_across_the_round_trip(

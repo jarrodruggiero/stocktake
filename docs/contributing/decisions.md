@@ -1210,6 +1210,27 @@ one place each rather than per field, which is how #60's gaps happened:
   echoed it back and then could not encode it, so a request rightly refused
   became a 500. The validation handler gives a non-finite number back as text.
 
+**134. What a provider says is held to its columns too, and cut only where
+cutting is harmless.** The walker (#132) sent Yahoo's lookup and an identity
+provider's claims the same values as a form, and found each of them reaching a
+column it did not fit. #131 says values the app picks are cut to fit, but that
+only works for a value that is still itself when cut:
+
+- **A name is cut.** Yahoo's instrument name (in `pricefeed.lookup`, once, for
+  every caller) and a provider's display name, with any NUL removed.
+- **An email is never cut**, because a shorter address is somebody else's. A
+  new account whose email cannot be stored is refused with a message. A
+  returning identity keeps the email already on file, because an email only
+  describes them and is no reason to lock them out.
+- **A subject is never cut**, because the subject is the identity. One that
+  cannot be stored refuses the sign-in, checked before anything is looked up
+  (Postgres refuses a NUL even there) or made.
+- **A provider's session id is dropped** when it cannot be stored. It exists
+  for back-channel logout, and without it that one session ends only here.
+
+And the callback rolls back whatever a refused sign-in started, so an account
+made for an identity that then fails to link is not left behind with no way in.
+
 **136. A migration on SQLite runs in one transaction, so a failure leaves
 nothing behind.** pysqlite opens a transaction only before INSERT, UPDATE and
 DELETE, so Alembic ran SQLite's DDL outside one ("Will assume non-transactional

@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session as DbSession
 from appcore import ensure_utc, oidc
 
 from . import twofactor
-from .models import ExternalIdentity, OidcState, PortfolioInvite, User
+from .models import ExternalIdentity, OidcState, PortfolioInvite, User, UserSession
 from .settings import OidcSettings, PortfolioSettings
 
 # Long enough for a slow provider and a password prompt, short enough that an
@@ -42,6 +42,29 @@ class FederationError(Exception):
 
 def _utcnow() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
+
+
+# What a provider says is input too, and its columns have limits. An id or an
+# email cut short is a different id or email, so neither is cut: one that cannot
+# be stored is refused where it identifies somebody, and dropped where it only
+# describes them. A name is the app's to fit (decisions.md #131). A NUL makes any
+# of them unusable: Postgres refuses it even in a lookup.
+
+def storable(value: str | None, column) -> bool:
+    return value is not None and "\x00" not in value and len(value) <= column.type.length
+
+
+def _require_storable_subject(identity: oidc.Identity) -> None:
+    if not storable(identity.subject, ExternalIdentity.subject):
+        raise FederationError(
+            "Your identity provider sent an account id this app cannot store.")
+
+
+def session_id(identity: oidc.Identity) -> str | None:
+    """The provider's session id, kept for back-channel logout, or None when it
+    cannot be stored. Without it that one session ends only here."""
+    sid = identity.session_id
+    return sid if storable(sid, UserSession.oidc_sid) else None
 
 
 def _hash(raw: str) -> str:
@@ -162,6 +185,7 @@ def resolve(db: DbSession, settings: PortfolioSettings,
     Never matched on email. A local account with the same address is a
     different thing until somebody links them deliberately.
     """
+    _require_storable_subject(identity)
     known = db.scalar(
         select(ExternalIdentity).where(
             ExternalIdentity.issuer == identity.issuer,
@@ -170,7 +194,10 @@ def resolve(db: DbSession, settings: PortfolioSettings,
     )
     if known is not None:
         known.last_used_at = _utcnow()
-        known.email = identity.email
+        # Describes them, so one that cannot be stored is not a reason to
+        # refuse the sign-in: the one already on file stays.
+        if identity.email is None or storable(identity.email, ExternalIdentity.email):
+            known.email = identity.email
         db.flush()
         user = db.get(User, known.user_id)
         if user is None or not user.is_active:
@@ -196,13 +223,18 @@ def provision(db: DbSession, identity: oidc.Identity) -> User:
     people are not one person because a directory says so.
     """
     email = (identity.email or f"{identity.subject}@{identity.issuer}").lower()
+    # Measured lowercased, as it is stored: some characters grow (#131).
+    if not storable(email, User.email):
+        raise FederationError(
+            "Your identity provider sent an email address this app cannot store.")
     if db.scalar(select(User).where(User.email == email)) is not None:
         raise FederationError(
             "An account already uses that email address. Sign in with it, then "
             "link your provider from your profile.")
     # No password: `auth.verify_password` refuses a NULL hash, so this account
     # signs in one way until somebody sets one — decisions.md #120.
-    user = User(email=email, name=identity.name or email, password_hash=None)
+    name = (identity.name or "").replace("\x00", "").strip() or email
+    user = User(email=email, name=name[:User.name.type.length], password_hash=None)
     db.add(user)
     db.flush()
     # Issued here as on every other path that creates an account. It matters
@@ -218,6 +250,7 @@ def provision(db: DbSession, identity: oidc.Identity) -> User:
 def link(db: DbSession, user: User, identity: oidc.Identity) -> ExternalIdentity:
     """Attach an identity to an account. Refuses one already attached
     elsewhere — a subject belongs to exactly one account."""
+    _require_storable_subject(identity)
     existing = db.scalar(
         select(ExternalIdentity).where(
             ExternalIdentity.issuer == identity.issuer,
@@ -229,8 +262,9 @@ def link(db: DbSession, user: User, identity: oidc.Identity) -> ExternalIdentity
                               "somebody else here.")
     if existing is not None:
         return existing
+    email = identity.email if storable(identity.email, ExternalIdentity.email) else None
     row = ExternalIdentity(user_id=user.id, issuer=identity.issuer,
-                           subject=identity.subject, email=identity.email,
+                           subject=identity.subject, email=email,
                            last_used_at=_utcnow())
     db.add(row)
     db.flush()
