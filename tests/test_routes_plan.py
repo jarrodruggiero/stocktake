@@ -18,6 +18,7 @@ from sqlalchemy import select
 
 import factories as fac
 import fixture_portfolio as ref
+from app import chart_templates
 from app.models import (
     InvestmentPlan,
     InvestmentPlanEntry,
@@ -379,6 +380,65 @@ def test_saving_over_an_existing_chart_edits_it(client, session_factory):
         charts = s.scalars(select(SavedChart)).all()
     assert len(charts) == 1
     assert (charts[0].name, charts[0].width) == ("Renamed", "full")
+
+
+# Both chart routes read their JSON by hand, so nothing but the handler stood
+# between a body of the wrong shape and a 500 (found by test_hostile_input).
+WRONG_SHAPES = [
+    pytest.param({"name": 12345}, id="a number for a name"),
+    pytest.param({"spec": "NaN"}, id="a string for a spec"),
+    pytest.param({"spec": {**SPEC, "x": ["ticker"]}}, id="a list for the x axis"),
+    pytest.param({"spec": {**SPEC, "measures": [["pos_value"]]}}, id="a list in measures"),
+    pytest.param({"id": "NaN"}, id="a word for an id"),
+    pytest.param({"id": 2**63}, id="an id no row can have"),
+    pytest.param({"template_key": ["bar"]}, id="a list for a template"),
+    pytest.param({"template_key": "x" * 500}, id="a template that does not exist"),
+]
+
+
+@freeze_time(ref.TODAY)
+@pytest.mark.parametrize("change", WRONG_SHAPES)
+def test_a_chart_of_the_wrong_shape_is_refused_and_not_saved(
+        client, session_factory, change):
+    make_login(client, session_factory)
+
+    resp = client.post("/charts/save",
+                       json={"name": "A chart", "spec": SPEC, **change},
+                       headers={"X-CSRF-Token": session_csrf(session_factory)})
+
+    assert resp.status_code in (400, 422)
+    with reading(session_factory) as s:
+        assert s.scalars(select(SavedChart)).all() == []
+
+
+@freeze_time(ref.TODAY)
+@pytest.mark.parametrize("spec", [
+    pytest.param({**SPEC, "x": ["ticker"]}, id="a list for the x axis"),
+    pytest.param({**SPEC, "measures": "pos_value"}, id="a string for measures"),
+    pytest.param({**SPEC, "split": {"a": 1}}, id="an object for the split"),
+    pytest.param(["not", "a", "spec"], id="not an object at all"),
+])
+def test_a_preview_of_the_wrong_shape_is_refused(client, session_factory, spec):
+    make_login(client, session_factory)
+
+    resp = client.post("/charts/preview", json=spec)
+
+    assert resp.status_code == 400
+
+
+@freeze_time(ref.TODAY)
+def test_a_chart_keeps_the_template_it_came_from(client, session_factory):
+    """The control for the template check: a real key is kept."""
+    make_login(client, session_factory)
+    key = chart_templates.DEFAULT_KEYS[0]
+
+    resp = client.post("/charts/save",
+                       json={"name": "From a template", "spec": SPEC, "template_key": key},
+                       headers={"X-CSRF-Token": session_csrf(session_factory)})
+
+    assert resp.status_code == 200
+    with reading(session_factory) as s:
+        assert s.scalars(select(SavedChart)).one().template_key == key
 
 
 @freeze_time(ref.TODAY)

@@ -537,20 +537,12 @@ KNOWN: set[tuple[str, str, str]] = {
     # SQLite stores it.
     # An id or a number past what its column holds: OverflowError on SQLite,
     # "integer out of range" on Postgres.
-    ('POST /charts/save', 'id', 'too big'),
     # Text past its column: a value the app takes from Yahoo or an identity
     # provider, or a field nothing checks.
-    ('POST /charts/save', 'template_key', 'too long'),
     # Anything else that ends in a 500.
     ('GET /export/download', 'fy', 'crash'),
     ('GET /export/download', 'ticker', 'crash'),
     ('POST /admin/settings', 'timezone', 'crash'),
-    ('POST /charts/preview', 'measures', 'crash'),
-    ('POST /charts/preview', 'x', 'crash'),
-    ('POST /charts/save', 'id', 'crash'),
-    ('POST /charts/save', 'name', 'crash'),
-    ('POST /charts/save', 'spec', 'crash'),
-    ('POST /charts/save', 'template_key', 'crash'),
     ('POST /imports-exports/formats', 'filename', 'crash'),
     ('POST /imports-exports/statement', 'control', 'crash'),
     ('POST /imports-exports/statement', 'template', 'crash'),

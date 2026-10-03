@@ -38,7 +38,7 @@ from fastapi.responses import (
     RedirectResponse,
     Response,
 )
-from pydantic import Field
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session as DbSession
 
@@ -3724,23 +3724,39 @@ async def chart_preview(request: Request):
             raise HTTPException(400, str(exc))
 
 
+class _ChartIn(BaseModel):
+    """What the chart builder posts. Read by hand before this, so a body of the
+    wrong shape reached `.strip()` and `int()` and was a 500."""
+
+    name: str = ""
+    spec: dict = Field(default_factory=dict)
+    width: str = "half"
+    id: RowId | None = None
+    template_key: str | None = None
+
+
 @app.post("/charts/save")
 async def chart_save(request: Request):
     with scoped(request) as (ctx, db):
         _require_write(ctx)
-        body = await request.json()
+        try:
+            body = _ChartIn.model_validate(await request.json())
+        except ValueError:          # not JSON, or not the builder's shape
+            raise HTTPException(400, "That is not a chart.") from None
         await auth.verify_csrf(request, db)
-        spec = body.get("spec") or {}
-        name = (body.get("name") or "").strip()[:80]
+        spec = body.spec
+        name = body.name.strip()[:80]
         if not name:
             raise HTTPException(400, "give the chart a name")
         problem = fields.validate(spec)
         if problem:
             raise HTTPException(400, problem)
-        width = "full" if body.get("width") == "full" else "half"
-        chart_id = body.get("id")
-        if chart_id:
-            chart = db.get(SavedChart, int(chart_id))
+        # Which default it came from: one of ours or none, never free text.
+        if body.template_key is not None and body.template_key not in chart_templates.BY_KEY:
+            raise HTTPException(400, "That is not one of the chart templates.")
+        width = "full" if body.width == "full" else "half"
+        if body.id:
+            chart = db.get(SavedChart, body.id)
             if chart is None or chart.user_id != ctx.user.id:
                 raise HTTPException(404, "no such chart")
             chart.name, chart.spec, chart.width = name, spec, width
@@ -3753,7 +3769,7 @@ async def chart_save(request: Request):
                     spec=spec,
                     width=width,
                     position=last + 1,
-                    template_key=body.get("template_key"),
+                    template_key=body.template_key,
                 ),
             )
             db.add(chart)
