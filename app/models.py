@@ -17,7 +17,9 @@ import datetime as dt
 import re as _re
 import uuid as _uuid
 from decimal import Decimal
+from typing import Annotated
 
+from pydantic import Field
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -47,6 +49,14 @@ EXCHANGE_PATTERN = _re.compile(r"^[A-Z][A-Z0-9.\-]{0,11}$")
 # Free text here was stored XSS shared by every portfolio: decisions.md #130.
 CURRENCY_PATTERN = _re.compile(r"^[A-Z]{3}$")
 CURRENCY_RULE = "A currency is a three-letter code, like AUD or USD."
+
+# The largest id a row can have. Ids are INTEGER, four bytes on Postgres, so a
+# bigger number names nothing, and from 2**63 looking one up was itself a 500:
+# an OverflowError on SQLite, "integer out of range" on Postgres. A route takes
+# an id as `RowId`, so FastAPI refuses it first (422). In a form it has to be `Annotated[RowId,
+# Form()]`: `RowId = Form(...)` replaces the bounds and silently drops them.
+ROW_ID_MAX = 2**31 - 1
+RowId = Annotated[int, Field(ge=1, le=ROW_ID_MAX)]
 
 
 def ticker_problem(ticker: str) -> str | None:

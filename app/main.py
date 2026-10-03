@@ -17,16 +17,20 @@ import asyncio
 import datetime as dt
 import json
 import logging
+import math
 import re
 import threading
 import urllib.parse
 from contextlib import asynccontextmanager, contextmanager
 from decimal import Decimal
 from pathlib import Path
+from typing import Annotated
 from urllib.parse import quote_plus
 from zoneinfo import ZoneInfo
 
 from fastapi import Form, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
@@ -34,6 +38,7 @@ from fastapi.responses import (
     RedirectResponse,
     Response,
 )
+from pydantic import Field
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session as DbSession
 
@@ -93,6 +98,7 @@ from .models import (
     NAV_STYLES,
     ROLE_BLURBS,
     ROLE_LABELS,
+    ROW_ID_MAX,
     THEMES,
     TIME_ZONES_SHOWN,
     WRITE_ROLES,
@@ -107,6 +113,7 @@ from .models import (
     PortfolioInvite,
     PortfolioMember,
     Price,
+    RowId,
     SavedChart,
     Trade,
     User,
@@ -662,6 +669,57 @@ async def optional_features(request: Request, call_next):
             status_code=410,
         )
     return await call_next(request)
+
+
+@app.middleware("http")
+async def refuse_nul(request: Request, call_next):
+    """A NUL character anywhere a request carries text is refused, for every route.
+
+    Nobody types one, and Postgres refuses text containing one even to look
+    something up, so wherever one reached a query it was a 500, and on SQLite it
+    was stored. One check here rather than one per field, which is how #60's
+    gaps happened: decisions.md #133.
+
+    An upload is let through, because a file is bytes and a PDF is full of NULs.
+    Only a form or JSON body is read, and Starlette hands the route the same
+    body afterwards.
+    """
+    if "\x00" in request.url.path or b"%00" in request.scope.get("query_string", b""):
+        return _nul_refused()
+    kind = request.headers.get("content-type", "")
+    if kind.startswith(("application/x-www-form-urlencoded", "application/json")):
+        body = await request.body()
+        # Encoded as %00 in a form, \u0000 in JSON, or sent raw.
+        if b"%00" in body or b"\\u0000" in body or b"\x00" in body:
+            return _nul_refused()
+    return await call_next(request)
+
+
+def _nul_refused() -> PlainTextResponse:
+    return PlainTextResponse("Text can't contain a NUL character.", status_code=400)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_failed(request: Request, exc: RequestValidationError):
+    """FastAPI's own 422, able to say what it refused.
+
+    The default echoes each bad value back as `input`. A bare NaN in a JSON
+    body (Python's parser accepts one) cannot be written back out as JSON, so a
+    request that was rightly refused ended in a 500 instead. A number that is
+    not finite goes back as text.
+    """
+    return JSONResponse(status_code=422,
+                        content={"detail": jsonable_encoder(_finite(exc.errors()))})
+
+
+def _finite(value):
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, dict):
+        return {k: _finite(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite(v) for v in value]
+    return value
 
 
 @app.middleware("http")
@@ -1922,7 +1980,7 @@ def _sessions_context(db: DbSession, ctx) -> dict:
 
 
 @app.post("/profile/sessions/{session_id}/revoke")
-async def revoke_session(request: Request, session_id: int):
+async def revoke_session(request: Request, session_id: RowId):
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
         row = db.get(UserSession, session_id)
@@ -2090,7 +2148,7 @@ async def passkeys_register(request: Request):
 
 
 @app.post("/profile/passkeys/{credential_id}/remove")
-async def passkeys_remove(request: Request, credential_id: int):
+async def passkeys_remove(request: Request, credential_id: RowId):
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
         removed = passkeys.remove(db, ctx.user, credential_id)
@@ -2287,7 +2345,7 @@ async def profile_oidc_link(request: Request):
 
 
 @app.post("/profile/oidc/{identity_id}/unlink")
-async def profile_oidc_unlink(request: Request, identity_id: int):
+async def profile_oidc_unlink(request: Request, identity_id: RowId):
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
         try:
@@ -2363,7 +2421,7 @@ async def twofactor_disable(
 
 
 @app.post("/users/{user_id}/2fa/clear")
-async def users_clear_2fa(request: Request, user_id: int):
+async def users_clear_2fa(request: Request, user_id: RowId):
     """Admin escape hatch for someone who lost their phone AND their codes.
 
     Sits beside the existing password reset because it is the same kind of act:
@@ -2594,7 +2652,7 @@ async def users_add(
 
 
 @app.post("/users/{user_id}/active")
-async def users_toggle_active(request: Request, user_id: int):
+async def users_toggle_active(request: Request, user_id: RowId):
     with scoped(request) as (ctx, db):
         _require_admin(ctx)
         await auth.verify_csrf(request, db)
@@ -2610,7 +2668,7 @@ async def users_toggle_active(request: Request, user_id: int):
 
 
 @app.post("/users/{user_id}/reset")
-async def users_reset(request: Request, user_id: int, password: str = Form(...)):
+async def users_reset(request: Request, user_id: RowId, password: str = Form(...)):
     with scoped(request) as (ctx, db):
         _require_admin(ctx)
         await auth.verify_csrf(request, db)
@@ -2751,7 +2809,7 @@ async def settings_restart(request: Request):
 # --------------------------------------------------------------------------- #
 
 @app.post("/portfolio/switch")
-async def portfolio_switch(request: Request, portfolio_id: int = Form(...)):
+async def portfolio_switch(request: Request, portfolio_id: Annotated[RowId, Form()]):
     """Change which portfolio this session acts in.
 
     The id is validated against the user's own memberships — a forged form
@@ -2891,7 +2949,7 @@ def members_page(request: Request, error: str = ""):
 
 
 @app.post("/members/add")
-async def members_add(request: Request, user_id: int = Form(...), role: str = Form("member")):
+async def members_add(request: Request, user_id: Annotated[RowId, Form()], role: str = Form("member")):
     with scoped(request) as (ctx, db):
         _require_owner(ctx)
         await auth.verify_csrf(request, db)
@@ -2933,7 +2991,7 @@ async def members_invite(request: Request, role: str = Form("member")):
 
 
 @app.post("/members/invite/{invite_id}/revoke")
-async def members_invite_revoke(request: Request, invite_id: int):
+async def members_invite_revoke(request: Request, invite_id: RowId):
     with scoped(request) as (ctx, db):
         _require_owner(ctx)
         await auth.verify_csrf(request, db)
@@ -3043,7 +3101,7 @@ async def invite_signup(
 
 
 @app.post("/members/{member_id}/role")
-async def members_role(request: Request, member_id: int, role: str = Form(...)):
+async def members_role(request: Request, member_id: RowId, role: str = Form(...)):
     with scoped(request) as (ctx, db):
         _require_owner(ctx)
         await auth.verify_csrf(request, db)
@@ -3061,7 +3119,7 @@ async def members_role(request: Request, member_id: int, role: str = Form(...)):
 
 
 @app.post("/members/{member_id}/remove")
-async def members_remove(request: Request, member_id: int,
+async def members_remove(request: Request, member_id: RowId,
                          delete_portfolio: str = Form("")):
     """Remove somebody, or — when they are the last one — delete the portfolio.
 
@@ -3109,7 +3167,7 @@ async def members_remove(request: Request, member_id: int,
 
 @app.post("/keys/new")
 async def keys_new(request: Request, name: str = Form(...), scopes: str = Form("read"),
-                   portfolios: list[int] = Form([])):
+                   portfolios: Annotated[list[RowId], Form()] = []):
     """Issue an API key for yourself, reaching portfolios you choose from your own.
 
     Anyone with access may, at any role: a key never does more in a portfolio
@@ -3148,7 +3206,7 @@ async def keys_new(request: Request, name: str = Form(...), scopes: str = Form("
 
 
 @app.post("/keys/{key_id}/revoke")
-async def keys_revoke(request: Request, key_id: int):
+async def keys_revoke(request: Request, key_id: RowId):
     """Your own keys only. Somebody else's stops when their access does."""
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
@@ -3606,7 +3664,7 @@ async def charts_order(request: Request):
 # --------------------------------------------------------------------------- #
 
 @app.get("/charts/build", response_class=HTMLResponse)
-def chart_builder(request: Request, edit: int | None = None):
+def chart_builder(request: Request, edit: RowId | None = None):
     """Drag fields onto shelves, see the chart as you go."""
     with scoped(request) as (ctx, db):
         existing = None
@@ -3701,7 +3759,7 @@ async def chart_save(request: Request):
 
 
 @app.post("/charts/{chart_id}/delete")
-async def chart_delete(request: Request, chart_id: int):
+async def chart_delete(request: Request, chart_id: RowId):
     with scoped(request) as (ctx, db):
         _require_write(ctx)
         await auth.verify_csrf(request, db)
@@ -3739,7 +3797,10 @@ def dca_legacy_redirect():
 
 @app.get("/schedule", response_class=HTMLResponse)
 def plan_page(
-    request: Request, year: int | None = None, month: int | None = None, edit: int = 0
+    request: Request,
+    year: Annotated[int, Field(ge=dt.MINYEAR, le=dt.MAXYEAR)] | None = None,
+    month: int | None = None,
+    edit: int = 0,
 ):
     """Calendar and the rotation on one page — what's coming, then what drives it."""
     today = clock.today()
@@ -4325,9 +4386,12 @@ async def trade_create(
             _kick_feed()  # its price history arrives with the next run
         else:
             try:
-                inst = db.get(Instrument, int(instrument_id))
+                wanted = int(instrument_id)
             except ValueError:
-                inst = None
+                wanted = 0
+            # Parsed here rather than typed as RowId because "new" is valid too,
+            # so the bounds RowId would apply are applied by hand.
+            inst = db.get(Instrument, wanted) if 1 <= wanted <= ROW_ID_MAX else None
         if inst is None:
             return _reject("Pick an instrument.")
 
@@ -4417,7 +4481,7 @@ def _trade_snapshot(t: Trade) -> dict:
 
 
 @app.get("/trade/{trade_id}/edit", response_class=HTMLResponse)
-def trade_edit_form(request: Request, trade_id: int, error: str = ""):
+def trade_edit_form(request: Request, trade_id: RowId, error: str = ""):
     with scoped(request) as (ctx, db):
         _require_write(ctx)
         trade = _trade_for_edit(db, trade_id)
@@ -4473,7 +4537,7 @@ def trade_edit_form(request: Request, trade_id: int, error: str = ""):
 @app.post("/trade/{trade_id}/edit")
 async def trade_edit(
     request: Request,
-    trade_id: int,
+    trade_id: RowId,
     type: str = Form(...),
     trade_date: str = Form(...),
     set_time: str = Form(""),
@@ -4675,7 +4739,7 @@ def _move_context(db: DbSession, ctx, trade, inst, *, ticked=None, error=""):
 
 
 @app.get("/trade/{trade_id}/move", response_class=HTMLResponse)
-def trade_move_form(request: Request, trade_id: int, error: str = ""):
+def trade_move_form(request: Request, trade_id: RowId, error: str = ""):
     """The selection page, and the same include the dialog shows.
 
     A real route so the control works without scripting and a refusal has
@@ -4696,8 +4760,8 @@ def trade_move_form(request: Request, trade_id: int, error: str = ""):
 @app.post("/trade/{trade_id}/move")
 async def trade_move(
     request: Request,
-    trade_id: int,
-    target: int = Form(...),
+    trade_id: RowId,
+    target: Annotated[RowId, Form()],
     row: list[str] = Form(default=[]),
 ):
     with scoped(request) as (ctx, db):
@@ -4756,7 +4820,7 @@ async def trade_move(
 
 
 @app.post("/trade/{trade_id}/delete")
-async def trade_delete(request: Request, trade_id: int, return_to: str = Form("")):
+async def trade_delete(request: Request, trade_id: RowId, return_to: str = Form("")):
     """Delete, then go back where you came from.
 
     Deleting a trade returns to the window you came from, wherever that was.
@@ -4791,7 +4855,7 @@ def _dividend_for_edit(db: DbSession, dividend_id: int) -> Dividend:
 
 
 @app.get("/dividend/{dividend_id}/edit", response_class=HTMLResponse)
-def dividend_edit_form(request: Request, dividend_id: int, error: str = ""):
+def dividend_edit_form(request: Request, dividend_id: RowId, error: str = ""):
     with scoped(request) as (ctx, db):
         _require_write(ctx)
         dividend = _dividend_for_edit(db, dividend_id)
@@ -4815,7 +4879,7 @@ def dividend_edit_form(request: Request, dividend_id: int, error: str = ""):
 @app.post("/dividend/{dividend_id}/edit")
 async def dividend_edit(
     request: Request,
-    dividend_id: int,
+    dividend_id: RowId,
     div_date: str = Form(...),
     cash_amount: str = Form(...),
     franking_credits: str = Form(""),
@@ -4913,7 +4977,7 @@ async def dividend_edit(
 
 
 @app.post("/dividend/{dividend_id}/delete")
-async def dividend_delete(request: Request, dividend_id: int):
+async def dividend_delete(request: Request, dividend_id: RowId):
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
         _require_write(ctx)
@@ -5032,7 +5096,7 @@ def instruments_page(request: Request, error: str = "", added: str = "",
 
 
 @app.post("/holdings/{instrument_id}/remove")
-async def instrument_remove(request: Request, instrument_id: int):
+async def instrument_remove(request: Request, instrument_id: RowId):
     """Stop tracking an instrument nobody has traded.
 
     **Deactivated, not deleted**, and the distinction is not squeamishness:
@@ -5106,7 +5170,8 @@ def _provider_close(symbol: str, on: dt.date):
 
 
 @app.get("/holdings/price")
-def instruments_price_on(request: Request, date: str = "", instrument: int = 0,
+def instruments_price_on(request: Request, date: str = "",
+                         instrument: Annotated[int, Field(ge=0, le=ROW_ID_MAX)] = 0,
                          symbol: str = ""):
     """The close and FX rate for one instrument on one date.
 
@@ -5223,7 +5288,7 @@ async def instruments_add(
 @app.post("/holdings/{instrument_id}/pref")
 async def instrument_pref(
     request: Request,
-    instrument_id: int,
+    instrument_id: RowId,
     drp: str = Form(""),
     note: str = Form(""),
     yahoo_symbol: str = Form(None),
