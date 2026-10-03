@@ -1193,6 +1193,23 @@ Yahoo or an identity provider past their column, and assorted crashes. They are
 listed in `KNOWN` and fixed in follow-ups. The list fails when an entry stops
 happening, so it can only shrink, and a new finding never goes on it.
 
+**133. What any request can carry is refused once, at the edge.** Three of the
+walker's findings (#132) were not about any one field, so they are handled in
+one place each rather than per field, which is how #60's gaps happened:
+
+- **A NUL character.** Postgres refuses text containing one even to look
+  something up, so it was a 500 wherever one reached a query. `refuse_nul`
+  answers 400 for one in the path, the query or a form or JSON body. An upload
+  is let through, because a file is bytes and a PDF is full of NULs.
+- **An id no row can have.** From 2**63 the lookup itself failed, on both
+  backends. Every id a route takes is a `models.RowId`, bounded by what an
+  INTEGER column holds, so FastAPI answers 422 first. In a form it has to be
+  `Annotated[RowId, Form()]`: `RowId = Form(...)` replaces the bounds and
+  drops them without a word.
+- **A bare NaN in a JSON body.** Python's parser accepts one, and FastAPI's 422
+  echoed it back and then could not encode it, so a request rightly refused
+  became a 500. The validation handler gives a non-finite number back as text.
+
 **136. A migration on SQLite runs in one transaction, so a failure leaves
 nothing behind.** pysqlite opens a transaction only before INSERT, UPDATE and
 DELETE, so Alembic ran SQLite's DDL outside one ("Will assume non-transactional
