@@ -3880,19 +3880,22 @@ def feed_status_json(request: Request):
 PLAN_START_YEARS_AHEAD = 10
 
 
-def _plan_start(raw: str) -> dt.date | None:
-    """A plan's start date from the form, or None when blank. ValueError, with
-    the message to show, when it is not one a plan can have."""
+def _plan_start(raw: str) -> tuple[dt.date | None, str | None]:
+    """A plan's start date from the form (None when blank), and the problem to
+    show instead when it is not one a plan can have.
+
+    A problem string rather than an exception, like the other `*_problem`
+    checks: the message is ours, and nothing raised flows into a response.
+    """
     if not raw.strip():
-        return None
+        return None, None
     try:
         start = dt.date.fromisoformat(raw.strip())
     except ValueError:
-        raise ValueError("start date must be YYYY-MM-DD") from None
+        return None, "start date must be YYYY-MM-DD"
     if start.year > clock.today().year + PLAN_START_YEARS_AHEAD:
-        raise ValueError(
-            f"A plan has to start within the next {PLAN_START_YEARS_AHEAD} years.")
-    return start
+        return None, f"A plan has to start within the next {PLAN_START_YEARS_AHEAD} years."
+    return start, None
 
 
 @app.post("/schedule/preview")
@@ -3918,10 +3921,9 @@ async def plan_preview(
         _require_write(ctx)
         if interval_days < 1 or interval_days > 365:
             return JSONResponse({"rows": [], "why": "interval must be 1–365 days"})
-        try:
-            start = _plan_start(start_date)
-        except ValueError as exc:
-            return JSONResponse({"rows": [], "why": str(exc)})
+        start, problem = _plan_start(start_date)
+        if problem:
+            return JSONResponse({"rows": [], "why": problem})
 
         wanted = [t.strip().upper() for t in tickers.replace("\n", ",").split(",") if t.strip()]
         known = {
@@ -3968,10 +3970,9 @@ async def plan_save(
                                         "Brokerage")
         except money.FigureError as exc:
             raise HTTPException(400, str(exc))
-        try:
-            start = _plan_start(start_date)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from None
+        start, problem = _plan_start(start_date)
+        if problem:
+            raise HTTPException(400, problem)
 
         wanted = [t.strip().upper() for t in tickers.replace("\n", ",").split(",") if t.strip()]
         by_ticker = {
