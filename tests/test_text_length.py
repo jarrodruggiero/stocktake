@@ -16,11 +16,12 @@ import re
 
 import pytest
 from sqlalchemy import select
-from test_api import bearer, bound, furnished, issue_key  # noqa: F401  (a fixture)
-from test_edit_delete import edit_trade, ledger  # noqa: F401  (a fixture)
+from test_api import bearer, bound, issue_key
+from test_edit_delete import edit_trade
 from test_trade_prefill import _record
 
 import factories as fac
+import fixture_portfolio as ref
 from app import auth as auth_mod
 from app import tenancy, textfield
 from app.models import (
@@ -44,6 +45,35 @@ from test_routes import (
 )
 
 HTML = {"accept": "text/html"}
+
+
+# Copied from test_edit_delete and test_api rather than imported: a fixture
+# imported from another test module needs a noqa on every test that takes it,
+# and nothing where it is defined says this file depends on it (testing.md).
+
+@pytest.fixture
+def ledger(client, session_factory):
+    """A signed-in owner holding 100 ACME bought in March."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        acme = fac.make_instrument(s, "ACME", name="Acme Industries")
+        buy = fac.add_trade(s, acme, "2026-03-02", "buy", 100, "5.00", brokerage="9.50")
+        s.commit()
+        return {"acme_id": acme.id, "buy_id": buy.id}
+
+
+@pytest.fixture
+def furnished(client, session_factory):
+    """One portfolio holding the reference data, plus its owner."""
+    with session_factory() as s:
+        user = fac.make_user(s, "api@example.test")
+        portfolio = fac.make_portfolio(s, "API portfolio", owner=user)
+        s.commit()
+        tenancy.bind(s, portfolio.id, user.id)
+        ref.build_reference(s)
+        ids = (portfolio.id, user.id)
+    return ids
 
 
 # --------------------------------------------------------------------------- #
@@ -134,7 +164,7 @@ def test_a_new_instruments_text_is_checked_on_the_trade_form(
 
 
 def test_a_note_too_long_on_a_trade_edit_is_refused_and_the_trade_is_unchanged(
-        client, session_factory, ledger):  # noqa: F811
+        client, session_factory, ledger):
     resp = edit_trade(client, session_factory, ledger["buy_id"], note="n" * 401)
 
     assert "Note%3A+that+is+401+characters" in resp.headers["location"]
@@ -143,7 +173,7 @@ def test_a_note_too_long_on_a_trade_edit_is_refused_and_the_trade_is_unchanged(
 
 
 def test_a_note_too_long_on_a_dividend_is_refused_and_the_dividend_is_unchanged(
-        client, session_factory, ledger):  # noqa: F811
+        client, session_factory, ledger):
     with session_factory() as s:
         tenancy.bind(s, s.scalars(select(Portfolio)).first().id,
                      s.scalars(select(User)).first().id)
@@ -261,7 +291,7 @@ def test_a_statement_note_too_long_is_refused_and_nothing_is_saved(
                            "cash_amount": "10.00"}),
 ], ids=["trade", "dividend"])
 def test_an_api_note_too_long_is_refused_and_nothing_is_saved(
-        client, session_factory, furnished, path, body):  # noqa: F811
+        client, session_factory, furnished, path, body):
     portfolio_id, user_id = furnished
     raw = issue_key(session_factory, portfolio_id, scopes="read,write", created_by=user_id)
 
