@@ -1187,7 +1187,7 @@ SQLite stores what Postgres refuses. A careful control request goes first and
 last on every route, because a walker whose requests are all refused at the
 door passes without having tested anything.
 
-Its first run, on top of #61's fixes, found 102 more: NUL characters (which
+Its first run, on top of #61's fixes, found 101 more: NUL characters (which
 Postgres refuses even in a lookup), ids past what a column holds, values from
 Yahoo or an identity provider past their column, and assorted crashes. They are
 listed in `KNOWN` and fixed in follow-ups. The list fails when an entry stops
