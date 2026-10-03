@@ -15,7 +15,9 @@ middle of cutting a version.
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -23,6 +25,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+RELEASE = ROOT / ".github" / "workflows" / "release.yml"
 
 
 def _steps(workflow: Path):
@@ -92,3 +95,59 @@ def test_the_release_lints_exactly_what_ci_lints():
     }
 
     assert lints["release.yml"] == lints["ci.yml"], lints
+
+
+def _release_steps() -> tuple[list[dict], dict | None]:
+    """release.yml's steps in order, and the one that looks for a release."""
+    steps = [step for _job, step in _steps(RELEASE)]
+    return steps, next((s for s in steps if s.get("id") == "existing"), None)
+
+
+def test_a_release_written_by_hand_keeps_its_notes():
+    """Decision #129. Publishing a release in GitHub's UI pushes its tag, so the
+    release already exists when this workflow runs, and the step that writes
+    notes replaces whatever it finds. It may only run when there is none yet."""
+    steps, check = _release_steps()
+    writers = [s for s in steps
+               if str(s.get("uses", "")).startswith("softprops/action-gh-release")]
+
+    assert writers, "release.yml no longer writes a release — update this test"
+    assert check is not None, "nothing looks for a release that already exists"
+    assert steps.index(check) < min(steps.index(w) for w in writers)
+    for writer in writers:
+        assert writer.get("if") == "steps.existing.outputs.found == 'false'", writer
+
+
+@pytest.mark.parametrize("listed, gh_exit, expected", [
+    ("https://github.com/o/r/releases/tag/v1.0.0", 0, "found=true"),
+    ("", 0, "found=false"),
+    # The API failed. Stopping is the only safe answer: "not found" would go
+    # on to write over the notes this check exists to protect.
+    ("", 1, None),
+], ids=["exists", "absent", "api-failed"])
+def test_the_release_check_says_whether_one_exists(tmp_path, listed, gh_exit, expected):
+    """The check's own script, run against a stand-in `gh` as Actions runs it."""
+    _steps_, check = _release_steps()
+    assert check is not None, "nothing looks for a release that already exists"
+    fake = tmp_path / "gh"
+    fake.write_text(f"#!/bin/sh\nprintf '%s\\n' \"$@\" > {tmp_path}/args\n"
+                    f"printf '%s' '{listed}'\nexit {gh_exit}\n")
+    fake.chmod(0o755)
+    output = tmp_path / "github_output"
+    output.touch()
+
+    result = subprocess.run(
+        ["bash", "-e", "-c", check["run"]], capture_output=True, text=True,
+        env={"PATH": f"{tmp_path}:{os.environ['PATH']}", "GITHUB_OUTPUT": str(output),
+             "GITHUB_REPOSITORY": "o/r", "TAG": "v1.0.0"})
+
+    # Every release, every page: the lookup by tag skips drafts, and one page
+    # stops at 30 releases, so a re-run for an older tag would miss its own.
+    asked = (tmp_path / "args").read_text().splitlines()
+    assert "repos/o/r/releases" in asked and "--paginate" in asked, asked
+    if expected is None:
+        assert result.returncode != 0
+        assert "found=" not in output.read_text()
+    else:
+        assert result.returncode == 0, result.stderr
+        assert output.read_text().strip() == expected

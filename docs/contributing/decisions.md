@@ -1111,3 +1111,16 @@ revoked. The profile page says, per portfolio, where a key has stopped or been
 limited. The raw key is shown once in the response that made it — it used to
 travel in a redirect's query string, and so in browser history and the proxy's
 log.
+
+**129. A release written by hand keeps its notes.** Publishing a release in
+GitHub's UI is how releases are usually made here, and it pushes the tag, so
+the release already exists when `release.yml` runs. The step that writes notes
+(`softprops/action-gh-release`) keeps an existing body only when it is given
+none of its own, and it always is. v0.67.0 lost its hand-written Security
+section that way, advisory links and all, ten minutes after it was published.
+So the workflow looks for a release first, drafts included, and writes one
+only when there is none: a tag pushed from the command line still gets the
+generated notes and the `docker pull` line. A hand-written release carries
+whatever its author put in it, so include the `docker pull` line there. The
+lookup failing stops the job, because reading a failure as "no release" is
+the overwrite again.

@@ -8,6 +8,8 @@
 # Tagging is manual and deliberate — a release is a decision, not a side effect
 # of a push:
 #     git tag v1.0.0 && git push origin v1.0.0
+# Publishing a release in GitHub's UI pushes the tag too. Its notes are then
+# left exactly as written (decisions.md #129).
 name: Release
 
 on:
@@ -127,7 +129,26 @@ jobs:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: echo "number=${TAG#v}" >> "$GITHUB_OUTPUT"
 
+      # The step below replaces an existing release's notes, so it runs only
+      # when there is no release for this tag, drafts included. An API failure
+      # stops the job rather than reading as "none". decisions.md #129.
+      - name: Is there a release for this tag already?
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          url=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+                  --jq '.[] | select(.tag_name == env.TAG) | .html_url')
+          if [ -n "$url" ]; then
+            echo "Leaving the notes as written: $url"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create the GitHub Release
+        if: steps.existing.outputs.found == 'false'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
