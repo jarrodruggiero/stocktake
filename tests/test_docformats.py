@@ -710,3 +710,11 @@ def test_the_shipped_config_does_not_override_the_shipped_broker_formats():
         assert not overrides, (
             f"{name} pins broker formats that ship as files: {sorted(overrides)}"
         )
+
+
+@pytest.mark.parametrize("raw", ["NaN", "Infinity", "-Infinity", "1E+999999", "1E+20"])
+@pytest.mark.parametrize("type_", ["money", "integer"])
+def test_a_figure_that_is_not_finite_or_does_not_fit_coerces_to_none(raw, type_):
+    """`int(Decimal("Infinity"))` raised from outside the old `try`, and
+    1E+999999 is finite but is Infinity once SQLite has stored it."""
+    assert fmt.coerce(raw, type_) is None

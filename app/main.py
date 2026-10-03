@@ -21,7 +21,7 @@ import re
 import threading
 import urllib.parse
 from contextlib import asynccontextmanager, contextmanager
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import quote_plus
 from zoneinfo import ZoneInfo
@@ -3843,10 +3843,12 @@ async def plan_save(
         if interval_days < 1 or interval_days > 365:
             raise HTTPException(400, "interval must be between 1 and 365 days")
         try:
-            amount_val = Decimal(amount) if amount.strip() else None
-            brokerage_val = Decimal(brokerage or "0")
-        except InvalidOperation:
-            raise HTTPException(400, "amount/brokerage must be numbers")
+            amount_val = (money.parse(amount, InvestmentPlan.amount, "Amount")
+                          if amount.strip() else None)
+            brokerage_val = money.parse(brokerage or "0", InvestmentPlan.brokerage,
+                                        "Brokerage")
+        except money.FigureError as exc:
+            raise HTTPException(400, str(exc))
         start = None
         if start_date.strip():
             try:
@@ -3928,10 +3930,12 @@ async def plan_complete(
         _require_write(ctx)
         try:
             date = dt.date.fromisoformat(trade_date)
-            qty = Decimal(quantity)
-            price = Decimal(unit_price)
-            brk = Decimal(brokerage or "0")
-        except (ValueError, InvalidOperation):
+            qty = money.parse(quantity, Trade.quantity, "Units")
+            price = money.parse(unit_price, Trade.unit_price, "Price")
+            brk = money.parse(brokerage or "0", Trade.brokerage, "Brokerage")
+        except money.FigureError as exc:
+            raise HTTPException(400, str(exc))
+        except ValueError:
             raise HTTPException(400, "bad date/quantity/price/brokerage")
         if qty <= 0 or price < 0:   # see the trade form: zero is a real price
             raise HTTPException(400, "quantity must be positive, price not negative")
@@ -4222,11 +4226,14 @@ async def trade_create(
             return _reject("Choose buy or sell.")
         try:
             date = dt.date.fromisoformat(trade_date)
-            qty = Decimal(quantity)
-            price = Decimal(unit_price)
-            brk = Decimal(brokerage or "0")
-            fx = Decimal(fx_rate) if fx_rate.strip() else None
-        except (ValueError, InvalidOperation):
+            qty = money.parse(quantity, Trade.quantity, "Units")
+            price = money.parse(unit_price, Trade.unit_price, "Price")
+            brk = money.parse(brokerage or "0", Trade.brokerage, "Brokerage")
+            fx = (money.parse(fx_rate, Trade.fx_rate, "FX rate")
+                  if fx_rate.strip() else None)
+        except money.FigureError as exc:
+            return _reject(f"{exc}.")
+        except ValueError:
             return _reject("Date, units, price, brokerage and FX must be numbers (date as YYYY-MM-DD).")
         if qty <= 0:
             return _reject("Units must be greater than zero.")
@@ -4460,11 +4467,14 @@ async def trade_edit(
             return _reject("Choose buy or sell.")
         try:
             date = dt.date.fromisoformat(trade_date)
-            qty = Decimal(quantity)
-            price = Decimal(unit_price)
-            brk = Decimal(brokerage or "0")
-            fx = Decimal(fx_rate) if fx_rate.strip() else None
-        except (ValueError, InvalidOperation):
+            qty = money.parse(quantity, Trade.quantity, "Units")
+            price = money.parse(unit_price, Trade.unit_price, "Price")
+            brk = money.parse(brokerage or "0", Trade.brokerage, "Brokerage")
+            fx = (money.parse(fx_rate, Trade.fx_rate, "FX rate")
+                  if fx_rate.strip() else None)
+        except money.FigureError as exc:
+            return _reject(f"{exc}.")
+        except ValueError:
             return _reject("Date, units, price, brokerage and FX must be numbers (date as YYYY-MM-DD).")
         if qty <= 0:
             return _reject("Units must be greater than zero.")
@@ -4789,9 +4799,13 @@ async def dividend_edit(
 
         try:
             date = dt.date.fromisoformat(div_date)
-            cash = Decimal(cash_amount)
-            franking = Decimal(franking_credits) if franking_credits.strip() else None
-        except (ValueError, InvalidOperation):
+            cash = money.parse(cash_amount, Dividend.cash_amount, "Cash")
+            franking = (money.parse(franking_credits, Dividend.franking_credits,
+                                    "Franking credits")
+                        if franking_credits.strip() else None)
+        except money.FigureError as exc:
+            return _reject(f"{exc}.")
+        except ValueError:
             return _reject("Date, cash and franking must be numbers (date as YYYY-MM-DD).")
         if cash <= 0:
             return _reject("A distribution has to be more than zero.")
@@ -4804,9 +4818,11 @@ async def dividend_edit(
         # or not at all, so both halves are validated before either is written.
         if drp is not None:
             try:
-                qty = Decimal(quantity)
-                price = Decimal(unit_price)
-            except (ValueError, InvalidOperation):
+                qty = money.parse(quantity, Trade.quantity, "Units")
+                price = money.parse(unit_price, Trade.unit_price, "Price")
+            except money.FigureError as exc:
+                return _reject(f"{exc}.")
+            except ValueError:
                 return _reject("Units and price must be numbers.")
             if qty <= 0:
                 return _reject("Units must be greater than zero.")

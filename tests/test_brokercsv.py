@@ -562,3 +562,50 @@ def test_a_drp_allotment_that_does_carry_a_price_is_imported():
     )
     assert result.candidates[0].type == "drp"
     assert result.candidates[0].unit_price == Decimal("12.50")
+
+
+# --------------------------------------------------------------------------- #
+# Figures that are not figures, or that the trade form would refuse
+# --------------------------------------------------------------------------- #
+
+def _one_row(units="100", price="5.00", brokerage="9.50"):
+    return ("Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+            f"06/01/2025,Buy,ACME,{units},{price},{brokerage}\n")
+
+
+@pytest.mark.parametrize("kwargs, message", [
+    ({"units": "NaN"}, "line 2: Units: 'NaN' is not a number"),
+    ({"price": "Infinity"}, "line 2: Price: 'Infinity' is not a number"),
+    ({"brokerage": "NaN"}, "line 2: Brokerage: 'NaN' is not a number"),
+    ({"units": "1E+999999"}, "line 2: Units: '1E+999999' is too large"),
+    ({"price": "(12.50)"}, "line 2: Price: '(12.50)' is not a number"),
+    ({"units": "0"}, "line 2: Units: 0 has to be more than zero"),
+    # Refused, not flipped: whether a negative means a sell is the export's to say.
+    ({"units": "-100"}, "line 2: Units: -100 has to be more than zero"),
+    ({"price": "-5"}, "line 2: Price: -5 can't be negative"),
+    ({"brokerage": "-9.50"}, "line 2: Brokerage: -9.50 can't be negative"),
+], ids=["nan-units", "infinite-price", "nan-brokerage", "huge-units", "brackets",
+        "zero-units", "negative-units", "negative-price", "negative-brokerage"])
+def test_a_row_the_trade_form_would_refuse_is_an_error_naming_field_and_value(
+        kwargs, message):
+    result = brokercsv.parse_csv(_one_row(**kwargs), "testbroker", MAPPED)
+
+    assert result.candidates == []
+    assert [e for e in result.errors if message in e], result.errors
+    assert "InvalidOperation" not in " ".join(result.errors)
+
+
+def test_a_zero_price_is_allowed_for_a_bonus_issue_or_demerger():
+    result = brokercsv.parse_csv(_one_row(price="0"), "testbroker", MAPPED)
+
+    assert result.errors == []
+    assert result.candidates[0].unit_price == Decimal("0")
+
+
+def test_one_bad_row_does_not_hide_the_good_ones_but_is_still_reported():
+    text = _one_row() + "07/01/2025,Buy,ACME,NaN,5.00,9.50\n"
+
+    result = brokercsv.parse_csv(text, "testbroker", MAPPED)
+
+    assert len(result.candidates) == 1
+    assert len(result.errors) == 1

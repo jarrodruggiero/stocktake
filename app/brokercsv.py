@@ -17,11 +17,12 @@ import datetime as dt
 import io
 import re
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import money
 from .markettime import to_market
 from .models import Instrument, Trade, exchange_problem, ticker_problem
 from .pricefeed import MARKETS
@@ -152,8 +153,23 @@ class ParseResult:
     adjusted: int = 0  # times moved into trading hours; see `in_trading_hours`
 
 
-def _num(raw: str) -> Decimal:
-    return Decimal(str(raw).replace(",", "").replace("$", "").strip())
+def _num(raw: str, column, name: str) -> Decimal:
+    return money.parse(str(raw).replace(",", "").replace("$", ""), column, name)
+
+
+def _check_trade_figures(units: Decimal, price: Decimal, brokerage: Decimal) -> None:
+    """The trade form's rules, so a file cannot stage what the form would refuse.
+
+    Zero is a real price (a bonus issue, a demerger allocation). A negative
+    quantity is refused rather than flipped: whether it means a sell is the
+    export's to say, and none of the shipped formats do.
+    """
+    if units <= 0:
+        raise money.FigureError(f"Units: {units} has to be more than zero")
+    if price < 0:
+        raise money.FigureError(f"Price: {price} can't be negative")
+    if brokerage < 0:
+        raise money.FigureError(f"Brokerage: {brokerage} can't be negative")
 
 
 def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
@@ -193,20 +209,27 @@ def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
                     clock = to_market(clock, when, fmt.times_zone, fmt.exchange)
                 clock, moved = in_trading_hours(clock, fmt.exchange)
                 result.adjusted += moved
+                units = _num(row[col["units"]], Trade.quantity, "Units")
+                price = _num(row[col["price"]], Trade.unit_price, "Price")
+                brokerage = _num(row.get(col.get("brokerage", ""), "0") or "0",
+                                 Trade.brokerage, "Brokerage")
+                _check_trade_figures(units, price, brokerage)
                 result.candidates.append(
                     CandidateTrade(
                         date=when,
                         time=clock,
                         ticker=row[col["ticker"]].strip().upper(),
                         type=action,
-                        quantity=_num(row[col["units"]]),
-                        unit_price=_num(row[col["price"]]),
-                        brokerage=_num(row.get(col.get("brokerage", ""), "0") or "0"),
+                        quantity=units,
+                        unit_price=price,
+                        brokerage=brokerage,
                         currency=fmt.currency,
                         exchange=fmt.exchange,
                     )
                 )
-            except (KeyError, ValueError, InvalidOperation) as exc:
+            except money.FigureError as exc:
+                result.errors.append(f"line {i}: {exc}")
+            except (KeyError, ValueError) as exc:
                 result.errors.append(f"line {i}: {exc!r} in {row}")
         return result
 
@@ -224,8 +247,9 @@ def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
                 result.skipped.append(f"line {i}: {details!r}")
                 continue
             try:
-                qty = _num(m.group("units"))
-                price = _num(m.group("price"))
+                qty = _num(m.group("units"), Trade.quantity, "Units")
+                price = _num(m.group("price"), Trade.unit_price, "Price")
+                _check_trade_figures(qty, price, Decimal(0))
                 is_buy = m.group("action") == "B"
                 # Brokerage isn't a column: recover it from the cash movement.
                 # buy: debit = qty*price + brokerage; sell: credit = qty*price - brokerage.
@@ -233,7 +257,9 @@ def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
                 when, clock = parse_when(row["Date"], fmt.date_format)
                 clock, moved = in_trading_hours(clock, fmt.exchange)
                 result.adjusted += moved
-                cash = _num(row.get("Debit($)") or "0") if is_buy else _num(row.get("Credit($)") or "0")
+                cash = (_num(row.get("Debit($)") or "0", Trade.quantity, "Debit")
+                        if is_buy else
+                        _num(row.get("Credit($)") or "0", Trade.quantity, "Credit"))
                 brokerage = (cash - gross) if is_buy else (gross - cash)
                 if brokerage < 0 or brokerage > max(Decimal("100"), gross / 10):
                     result.errors.append(
@@ -254,7 +280,9 @@ def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
                         exchange=fmt.exchange,
                     )
                 )
-            except (ValueError, InvalidOperation) as exc:
+            except money.FigureError as exc:
+                result.errors.append(f"line {i}: {exc}")
+            except ValueError as exc:
                 result.errors.append(f"line {i}: {exc!r} in {row}")
         return result
 

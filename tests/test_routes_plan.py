@@ -157,6 +157,22 @@ def test_a_non_numeric_amount_is_refused(client, session_factory, holdings):
 
 
 @freeze_time(TODAY)
+@pytest.mark.parametrize("field, value", [
+    ("amount", "NaN"), ("amount", "Infinity"), ("amount", "1E+999999"),
+    ("amount", "10000000000"), ("brokerage", "NaN"), ("brokerage", "1E+999999"),
+])
+def test_a_figure_that_is_not_finite_or_too_big_is_refused_on_the_plan(
+        client, session_factory, holdings, field, value):
+    """The plan route caught only `InvalidOperation`, so a `ValueError` from the
+    shared parser would have been a 500 here."""
+    resp = save_plan(client, session_factory, **{field: value})
+
+    assert resp.status_code == 400
+    with reading(session_factory) as s:
+        assert s.scalars(select(InvestmentPlan)).all() == []
+
+
+@freeze_time(TODAY)
 def test_a_malformed_start_date_is_refused(client, session_factory, holdings):
     assert save_plan(client, session_factory, start_date="10/08/2026").status_code == 400
 
@@ -251,6 +267,8 @@ def test_completing_the_wrong_buy_is_refused(client, session_factory, holdings):
 @pytest.mark.parametrize("field,value", [
     ("quantity", "0"), ("unit_price", "-1"), ("quantity", "-1"),
     ("trade_date", "not-a-date"), ("quantity", "many"),
+    ("quantity", "NaN"), ("quantity", "Infinity"), ("quantity", "1E+999999"),
+    ("unit_price", "NaN"), ("unit_price", "1E+999999"), ("brokerage", "Infinity"),
 ])
 def test_bad_numbers_on_a_completed_buy_are_refused(client, session_factory, holdings,
                                                     field, value):

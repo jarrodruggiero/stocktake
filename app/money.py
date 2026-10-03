@@ -1,4 +1,5 @@
-"""Rendering an amount of money so it says which money it is.
+"""Rendering an amount of money so it says which money it is, and reading one
+back in: `parse` turns typed or imported text into a figure that fits its column.
 
 `REPORTING` is a constant today and becomes `portfolio.reporting_currency`
 later, so nothing outside this module hard-codes "AUD".
@@ -10,7 +11,7 @@ per row (see `columns.py`). Why: decisions.md #80.
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 # The currency every total is computed in. A constant until T28b makes it a
 # property of the portfolio — see the module docstring.
@@ -65,3 +66,62 @@ def text(value, currency: str | None = None) -> str:
     number = Decimal(value)
     sign = "-" if number < 0 else ""
     return f"{sign}{symbol(currency)}{abs(number):,.2f}"
+
+
+def limit(column) -> Decimal:
+    """The first magnitude a NUMERIC column cannot hold: 10 ** (precision - scale).
+
+    Read from the column so it cannot drift from the schema. `Numeric(20, 8)`
+    holds twelve digits before the point, so 10**12 and up does not fit.
+    """
+    kind = column.type
+    return Decimal(10) ** (kind.precision - kind.scale)
+
+
+class FigureError(ValueError):
+    """A figure that is not a number, or does not fit where it is going.
+
+    A `ValueError`, so a caller that already catches that keeps working; its own
+    type so a form can show this message, which says what is wrong with the
+    figure, instead of the generic one for a bad date.
+    """
+
+
+# How much of what was typed a message repeats. Forms carry the message in a
+# redirect's query string, and a pasted page of text would make that URL too
+# long for the proxy, which shows a bare error instead of the message.
+_SHOWN = 20
+
+
+def parse(text, column, name: str | None = None) -> Decimal:
+    """Text a person typed or a file carried, as a number that fits `column`.
+
+    A bare `Decimal(text)` accepts `NaN` (whose comparisons then raise),
+    `Infinity` (which saves), and `1E+999999` (finite, but SQLite stores a float
+    and reads it back as Infinity while Postgres refuses it with an overflow).
+    This refuses all three with a message naming the field, `name`, and the
+    value. Zero, sign and meaning stay with the caller: it only says whether the
+    figure is a figure and fits.
+
+    "Fits" is judged after rounding to the column's scale, because the database
+    rounds on the way in: 999999999999.999999999 is under 10**12 as typed and is
+    10**12 once Postgres has stored it in a `Numeric(20, 8)`.
+    """
+    raw = str(text).strip()
+    label = f"{name}: " if name else ""
+    shown = repr(raw if len(raw) <= _SHOWN else raw[:_SHOWN] + "…")
+    try:
+        value = Decimal(raw)
+    except InvalidOperation:
+        raise FigureError(f"{label}{shown} is not a number") from None
+    if not value.is_finite():
+        raise FigureError(f"{label}{shown} is not a number")
+    ceiling = limit(column)
+    # Compared before rounding too: `quantize` itself raises on a value as
+    # large as 1E+999999, so the size check has to come first.
+    if abs(value) >= ceiling or abs(
+            value.quantize(Decimal(1).scaleb(-column.type.scale),
+                           rounding=ROUND_HALF_UP)) >= ceiling:
+        raise FigureError(
+            f"{label}{shown} is too large: it has to be under {ceiling:,}")
+    return value

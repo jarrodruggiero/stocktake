@@ -154,8 +154,21 @@ def test_the_edit_form_rejects_nonsense_numbers(client, session_factory, ledger)
         ({"brokerage": "-5"}, "can%27t+be+negative"),
         ({"fx_rate": "0"}, "FX+must+be+positive"),
         ({"set_time": "1", "trade_time": "half+past+ten"}, "isn%27t+a+time"),
+        # Not figures at all, and figures too big for their column. NaN used to
+        # raise out of the `<= 0` check below it, Infinity was saved, and
+        # 1E+999999 reads back from SQLite as Infinity.
+        ({"quantity": "NaN"}, "Units%3A+%27NaN%27+is+not+a+number"),
+        ({"quantity": "Infinity"}, "Units%3A+%27Infinity%27+is+not+a+number"),
+        ({"quantity": "1E+999999"}, "Units%3A+%271E%2B999999%27+is+too+large"),
+        ({"quantity": "1000000000000"}, "is+too+large"),
+        ({"unit_price": "NaN"}, "Price%3A+%27NaN%27+is+not+a+number"),
+        ({"unit_price": "1000000000000"}, "Price%3A"),
+        ({"brokerage": "Infinity"}, "Brokerage%3A+%27Infinity%27+is+not+a+number"),
+        ({"fx_rate": "NaN"}, "FX+rate%3A+%27NaN%27+is+not+a+number"),
     ],
-    ids=["type", "zero-units", "negative-price", "negative-brokerage", "zero-fx", "bad-time"],
+    ids=["type", "zero-units", "negative-price", "negative-brokerage", "zero-fx", "bad-time",
+         "nan-units", "infinite-units", "huge-units", "units-at-the-limit",
+         "nan-price", "huge-price", "infinite-brokerage", "nan-fx"],
 )
 def test_the_edit_form_validates_like_the_create_form(
     client, session_factory, ledger, overrides, expected
@@ -490,14 +503,21 @@ def test_a_dividend_in_another_portfolio_is_not_found(client, session_factory, l
 @pytest.mark.parametrize(
     "overrides, expected",
     [
-        ({"cash_amount": "lots"}, "must+be+numbers"),
+        ({"cash_amount": "lots"}, "Cash%3A+%27lots%27+is+not+a+number"),
         ({"cash_amount": "0"}, "more+than+zero"),
         ({"franking_credits": "-1"}, "can%27t+be+negative"),
         ({"div_date": "2027-01-01"}, "future"),
-        ({"quantity": "many"}, "must+be+numbers"),
+        ({"quantity": "many"}, "Units%3A+%27many%27+is+not+a+number"),
         ({"quantity": "0"}, "greater+than+zero"),
+        ({"cash_amount": "NaN"}, "Cash%3A+%27NaN%27+is+not+a+number"),
+        ({"cash_amount": "1E+999999"}, "Cash%3A+%271E%2B999999%27+is+too+large"),
+        ({"franking_credits": "Infinity"},
+         "Franking+credits%3A+%27Infinity%27+is+not+a+number"),
+        ({"quantity": "NaN"}, "Units%3A+%27NaN%27+is+not+a+number"),
+        ({"unit_price": "1E+999999"}, "Price%3A+%271E%2B999999%27+is+too+large"),
     ],
-    ids=["bad-cash", "zero-cash", "negative-franking", "future", "bad-units", "zero-units"],
+    ids=["bad-cash", "zero-cash", "negative-franking", "future", "bad-units", "zero-units",
+         "nan-cash", "huge-cash", "infinite-franking", "nan-units", "huge-price"],
 )
 def test_the_dividend_form_validates(
     client, session_factory, with_drp, overrides, expected

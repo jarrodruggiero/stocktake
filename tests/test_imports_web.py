@@ -497,3 +497,38 @@ def test_the_way_back_follows_where_you_came_from(client, session_factory, with_
                           data={"_csrf": csrf, "broker": "selfwealth"}, headers=HTML)
     assert "evil.test" not in hostile.text
     assert 'href="/imports-exports"' in hostile.text
+
+
+# --------------------------------------------------------------------------- #
+# The statement commit holds the dividend edit form's rules
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("overrides", [
+    {"net_amount": "NaN"}, {"net_amount": "Infinity"}, {"net_amount": "1E+999999"},
+    {"net_amount": "10000000000"},
+    {"net_amount": "0"}, {"net_amount": "-5.00"},
+    {"franking_credits": "NaN"}, {"franking_credits": "-1"},
+    {"franked_amount": "1E+999999"},
+    {"drp_units": "NaN"}, {"drp_units": "1E+999999"}, {"drp_units": "-10"},
+    {"drp_units": "0"}, {"drp_price": "Infinity"}, {"drp_price": "-1"},
+], ids=["nan-net", "infinite-net", "huge-net", "net-at-the-limit", "zero-net",
+        "negative-net", "nan-franking", "negative-franking", "huge-franked-amount",
+        "nan-units", "huge-units", "negative-units", "zero-units", "infinite-price",
+        "negative-price"])
+def test_a_statement_that_the_dividend_form_would_refuse_is_not_saved(
+        client, session_factory, with_acme, overrides):
+    """Zero or negative cash and franking, and negative DRP units, used to be saved
+    as they came (the units failing later at the `quantity > 0` CHECK as a 500)."""
+    make_login(client, session_factory)
+    payload = {"ticker": "ACME", "payment_date": "2026-03-15", "net_amount": "100.00",
+               "drp_units": "10", "drp_price": "10.00",
+               "_csrf": session_csrf(session_factory)}
+    payload.update(overrides)
+
+    resp = client.post("/imports-exports/statement/commit", data=payload, headers=HTML,
+                       follow_redirects=False)
+
+    assert resp.status_code == 400
+    with reading(session_factory) as s:
+        assert s.scalars(select(Dividend)).all() == []
+        assert s.scalars(select(Trade)).all() == []

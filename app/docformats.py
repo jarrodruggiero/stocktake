@@ -22,8 +22,10 @@ import datetime as dt
 import logging
 import re
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
+
+from . import money
+from .models import Trade
 
 log = logging.getLogger(__name__)
 
@@ -200,11 +202,14 @@ def coerce(raw: str | None, type_: str):
         return _parse_date(raw)
     if type_ == "text":
         return raw.strip() or None
+    # No target column here, so the widest one a statement figure can land in.
+    # `parse` refuses NaN, Infinity and anything that would not fit; the
+    # `int()` is inside the same guard because it raises on the first two.
     try:
-        value = Decimal(cleaned)
-    except (InvalidOperation, ValueError):
+        value = money.parse(cleaned, Trade.quantity)
+        return int(value) if type_ == "integer" else value
+    except ValueError:
         return None
-    return int(value) if type_ == "integer" else value
 
 
 def _parse_date(raw: str | None) -> dt.date | None:

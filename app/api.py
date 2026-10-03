@@ -24,7 +24,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from . import auth, clock, fyreport, plans, queries
+from . import auth, clock, fyreport, money, plans, queries
 from .models import WRITE_ROLES, Dividend, Instrument, Portfolio, Trade, ticker_problem
 from .tenancy import owned
 
@@ -237,25 +237,31 @@ def get_plan(request: Request) -> dict:
 # Writes (keys with the "write" scope)
 # --------------------------------------------------------------------------- #
 
+# Every figure has an upper limit too, taken from its column: pydantic refuses
+# NaN and Infinity, but `1E+999999` is finite, and SQLite stores it as a float
+# that reads back as Infinity (and then every total fails) while Postgres
+# refuses it with an overflow. The same rule the forms use, money.parse.
 class TradeIn(BaseModel):
     ticker: str
     type: str = Field(pattern="^(buy|sell|drp)$")
     date: dt.date
-    units: Decimal = Field(gt=0)
+    units: Decimal = Field(gt=0, lt=money.limit(Trade.quantity))
     # `ge`, not `gt`: a free parcel is a real thing (a bonus issue, a
     # reward-plan grant), and the forms accept one. Negative is still refused.
-    unit_price: Decimal = Field(ge=0)
-    brokerage: Decimal = Field(default=Decimal(0), ge=0)
-    fx_rate: Decimal | None = Field(default=None, gt=0)
+    unit_price: Decimal = Field(ge=0, lt=money.limit(Trade.unit_price))
+    brokerage: Decimal = Field(default=Decimal(0), ge=0,
+                               lt=money.limit(Trade.brokerage))
+    fx_rate: Decimal | None = Field(default=None, gt=0, lt=money.limit(Trade.fx_rate))
     note: str | None = None
 
 
 class DividendIn(BaseModel):
     ticker: str
     date: dt.date
-    cash_amount: Decimal = Field(gt=0)
-    franking_credits: Decimal | None = Field(default=None, ge=0)
-    fx_rate: Decimal | None = Field(default=None, gt=0)
+    cash_amount: Decimal = Field(gt=0, lt=money.limit(Dividend.cash_amount))
+    franking_credits: Decimal | None = Field(
+        default=None, ge=0, lt=money.limit(Dividend.franking_credits))
+    fx_rate: Decimal | None = Field(default=None, gt=0, lt=money.limit(Dividend.fx_rate))
     note: str | None = None
 
 

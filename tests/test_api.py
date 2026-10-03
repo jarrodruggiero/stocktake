@@ -632,3 +632,48 @@ def test_an_identical_dividend_is_refused_as_a_duplicate(client, session_factory
     with bound(session_factory, portfolio_id) as s:
         same = s.scalars(select(Dividend).where(Dividend.date == fac.d("2026-07-01"))).all()
         assert len(same) == 1
+
+
+# --------------------------------------------------------------------------- #
+# Figures too big for their column
+# --------------------------------------------------------------------------- #
+
+def _trade_count(session_factory, portfolio_id: int) -> int:
+    with bound(session_factory, portfolio_id) as s:
+        return len(s.scalars(select(Trade)).all())
+
+
+@pytest.mark.parametrize("field, value", [
+    ("units", "1E+999999"), ("units", "1000000000000"),
+    ("unit_price", "1E+999999"), ("brokerage", "1E+999999"), ("fx_rate", "1E+999999"),
+])
+def test_a_trade_with_a_figure_too_big_for_its_column_is_refused(
+        client, session_factory, furnished, field, value):
+    """pydantic refuses NaN and Infinity, but `1E+999999` is finite: it used to
+    save as Infinity and then fail every read of the portfolio."""
+    portfolio_id, user_id = furnished
+    raw = issue_key(session_factory, portfolio_id, scopes="read,write", created_by=user_id)
+    body = {"ticker": "ALPHA", "type": "buy", "date": "2026-07-01", "units": "1",
+            "unit_price": "10.00", field: value}
+    before = _trade_count(session_factory, portfolio_id)
+
+    resp = client.post("/api/v1/trades", json=body, headers=bearer(raw))
+
+    assert resp.status_code == 422
+    assert _trade_count(session_factory, portfolio_id) == before
+    assert client.get("/api/v1/portfolio", headers=bearer(raw)).status_code == 200
+
+
+@pytest.mark.parametrize("field, value", [
+    ("cash_amount", "1E+999999"), ("cash_amount", "10000000000"),
+    ("franking_credits", "1E+999999"), ("fx_rate", "1E+999999"),
+])
+def test_a_dividend_with_a_figure_too_big_for_its_column_is_refused(
+        client, session_factory, furnished, field, value):
+    portfolio_id, user_id = furnished
+    raw = issue_key(session_factory, portfolio_id, scopes="read,write", created_by=user_id)
+    body = {"ticker": "ALPHA", "date": "2026-07-01", "cash_amount": "10.00", field: value}
+
+    resp = client.post("/api/v1/dividends", json=body, headers=bearer(raw))
+
+    assert resp.status_code == 422

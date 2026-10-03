@@ -14,7 +14,7 @@ import logging
 import re
 import tempfile
 import uuid
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -30,6 +30,7 @@ from . import (
     docformats,
     exports,
     fyreport,
+    money,
     navigation,
     ofx,
     pagemap,
@@ -326,22 +327,35 @@ async def statement_commit(
 ):
     _, _, session_factory = _ctx(request)
 
-    def _dec(raw: str) -> Decimal | None:
+    def _dec(raw: str, column, name: str) -> Decimal | None:
         raw = raw.strip().replace(",", "").replace("$", "")
         if not raw:
             return None
         try:
-            return Decimal(raw)
-        except InvalidOperation:
-            raise HTTPException(400, f"not a number: {raw!r}")
+            return money.parse(raw, column, name)
+        except money.FigureError as exc:
+            raise HTTPException(400, str(exc))
 
     try:
         date = dt.date.fromisoformat(payment_date)
     except ValueError:
         raise HTTPException(400, f"bad payment date {payment_date!r} (use YYYY-MM-DD)")
-    amount = _dec(net_amount)
+    amount = _dec(net_amount, Dividend.cash_amount, "Net amount")
     if amount is None:
         raise HTTPException(400, "net amount is required")
+    # The same rules as the dividend edit form, so a statement cannot save what
+    # that form would refuse.
+    if amount <= 0:
+        raise HTTPException(400, "Net amount has to be more than zero.")
+    franking = _dec(franking_credits, Dividend.franking_credits, "Franking credits")
+    if franking is not None and franking < 0:
+        raise HTTPException(400, "Franking credits can't be negative.")
+    units = _dec(drp_units, Trade.quantity, "DRP units")
+    price = _dec(drp_price, Trade.unit_price, "DRP price")
+    if units is not None and units <= 0:
+        raise HTTPException(400, "DRP units have to be more than zero.")
+    if price is not None and price < 0:
+        raise HTTPException(400, "DRP price can't be negative.")
 
     with auth.scoped_session(request) as (ctx, s):
         await auth.verify_csrf(request, s)
@@ -354,11 +368,11 @@ async def statement_commit(
 
         note = "from dividend statement"
         if franked_amount.strip():
-            note += f"; franked amount {_dec(franked_amount)}"
+            note += (f"; franked amount "
+                     f"{_dec(franked_amount, Dividend.cash_amount, 'Franked amount')}")
         if note_extra.strip():
             note += f"; {note_extra.strip()}"
 
-        units, price = _dec(drp_units), _dec(drp_price)
         reinvest = None
         if units and price:
             reinvest = tenancy.owned(
@@ -383,7 +397,7 @@ async def statement_commit(
                     date=date,
                     cash_amount=amount,
                     fx_rate=Decimal(1) if inst.currency == "AUD" else None,
-                    franking_credits=_dec(franking_credits),
+                    franking_credits=franking,
                     reinvest_trade=reinvest,
                     note=note,
                 ),

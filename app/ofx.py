@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
+from . import money
 from .brokercsv import CandidateTrade, ParseResult
+from .models import Trade
 
 # One tag and whatever text follows it before the next tag. Deliberately not a
 # parser: it does not care about nesting, which is what makes it immune to the
@@ -91,13 +93,13 @@ def _date(raw: str | None) -> dt.date | None:
         return None
 
 
-def _decimal(raw: str | None) -> Decimal | None:
-    if raw is None:
+def _decimal(raw: str | None, column, name: str) -> Decimal | None:
+    """None when the tag is absent or empty; a `FigureError` when it is there
+    and is not a figure that fits, which is the file's fault and is reported as
+    an error rather than quietly counted as missing."""
+    if raw is None or not raw.strip():
         return None
-    try:
-        return Decimal(raw.replace(",", "").strip())
-    except (InvalidOperation, ValueError):
-        return None
+    return money.parse(raw.replace(",", ""), column, name)
 
 
 def security_tickers(text: str) -> dict[str, str]:
@@ -134,9 +136,14 @@ def parse_ofx(text: str, *, exchange: str = "ASX", currency: str = "AUD") -> Par
     for tag in BUY_TAGS + SELL_TAGS + REINVEST_TAGS:
         for block in _blocks(text, tag):
             found_any = True
-            candidate, problem = _transaction(
-                block, tag, tickers, exchange, default_currency
-            )
+            try:
+                candidate, problem = _transaction(
+                    block, tag, tickers, exchange, default_currency
+                )
+            except money.FigureError as exc:
+                where = tickers.get(_value(block, "UNIQUEID") or "") or "a transaction"
+                result.errors.append(f"{where}: {exc}")
+                continue
             if candidate is not None:
                 result.candidates.append(candidate)
             else:
@@ -166,9 +173,10 @@ def _transaction(block, tag, tickers, exchange, currency):
     unique_id = _value(block, "UNIQUEID")
     ticker = tickers.get(unique_id or "")
     when = _date(_value(block, "DTTRADE") or _value(block, "DTSETTLE"))
-    units = _decimal(_value(block, "UNITS"))
-    price = _decimal(_value(block, "UNITPRICE"))
-    commission = _decimal(_value(block, "COMMISSION")) or Decimal(0)
+    units = _decimal(_value(block, "UNITS"), Trade.quantity, "Units")
+    price = _decimal(_value(block, "UNITPRICE"), Trade.unit_price, "Price")
+    commission = (_decimal(_value(block, "COMMISSION"), Trade.brokerage, "Brokerage")
+                  or Decimal(0))
 
     if ticker is None:
         return None, (
@@ -190,6 +198,8 @@ def _transaction(block, tag, tickers, exchange, currency):
     # OFX signs UNITS by direction: negative on a sell. The app stores quantity
     # as a positive magnitude with the direction in `type`, so the sign is
     # dropped here rather than becoming a negative holding.
+    if units == 0:
+        raise money.FigureError("Units: 0 has to be more than zero")
     return CandidateTrade(
         date=when,
         ticker=ticker,

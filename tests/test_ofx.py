@@ -328,3 +328,29 @@ def test_the_imports_page_offers_ofx_for_any_broker(client, session_factory):
 
     assert 'value="ofx"' in page
     assert "any broker" in page
+
+
+# --------------------------------------------------------------------------- #
+# Figures that are not figures
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("tag, was, value, message", [
+    ("UNITS", "100", "NaN", "Units: 'NaN' is not a number"),
+    ("UNITPRICE", "10.50", "Infinity", "Price: 'Infinity' is not a number"),
+    ("COMMISSION", "9.50", "NaN", "Brokerage: 'NaN' is not a number"),
+    ("UNITS", "100", "1E+999999", "Units: '1E+999999' is too large"),
+    ("UNITS", "100", "0", "Units: 0 has to be more than zero"),
+])
+def test_an_unreadable_figure_is_an_error_naming_the_field(tag, was, value, message):
+    """It used to read as "missing" and be skipped, or (1E+999999) pass."""
+    broken = SGML.replace(f"<{tag}>{was}", f"<{tag}>{value}", 1)
+
+    result = ofx.parse_ofx(broken)
+
+    assert any(message in e for e in result.errors), result.errors
+    assert all(c.quantity > 0 for c in result.candidates)
+
+
+def test_a_negative_units_figure_is_still_the_sign_of_a_sell_not_an_error():
+    """The shared check runs after the sign is taken off, so this stays valid."""
+    assert ofx.parse_ofx(SGML).errors == []

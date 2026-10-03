@@ -441,3 +441,35 @@ def test_an_existing_trade_can_be_edited_down_to_free(client, session_factory):
 
 # The API carries the same rule; its test lives beside the other API tests,
 # with the key-minting helpers — see `test_api.py`.
+
+
+# --------------------------------------------------------------------------- #
+# Figures that are not figures, or that do not fit their column
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("field, value, message", [
+    ("quantity", "NaN", "Units: &#39;NaN&#39; is not a number"),
+    ("quantity", "Infinity", "Units: &#39;Infinity&#39; is not a number"),
+    ("quantity", "1E+999999", "is too large"),
+    ("quantity", "1000000000000", "is too large"),
+    ("unit_price", "NaN", "Price: &#39;NaN&#39; is not a number"),
+    ("unit_price", "1000000000000", "Price: "),
+    ("brokerage", "Infinity", "Brokerage: &#39;Infinity&#39; is not a number"),
+    ("fx_rate", "NaN", "FX rate: &#39;NaN&#39; is not a number"),
+])
+def test_a_figure_that_is_not_finite_or_too_big_is_refused_not_saved(
+        client, session_factory, field, value, message):
+    """NaN used to raise out of the `<= 0` check (a 500), and Infinity saved."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        inst = fac.make_instrument(s, "ACME", asset_class="share")
+        s.commit()
+        instrument_id = inst.id
+
+    resp = _record(client, session_factory, instrument_id, **{field: value})
+
+    assert resp.status_code == 200
+    assert message in resp.text
+    with reading(session_factory) as s:
+        assert s.scalars(select(Trade)).all() == []

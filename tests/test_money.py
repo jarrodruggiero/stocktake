@@ -152,3 +152,88 @@ def test_no_template_writes_a_currency_symbol_next_to_the_money_filter():
         "a currency symbol is written next to a money filter — the filter puts "
         "it there itself, in the right place relative to the minus sign and "
         "inside the privacy blur:\n  " + "\n  ".join(offenders))
+
+
+# --------------------------------------------------------------------------- #
+# Parsing a figure somebody typed or a file carried
+# --------------------------------------------------------------------------- #
+
+def test_a_figure_that_fits_parses_with_its_digits_intact():
+    from app.models import Trade
+
+    assert money.parse(" 12.50 ", Trade.unit_price) == Decimal("12.50")
+    assert money.parse("0", Trade.unit_price) == Decimal("0")     # a free parcel
+    assert money.parse("-3", Trade.unit_price) == Decimal("-3")   # sign is the caller's
+
+
+@pytest.mark.parametrize("text", ["NaN", "Infinity", "-Infinity", "sNaN", "abc", ""])
+def test_a_figure_that_is_not_a_finite_number_is_refused(text):
+    from app.models import Trade
+
+    with pytest.raises(money.FigureError, match="is not a number"):
+        money.parse(text, Trade.quantity)
+
+
+@pytest.mark.parametrize("text", ["1E+999999", "1E+309", "1E+20", "1000000000000"])
+def test_a_figure_too_big_for_its_column_is_refused(text):
+    """Finite, so `Decimal` accepts it. SQLite stores a float and reads 1E+999999
+    back as Infinity; Postgres refuses it with an overflow."""
+    from app.models import Trade
+
+    with pytest.raises(money.FigureError, match="is too large"):
+        money.parse(text, Trade.quantity)
+
+
+def test_the_limit_is_taken_from_the_column_so_it_cannot_drift_from_the_schema():
+    from app.models import Trade
+
+    # Numeric(20, 8) holds twelve digits before the point; Numeric(10, 2) eight.
+    assert money.limit(Trade.quantity) == Decimal(10) ** 12
+    assert money.limit(Trade.brokerage) == Decimal(10) ** 8
+    assert money.parse("999999999999.99999999", Trade.quantity)
+    with pytest.raises(money.FigureError):
+        money.parse("100000000", Trade.brokerage)
+
+
+def test_the_message_names_the_field_and_the_value():
+    from app.models import Trade
+
+    with pytest.raises(money.FigureError) as caught:
+        money.parse("NaN", Trade.quantity, "Units")
+
+    assert str(caught.value) == "Units: 'NaN' is not a number"
+    assert isinstance(caught.value, ValueError)   # an existing `except ValueError` works
+
+
+def test_a_long_value_is_cut_down_in_the_message():
+    """Forms carry the message in a redirect's query string; a pasted page of
+    text would make that URL too long for the proxy."""
+    from app.models import Trade
+
+    with pytest.raises(money.FigureError) as caught:
+        money.parse("x" * 5000, Trade.quantity, "Units")
+
+    assert str(caught.value) == "Units: '" + "x" * 20 + "…' is not a number"
+    assert len(str(caught.value)) < 60
+
+
+def test_a_short_value_is_quoted_whole():
+    from app.models import Trade
+
+    with pytest.raises(money.FigureError) as caught:
+        money.parse("x" * 20, Trade.quantity)
+
+    assert "…" not in str(caught.value)
+
+
+def test_a_value_that_rounds_up_to_the_limit_is_refused():
+    """Under 10**12 as typed, but the database rounds to eight places, and the
+    result is 10**12, which Postgres refuses with an overflow."""
+    from app.models import Trade
+
+    with pytest.raises(money.FigureError, match="is too large"):
+        money.parse("999999999999.999999999", Trade.quantity)
+    with pytest.raises(money.FigureError, match="is too large"):
+        money.parse("999999999999.999999995", Trade.quantity)   # half rounds up
+    assert money.parse("999999999999.999999994", Trade.quantity)  # rounds down: fits
+    assert money.parse("999999999999.99999999", Trade.quantity)   # exactly the largest
