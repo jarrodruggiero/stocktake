@@ -191,9 +191,12 @@ body[data-theme="dark"][data-accent="amber"]  { --accent: #fbbf24; --accent-grad
    same picture. So the translucency stays (a plain alpha background forces no
    layer and costs no text quality) and the blur goes.
 
-   The two places that keep it are the two that blur real page CONTENT rather
-   than a wash: the idle overlay and the dialog backdrop. Blurring is the point
-   there, and neither has text sitting on top of it.
+   The one place that keeps it is the idle overlay, which blurs real page
+   CONTENT rather than a wash — blurring is the point there, and it has no text
+   sitting on top of it. The dialog backdrop had it too and lost it: its fade
+   animates the layer's opacity, and a blurred layer whose opacity changes is
+   re-blurred across the whole viewport every frame, which made every dialog
+   stutter open (Firefox worst). A slightly deeper dim does the same job.
    ------------------------------------------------------------------------- */
 
 * { box-sizing: border-box; }
@@ -1181,7 +1184,7 @@ dialog {
      heading, the templates list) sat hard against the border and read as a
      rendering bug. */
   border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-4);
-  /* Solid, not glass: a translucent dialog over a blurred backdrop stacks two
+  /* Solid, not glass: a translucent dialog over a dimmed backdrop stacks two
      transparencies and neither reads. This is the one surface that should be
      unambiguously in front. */
   background: var(--panel-solid); color: var(--text);
@@ -1198,7 +1201,7 @@ dialog[open]::backdrop { animation: backdrop-in 0.18s ease; }
   to { opacity: 1; transform: none; }
 }
 @keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
-dialog::backdrop { background: rgb(0 0 0 / 0.5); backdrop-filter: blur(2px); }
+dialog::backdrop { background: rgb(0 0 0 / 0.55); }
 /* A FORM inside a dialog is not a card in its own right — it is the dialog's
    content, so it loses the panel chrome and the dialog's padding is the only
    padding. Scoped to forms deliberately: `p.panel.error` and `p.panel.ok` ARE
