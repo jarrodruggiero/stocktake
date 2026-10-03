@@ -79,7 +79,7 @@ def test_managing_templates_is_a_dialog_holding_all_three_verbs(client, session_
     # Download and remove are per-template rows, so they need one installed —
     # see the download tests below. With none, the dialog says so rather than
     # rendering an empty list.
-    assert "Nothing installed" in dialog
+    assert "No custom templates installed" in dialog
 
 
 def test_the_two_import_panels_are_equal_halves(client, session_factory):
@@ -117,15 +117,51 @@ def test_an_install_result_reopens_the_dialog(client, session_factory):
 # Downloading a template — the verb that was missing
 # --------------------------------------------------------------------------- #
 
-def _install(client, body: bytes = GOOD, name: str = "example-registry.yaml") -> None:
-    token = re.search(r'name="_csrf" value="([^"]+)"',
-                      client.get("/imports-exports", headers=HTML).text).group(1)
+def _csrf(client) -> str:
+    return re.search(r'name="_csrf" value="([^"]+)"',
+                     client.get("/imports-exports", headers=HTML).text).group(1)
+
+
+def _install(client, body: bytes = GOOD, name: str = "example-registry.yaml") -> str:
+    """Install a template, and return the page the install lands on."""
     response = client.post(
         "/imports-exports/formats",
-        data={"_csrf": token, "kind": "statement"},
+        data={"_csrf": _csrf(client), "kind": "statement"},
         files={"file": (name, body, "application/yaml")},
         headers=HTML, follow_redirects=True)
     assert response.status_code == 200
+    return response.text
+
+
+def _open_dialog(page: str) -> str:
+    found = re.search(r'<dialog id="templatedialog"\s+open>.*?</dialog>', page, re.S)
+    assert found, "the result did not reopen the dialog"
+    return found.group(0)
+
+
+def test_each_outcome_says_what_happened(client, admin):
+    """Both used to report the bare slug in a green box, so after a removal
+    the name was still sitting in the dialog — read, reasonably, as the
+    template not having gone anywhere."""
+    installed = _open_dialog(_install(client))
+    assert "Installed <code>example-registry.yaml</code>." in installed
+
+    removed = _open_dialog(client.post(
+        "/imports-exports/formats/statement/example-registry/delete",
+        data={"_csrf": _csrf(client)}, headers=HTML, follow_redirects=True).text)
+    assert "Removed <code>example-registry.yaml</code>." in removed
+    assert "Installed" not in removed
+
+
+def test_after_the_last_removal_the_dialog_is_empty_again(client, admin):
+    _install(client)
+
+    removed = _open_dialog(client.post(
+        "/imports-exports/formats/statement/example-registry/delete",
+        data={"_csrf": _csrf(client)}, headers=HTML, follow_redirects=True).text)
+
+    assert "/formats/statement/example-registry.yaml" not in removed, "still listed"
+    assert "No custom templates installed" in removed
 
 
 def test_an_installed_template_offers_download_and_remove(client, admin):

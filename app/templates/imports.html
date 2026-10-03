@@ -210,13 +210,14 @@
    The section this replaces could only install and remove, so a template could
    arrive and be deleted but never leave, which broke the loop the contribution
    flow opens. Download is the missing verb. #}
-<dialog id="templatedialog" {% if installed_error or installed_ok or request.query_params.get('templates') %}open{% endif %}>
+<dialog id="templatedialog" {% if installed_error or installed_ok or removed_ok or request.query_params.get('templates') %}open{% endif %}>
   <h2>Manage templates</h2>
   <p class="note">A template teaches the app one registry's statement layout or
   one broker's CSV columns.</p>
 
   {% if installed_error %}<p class="panel error">{{ installed_error }}</p>{% endif %}
-  {% if installed_ok %}<p class="panel ok">{{ installed_ok }}</p>{% endif %}
+  {% if installed_ok %}<p class="panel ok">Installed <code>{{ installed_ok }}.yaml</code>.</p>{% endif %}
+  {% if removed_ok %}<p class="panel ok">Removed <code>{{ removed_ok }}.yaml</code>.</p>{% endif %}
 
   {% if auth.user.is_admin %}
   <form class="panel" method="post" action="/imports-exports/formats"
@@ -266,9 +267,7 @@
   {% endif %}
   {% endfor %}
   {% else %}
-  <p class="empty">Nothing installed.<br>
-    <span class="sub">The shipped layouts are always available; these are the
-    extras you or somebody else built.</span></p>
+  <p class="empty">No custom templates installed.</p>
   {% endif %}
 
   <div class="commitbar">

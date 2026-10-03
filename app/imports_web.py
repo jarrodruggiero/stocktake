@@ -115,8 +115,10 @@ def imports_page(request: Request):
                      settings.imports.user_dir("statement")),
                  key=lambda x: (x.source != "installed", x.name)),
              "installed_error": request.query_params.get("error"),
-             "installed_ok": (request.query_params.get("installed")
-                              or request.query_params.get("removed"))},
+             # Separate, so each says what happened. One bare slug served
+             # both and a removal read as the template still being there.
+             "installed_ok": request.query_params.get("installed"),
+             "removed_ok": request.query_params.get("removed")},
         )
 
 
