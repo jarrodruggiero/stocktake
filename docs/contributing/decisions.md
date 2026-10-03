@@ -378,7 +378,15 @@ yfinance, calling out, then running a full `gc.collect()`. That thread outlives
 the test that started it, so the failure does not look like a test failure: the
 suite passes while background threads make live calls, and the operating system
 logs crash reports from GC traversing pandas on a stack that is not the main
-one. `conftest._no_network` blocks both that and `providers._get_json`.
+one. `conftest._no_network` blocks that, `providers._get_json`, and yfinance
+itself (`pricefeed._yf`). The last is easy to miss: yfinance's HTTP client is C
+and never touches Python's socket module, and `pricefeed.lookup` reads any
+failure as "not found", so an unstubbed lookup made a real call and passed. The
+stand-in fails the test outright, which `lookup` cannot catch.
+`tools/screenshot.py`, which the visual tests run as a separate process, is
+outside conftest's reach, so it stubs `_kick_feed` itself and asserts at the end
+that yfinance was never imported — it started a real feed run on every visual
+pass until it did.
 
 **54. The performance line is cumulative gain over money in, not a
 time-weighted return.** "Don't count new investments as a gain" first read as

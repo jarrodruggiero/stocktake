@@ -63,6 +63,11 @@ lifecycle.supervision = lambda: lifecycle.Supervision(
     restarts=True, certain=True, platform="Kubernetes",
     detail="Kubernetes starts a replacement immediately.")
 
+# The wizard turns the price feed on, and adding an instrument then kicks a real
+# feed run onto a worker thread — Yahoo, then the fallback providers. The pages
+# need no prices. The same stub conftest puts under every test (decisions.md #53).
+main._kick_feed = lambda: False
+
 client = TestClient(main.app)
 HTML = {"accept": "text/html"}
 CSS = (APP_ROOT / "app" / "static" / "style.css").read_text()
@@ -281,5 +286,9 @@ def render_all() -> None:
 
 if __name__ == "__main__":
     render_all()
+    # A feed run imports yfinance before it fetches anything, so this is the
+    # tell that one started — and with it calls to Yahoo and the fallback
+    # price providers, from every visual run. decisions.md #53.
+    assert "yfinance" not in sys.modules, "rendering the pages started a price feed run"
     print(f"\n{OUT}/ — screenshot them with headless Chrome (see the docstring),"
           f"\nand look at light mode and a narrow window, not just this one.")

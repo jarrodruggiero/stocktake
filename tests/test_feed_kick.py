@@ -46,10 +46,10 @@ def kicks(monkeypatch):
     """Record kicks instead of running the feed, overriding conftest's no-op.
 
     `pricefeed.lookup` is stubbed as well, and has to be: it reaches Yahoo
-    through yfinance rather than through `providers._get_json`, so
-    `conftest._no_network` does not cover it. Left real under `freeze_time`
-    this does not fail — it takes the interpreter down with SIGILL, which
-    reads like a broken test file rather than a live network call.
+    through yfinance, which `conftest._no_network` now fails the test for.
+    Before that guard, left real under `freeze_time` it took the interpreter
+    down with SIGILL, which read like a broken test file rather than a live
+    network call.
     """
     monkeypatch.setattr(
         main_module.pricefeed, "lookup",

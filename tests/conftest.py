@@ -58,7 +58,7 @@ sys.path.insert(0, str(TESTS_DIR))
 import pytest  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
-from app import providers, queries, tenancy  # noqa: E402
+from app import pricefeed, providers, queries, tenancy  # noqa: E402
 from app.models import Portfolio, PortfolioMember, User  # noqa: E402
 from appcore import make_session_factory, upgrade_to_head  # noqa: E402
 from appcore.config import DatabaseSettings  # noqa: E402
@@ -189,6 +189,24 @@ def _restore_settings():
         setattr(live, name, getattr(before, name))
 
 
+class _UnreachableYahoo:
+    """Where yfinance would be, until a test stubs `pricefeed._yf` itself.
+
+    yfinance talks through curl_cffi, which is C and never touches Python's
+    socket module, so this door is the only one to shut. It fails the test
+    rather than raising: `lookup` catches Exception, and a test would otherwise
+    make the real call and pass as if offline.
+    """
+
+    def __getattr__(self, name: str):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        pytest.fail(
+            f"a test tried to reach Yahoo (yfinance.{name}). Stub `pricefeed._yf` "
+            "(see test_pricefeed.stub_yf) or `pricefeed.lookup` instead.",
+            pytrace=False)
+
+
 @pytest.fixture(autouse=True)
 def _no_network(monkeypatch):
     """Nothing in this suite may talk to the internet.
@@ -211,6 +229,7 @@ def _no_network(monkeypatch):
         )
 
     monkeypatch.setattr(providers, "_get_json", _blocked)
+    monkeypatch.setattr(pricefeed, "_yf", _UnreachableYahoo())
 
     # The other way out, and a nastier one: adding an instrument kicks a real
     # feed run onto a worker thread that outlives the test — decisions.md #53.
