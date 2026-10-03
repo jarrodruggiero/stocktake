@@ -133,18 +133,23 @@ auth:
   # something else on the same domain.
   # cookie_name: pf_session
 
-  # Which peers may be believed when they send X-Forwarded-For, as addresses
-  # or CIDR ranges. EMPTY BY DEFAULT, meaning never: anyone can set that
-  # header, so trusting it from an arbitrary peer lets a caller choose their
-  # own identity — defeating lockout, or forging someone else's to lock THEM
-  # out. Set this to your reverse proxy once there is one in front.
+  # Which peers may be believed when they send X-Forwarded-For or
+  # X-Forwarded-Proto, as addresses or CIDR ranges. EMPTY BY DEFAULT, meaning
+  # never: anyone can set those headers, so trusting them from an arbitrary peer
+  # lets a caller choose the address recorded against their sign-ins, or claim
+  # an encrypted connection that is not. Set this to your reverse proxy once
+  # there is one in front: without it, a proxy that terminates TLS makes every
+  # request look like plain HTTP, so the login page warns about it and passkeys
+  # are not offered.
   # trusted_proxies: []
   #   - 10.42.0.0/16
 
-  # Lockout after repeated failures, counted per email address AND source
-  # address together, so one attacker cannot lock everybody out. This covers
-  # the two-factor code stage as well as the password, so a six-digit code
-  # cannot be brute-forced by someone who already has the password.
+  # Lockout after repeated failures, counted per account from every source
+  # address together, so guesses spread across many machines still add up.
+  # Anyone who knows an account's email can therefore keep it locked by
+  # failing on purpose; passkeys and single sign-on are not affected. This
+  # covers the two-factor code stage as well as the password, so a six-digit
+  # code cannot be brute-forced by someone who already has the password.
   # rate_limit:
   #   max_attempts: 8       # failures before the lockout starts
   #   window_minutes: 15    # how long failures are remembered

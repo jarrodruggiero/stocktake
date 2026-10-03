@@ -51,9 +51,10 @@ auth:
   # travel over plain HTTP, and setting this would stop anyone signing in.
   cookieSecure: false
   # Your ingress controller's pod CIDR. Empty means "believe nobody", which is
-  # the safe default: with it unset the app treats the proxy as the client for
-  # everyone, so login lockout becomes global instead of per-address; set it
-  # too wide and a caller can forge their own address to dodge lockout.
+  # the safe default, but with it unset the app cannot tell that TLS terminated
+  # at the controller: the login page warns about plain HTTP, passkeys are not
+  # offered, and every sign-in is recorded against the controller's address. Set
+  # it too wide and a caller can choose the address recorded against their own.
   trustedProxies: []
 
 # Anything here is merged into config.yaml, so any setting the app supports can

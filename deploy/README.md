@@ -59,11 +59,14 @@ financial year today is in, whether a trade is dated in the future — uses the
 configured zone, so leaving it unset puts the app a day behind for most of an
 Australian morning.
 
-**`trusted_proxies` behind a reverse proxy.** Without it the app sees the proxy
-as the client for everybody, so login lockout — which counts per address —
-becomes global: one person locking themselves out locks out everyone. Set it to
-your proxy's address or CIDR and nothing wider, because a caller whose address
-is believed can forge one to dodge lockout entirely.
+**`trusted_proxies` behind a reverse proxy.** It is how the app learns whether
+the connection was encrypted and which address it came from, both of which a
+proxy hides. Without it, a proxy that terminates TLS makes every request look
+like plain HTTP, so the login page warns about plain HTTP when you are not on it
+and passkeys are not offered, and every sign-in is recorded against the proxy's
+address. Lockout counts failures per account, so it does not depend on this. Set
+it to your proxy's address or CIDR and nothing wider, because a caller whose
+address is believed can choose the one recorded against their sign-ins.
 
 **`cookie_secure` once TLS is in front.** Until then the session cookie travels
 in clear. The Helm chart refuses to render an Ingress without it rather than

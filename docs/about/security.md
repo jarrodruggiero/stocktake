@@ -63,7 +63,9 @@ that network. If that matters, put TLS in front of it and set
 `auth.cookie_secure: true` and `auth.trusted_proxies`.
 
 Passkeys and security keys additionally *require* HTTPS — a browser rule, not
-ours. They are offered once `auth.webauthn` names your domain.
+ours. They are offered once `auth.webauthn` names your domain. Behind a proxy
+that terminates TLS they also need `auth.trusted_proxies`, or the app cannot
+tell the connection is encrypted and does not offer them.
 
 A passkey signs you in **on its own**, with no password and no authenticator
 code. That is not a shortcut around the second factor: unlocking one requires a

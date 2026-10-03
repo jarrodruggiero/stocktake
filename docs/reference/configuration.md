@@ -176,13 +176,16 @@ auth:
   # something else on the same domain.
   # cookie_name: pf_session
 
-  # Which peers may be believed when they send X-Forwarded-For, as addresses
-  # or CIDR ranges. EMPTY BY DEFAULT, meaning never: anyone can set that
-  # header, so trusting it from an arbitrary peer lets a caller choose their
-  # own identity — defeating lockout, or forging someone else's to lock THEM
-  # out. Set this to your reverse proxy once there is one in front — the
-  # proxy's own address or range, never the network your browsers are on, or
-  # their claims get believed as if a proxy had written them.
+  # Which peers may be believed when they send X-Forwarded-For or
+  # X-Forwarded-Proto, as addresses or CIDR ranges. EMPTY BY DEFAULT, meaning
+  # never: anyone can set those headers, so trusting them from an arbitrary peer
+  # lets a caller choose the address recorded against their sign-ins, or claim
+  # an encrypted connection that is not. Set this to your reverse proxy once
+  # there is one in front: without it, a proxy that terminates TLS makes every
+  # request look like plain HTTP, so the login page warns about it and passkeys
+  # are not offered. Use the proxy's own address or range, never the network
+  # your browsers are on, or their claims get believed as if a proxy had
+  # written them.
   # trusted_proxies: []
   #   - 10.42.0.0/16
 

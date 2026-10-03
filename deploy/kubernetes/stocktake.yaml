@@ -38,8 +38,9 @@ data:
       # CHANGE ME once TLS terminates in front of this (see the Ingress below).
       cookie_secure: false
       # CHANGE ME to your ingress controller's pod CIDR. Without it the app
-      # sees the controller as the client for everyone, and login lockout —
-      # which counts per address — becomes global rather than per-person.
+      # cannot tell that TLS terminated at the controller: the login page warns
+      # about plain HTTP, passkeys are not offered, and every sign-in is recorded
+      # against the controller's address.
       trusted_proxies: []
 ---
 apiVersion: v1
@@ -149,8 +150,8 @@ spec:
 # Optional. Delete this if you reach the Service another way.
 #
 # If you DO expose it, set `auth.cookie_secure: true` and `auth.trusted_proxies`
-# in the ConfigMap above — otherwise session cookies travel in clear and login
-# lockout counts every visitor as the same person.
+# in the ConfigMap above — otherwise session cookies travel in clear, and the
+# app cannot tell that the connection is encrypted.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

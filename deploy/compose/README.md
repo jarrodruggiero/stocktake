@@ -27,10 +27,11 @@ auth:
     - 172.16.0.0/12            # your proxy, and nothing wider
 ```
 
-`trusted_proxies` matters more than it looks. Without it the app sees the proxy
-as the client for everybody, so login lockout — which counts per address —
-becomes global: one person locking themselves out locks out everyone. Set too
-wide, and a caller can forge their own address to dodge it.
+`trusted_proxies` matters more than it looks. Without it the app cannot tell
+that a TLS-terminating proxy's connection was encrypted: the login page warns
+about plain HTTP when you are not on it, passkeys are not offered, and every
+sign-in is recorded against the proxy's address. Set too wide, and a caller can
+choose the address recorded against their own.
 
 ## Upgrading
 
