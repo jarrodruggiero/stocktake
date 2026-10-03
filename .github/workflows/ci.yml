@@ -194,6 +194,50 @@ jobs:
       - name: Every page at both widths
         run: uv run pytest tests -m visual -q
 
+  hostile:
+    # tests/test_hostile_input.py: every route, every field, values a form
+    # cannot send. Its own job because it is a minute or two of requests, which
+    # would slow every leg of `test`; both backends, because SQLite stores what
+    # Postgres refuses and the test reads the rows back to see it.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: stocktake_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d stocktake_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          enable-cache: true
+          python-version: "3.14"
+
+      - name: Install the project and its dev tools
+        run: uv sync --dev
+
+      - name: Every route, with values a form cannot send (${{ matrix.backend }})
+        env:
+          STOCKTAKE_TEST_DB: ${{ matrix.backend }}
+          PGHOST: localhost
+          PGPORT: 5432
+          PGDATABASE: stocktake_test
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: uv run pytest tests -m hostile -q
+
   # The development channel. `dev` moves with main; releases are tagged and
   # publish `latest` (see release.yml). Two channels rather than two long-lived
   # branches: a `dev` branch would be just as public as this one, so it would
@@ -204,7 +248,7 @@ jobs:
   # always names something that passed the full suite.
   dev:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [lint, test, image, visual]
+    needs: [lint, test, image, visual, hostile]
     runs-on: ubuntu-latest
     permissions:
       contents: read

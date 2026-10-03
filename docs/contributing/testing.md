@@ -173,6 +173,37 @@ something else on the page, a fixture that never creates the state the bug
 would damage, a guard no mutation can reach, and five more. Read it before
 writing a test, not after a mutation survives.
 
+## Every input is walked with hostile values
+
+`tests/test_hostile_input.py` reads every route from the app and sends each
+field, one at a time, values no browser form sends: `NaN`, `1E+999999`, 5000
+characters, a NUL, text that grows when lowercased, markup. The other fields
+hold careful values. It fails on a 500, on anything stored that does not fit
+its column, and on markup echoed back unescaped. It reads the rows back rather
+than trusting the status code, because SQLite stores what Postgres refuses.
+
+When it fails on your change:
+
+- **A new finding** names the route, the field and the value. Fix the code.
+  Never add it to `KNOWN`: that is the list of findings older than the test,
+  and it only shrinks.
+- **"the careful values were refused"**: the route needs something `_typed`
+  does not supply. Add it there. A route a form genuinely cannot drive, such as
+  a passkey ceremony, goes in `NOT_REACHED` with the reason.
+- **"accepted the control first and refused it last"**: the route's own success
+  changes what the next request needs, such as an invite spent or the wizard
+  closed. Add it to `REBUILD`.
+- **A handler that reads `request.form()` or `request.json()` itself** lists
+  its fields in `BY_HAND`, because FastAPI cannot see them.
+- **"no longer happens, so delete it from KNOWN"**: you fixed something. Delete
+  the line.
+
+It takes about a minute and a half on SQLite and two on Postgres, so like the
+visual tests it is deselected by default: run it with `pytest tests -m hostile`,
+on both backends, whenever you add a route or a field. CI runs it as its own
+job. The inventory half, `test_every_route_that_takes_input_is_walked`, is fast
+and runs every time.
+
 ## The visual tests
 
 `tests/test_visual.py` renders every page through `tools/screenshot.py` and

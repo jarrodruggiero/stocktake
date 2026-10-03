@@ -151,11 +151,16 @@ markers = [
     # Layout checks that drive a real headless Chrome over every page twice.
     # Minutes, not seconds, so they are deselected by default below.
     "visual: drives a browser; select with -m visual",
+    # Every route sent values a form cannot send (test_hostile_input.py): about
+    # 8,000 requests, a minute and a half. Deselected by default for the same
+    # reason as the visual tests.
+    "hostile: walks every route with hostile values; select with -m hostile",
 ]
-# Visual tests are opt-in: `pytest tests` should stay a seconds-long loop. CI
-# runs them as their own job with `-m visual`, which overrides this because
-# addopts are prepended and the last -m on the command line wins.
-addopts = ["-m", "not visual"]
+# Visual and hostile-input tests are opt-in: `pytest tests` should stay a
+# short loop. CI runs each as its own job with `-m visual` / `-m hostile`,
+# which overrides this because addopts are prepended and the last -m on the
+# command line wins.
+addopts = ["-m", "not visual and not hostile"]
 filterwarnings = [
     # yfinance/pandas emit deprecation noise we neither cause nor can fix here.
     "ignore::DeprecationWarning:yfinance.*",

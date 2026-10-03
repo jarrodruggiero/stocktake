@@ -32,6 +32,8 @@ names the files to touch and the test to write.
 
 <!-- Delete the lines that do not apply. -->
 
+- [ ] **A new route or form field** — `pytest tests -m hostile` passes on both
+      backends (`docs/contributing/testing.md`)
 - [ ] **A migration** — run against a *populated* database, downgrade included.
       "Works on an empty database" has never been the interesting case
 - [ ] **A new table holding personal data** — added to `SCOPED_MODELS` in
