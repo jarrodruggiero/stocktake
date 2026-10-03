@@ -1177,3 +1177,17 @@ because anyone can post there and a 500 would be a way to cause errors without
 an account. Adding a text field means `textfield.fit` at the route and a test
 that asserts nothing was saved: SQLite cannot show the failure, and CI's
 Postgres run is where it would.
+
+**136. A migration on SQLite runs in one transaction, so a failure leaves
+nothing behind.** pysqlite opens a transaction only before INSERT, UPDATE and
+DELETE, so Alembic ran SQLite's DDL outside one ("Will assume non-transactional
+DDL"). On 2026-10-03, 0010 met a database whose index had an older name: it
+created `api_key_portfolio`, failed to drop the index, and kept the table, so
+every restart failed "already exists" until the database was repaired by hand.
+SQLite can roll DDL back; it was the driver that stopped it. `env.py` now turns
+the driver's transaction handling off, emits BEGIN itself, and tells Alembic
+the DDL is transactional, so a failed upgrade leaves the database at the
+revision it started from and fixing the cause is enough. The cost is that no
+migration may need to run outside a transaction: `PRAGMA foreign_keys` is
+ignored inside one and VACUUM refuses to run, and none of the current ones do
+either.
