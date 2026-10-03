@@ -257,3 +257,54 @@ def test_an_existing_key_keeps_its_portfolio_through_0010(tmp_path: Path):
     conn = sqlite3.connect(path)
     assert conn.execute("SELECT id, portfolio_id FROM api_key").fetchall() == [(1, 2)]
     conn.close()
+
+
+def _tables(path: Path) -> set[str]:
+    conn = sqlite3.connect(path)
+    try:
+        return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    finally:
+        conn.close()
+
+
+def _revision(path: Path) -> list[tuple]:
+    conn = sqlite3.connect(path)
+    try:
+        return conn.execute("SELECT version_num FROM alembic_version").fetchall()
+    finally:
+        conn.close()
+
+
+def test_a_migration_that_fails_part_way_leaves_nothing_behind(tmp_path: Path):
+    """What 0010 did to a real install on 2026-10-03, replayed.
+
+    That database came from an older app and named `api_key`'s index
+    `ix_api_key_portfolio`. 0010 created `api_key_portfolio`, then failed to
+    drop `ix_api_key_portfolio_id`, and Alembic ran SQLite's DDL outside any
+    transaction ("Will assume non-transactional DDL"), so the new table stayed.
+    Every restart then failed on "table already exists", and it took a hand
+    repair. As one transaction the failure leaves the database at 0009, and
+    putting the cause right is all it takes.
+    """
+    path = tmp_path / "older-names.db"
+    cfg = _config(path)
+    command.upgrade(cfg, "0009")
+    conn = sqlite3.connect(path)
+    conn.executescript("DROP INDEX ix_api_key_portfolio_id;"
+                       "CREATE INDEX ix_api_key_portfolio ON api_key (portfolio_id);")
+    conn.close()
+
+    with pytest.raises(Exception, match="ix_api_key_portfolio_id"):
+        command.upgrade(cfg, "head")
+
+    assert "api_key_portfolio" not in _tables(path)
+    assert _revision(path) == [("0009",)]
+
+    conn = sqlite3.connect(path)
+    conn.executescript("DROP INDEX ix_api_key_portfolio;"
+                       "CREATE INDEX ix_api_key_portfolio_id ON api_key (portfolio_id);")
+    conn.close()
+    command.upgrade(cfg, "head")
+
+    assert "api_key_portfolio" in _tables(path)
+    assert _revision(path) != [("0009",)]
