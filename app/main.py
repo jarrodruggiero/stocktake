@@ -2260,6 +2260,9 @@ def login_oidc_callback(request: Request, code: str = "", state: str = "",
             db.delete(attempt)
             db.flush()
         except (federation.FederationError, oidc.OidcError) as exc:
+            # Nothing a refused sign-in started is kept: an account made for an
+            # identity that then could not be linked would have no way in.
+            db.rollback()
             auth.record_attempt(db, "", ip, success=False)
             return _redirect("/login?error=" + quote_plus(str(exc)))
         if user.must_change_password:
@@ -2276,7 +2279,7 @@ def login_oidc_callback(request: Request, code: str = "", state: str = "",
         # the blunter subject-keyed path.
         row = auth.load_session(db, raw, settings)
         row.via_oidc = True
-        row.oidc_sid = identity.session_id
+        row.oidc_sid = federation.session_id(identity)
         db.flush()
         log.info("oidc sign-in for user %s", user.id)
     resp = _redirect(target)

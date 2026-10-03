@@ -535,24 +535,12 @@ def _wipe(session_factory) -> None:
 KNOWN: set[tuple[str, str, str]] = {
     # Postgres refuses any text with a NUL in it, even to look something up;
     # SQLite stores it.
-    ('provider email-a new account', 'email', 'NUL'),
-    ('provider email-a returning identity', 'email', 'NUL'),
-    ('provider name-a new account', 'name', 'NUL'),
-    ('provider sub-a new account', 'sub', 'NUL'),
-    ('provider sub-a returning identity', 'sub', 'NUL'),
     # An id or a number past what its column holds: OverflowError on SQLite,
     # "integer out of range" on Postgres.
     ('POST /charts/save', 'id', 'too big'),
     # Text past its column: a value the app takes from Yahoo or an identity
     # provider, or a field nothing checks.
     ('POST /charts/save', 'template_key', 'too long'),
-    ('POST /holdings/add', 'name', 'too long'),
-    ('POST /trade/new', 'new_name', 'too long'),
-    ('provider email-a new account', 'email', 'too long'),
-    ('provider email-a returning identity', 'email', 'too long'),
-    ('provider name-a new account', 'name', 'too long'),
-    ('provider sub-a new account', 'sub', 'too long'),
-    ('provider sub-a returning identity', 'sub', 'too long'),
     # Anything else that ends in a 500.
     ('GET /export/download', 'fy', 'crash'),
     ('GET /export/download', 'ticker', 'crash'),
@@ -835,11 +823,14 @@ def test_nothing_a_form_cannot_send_breaks_the_app_or_the_database(
 
 
 ISSUER, CLIENT_ID = "https://idp.example.test", "stocktake"
+# The claims the app keeps: a new account's name and email, the link's subject
+# and email, and the provider's session id, kept for back-channel logout.
+CLAIMS = ("name", "email", "sub", "sid")
 
 
 @pytest.mark.hostile
 @pytest.mark.parametrize("returning", [False, True], ids=["a new account", "a returning identity"])
-@pytest.mark.parametrize("claim", ["name", "email", "sub"])
+@pytest.mark.parametrize("claim", CLAIMS)
 def test_what_a_provider_says_fits_too(
         claim, returning, client, session_factory, sandbox, monkeypatch):
     """An identity provider's claims reach the database as a form's fields do:
@@ -891,7 +882,7 @@ def test_every_route_that_takes_input_is_walked():
     keys = {_key(r) for r in ROUTES}
     stale = sorted(set(NOT_REACHED) - keys)
     assert not stale, f"NOT_REACHED names routes that no longer exist: {stale}"
-    cases = keys | {f"provider {c}-{w}" for c in ("name", "email", "sub")
+    cases = keys | {f"provider {c}-{w}" for c in CLAIMS
                     for w in ("a new account", "a returning identity")}
     stale = sorted({r for r, _, _ in KNOWN} - cases)
     assert not stale, f"KNOWN names cases that no longer exist: {stale}"

@@ -23,7 +23,7 @@ from sqlalchemy import func, select
 
 import factories as fac
 from app import pricefeed, queries, tenancy
-from app.models import FxRate, MarketDividend, Price
+from app.models import FxRate, Instrument, MarketDividend, Price
 from app.settings import PriceFeedSettings
 
 BACKFILL = dt.date(2019, 1, 1)
@@ -299,6 +299,16 @@ def test_a_lookup_maps_the_name_and_currency(monkeypatch):
 
     assert found == {"symbol": "ACME.AX", "name": "Acme Industries Ltd",
                      "currency": "AUD", "found": True}
+
+
+def test_a_name_yahoo_gives_is_cut_to_fit_its_column(monkeypatch):
+    """A blank name on a form falls back to Yahoo's, and Yahoo's can be longer
+    than the column. Nobody typed it, so it is cut rather than refused (#131)."""
+    stub_yf(monkeypatch, info={"longName": "N" * 500, "regularMarketPrice": 1.0})
+
+    found = pricefeed.lookup("ACME", "ASX")
+
+    assert found["name"] == "N" * Instrument.name.type.length
 
 
 def test_a_dead_feed_does_not_break_the_add_instrument_form(monkeypatch):

@@ -144,7 +144,11 @@ def lookup(ticker: str, exchange: str) -> dict:
     except Exception as exc:
         log.warning("yahoo lookup failed for %s: %s", symbol, exc)
         return out
-    name = info.get("longName") or info.get("shortName")
+    # Cut to fit here, once, for every caller: a name Yahoo picked is not text
+    # anybody typed, so it is the app's to fit, not to refuse (decisions.md
+    # #131). A blank one on a form falls back to this.
+    name = (info.get("longName") or info.get("shortName") or "").replace("\x00", "")
+    name = name.strip()[:Instrument.name.type.length] or None
     currency = (info.get("currency") or "").upper() or None
     # A quote with neither a name nor a price is Yahoo echoing the symbol back.
     if name or info.get("regularMarketPrice") is not None:
@@ -198,7 +202,7 @@ def backfill_names(session: Session) -> int:
     ).all():
         found = lookup(inst.ticker, inst.exchange)
         if found["name"]:
-            inst.name = found["name"][:80]
+            inst.name = found["name"]
             filled += 1
             log.info("named %s: %s", inst.ticker, inst.name)
             session.commit()  # don't hold the write lock across lookups
