@@ -151,3 +151,19 @@ def test_the_release_check_says_whether_one_exists(tmp_path, listed, gh_exit, ex
     else:
         assert result.returncode == 0, result.stderr
         assert output.read_text().strip() == expected
+
+
+# `owner/repo@<40-hex commit>  # vX.Y.Z`, as Dependabot writes and updates them.
+PINNED = re.compile(r"^\s*-?\s*uses:\s+[\w.-]+/[\w./-]+@[0-9a-f]{40}\s+#\s+v\d+\.\d+\.\d+\s*$")
+
+
+@pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda w: w.name)
+def test_every_action_is_pinned_to_a_commit(workflow: Path):
+    """A tag can be moved to other code by whoever controls the action's
+    repository, and the next run here would run it with this repository's
+    tokens. A commit cannot be moved. Dependabot keeps the pins current, and
+    the comment says which release each one is, so a pin stays reviewable."""
+    loose = [line.strip() for line in workflow.read_text().splitlines()
+             if re.match(r"^\s*-?\s*uses:", line) and not PINNED.match(line)]
+
+    assert not loose, f"{workflow.name} uses actions by tag: {loose}"
