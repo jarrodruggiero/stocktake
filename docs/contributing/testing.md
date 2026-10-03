@@ -136,6 +136,11 @@ Each of these cost someone one:
   not `1.23`.
 - **Fixtures run before the test body.** Anything needing a logged-in user must
   be created after `make_login`, not in a fixture.
+- **Import helpers from another test module, never fixtures.** Functions such
+  as `make_login` and `session_csrf` are fine to import. An imported fixture
+  needs a `noqa` on the import and on every test that takes it, and nothing
+  where it is defined says another file depends on it. Copy it, saying where
+  it came from, or move it to `conftest.py` once three files want it.
 - **The suite must never touch the network.** `conftest._no_network` blocks the
   HTTP helper. Stub it with a canned payload.
 - **Settings priority is env > YAML > constructor kwargs.** Passing kwargs in a
