@@ -43,11 +43,11 @@ everywhere, at once.
 ## Quick start
 
 ```sh
-docker run -d --name stocktake -p 8000:8000 \
+docker run -d --name stocktake -p 8000:8000 --restart unless-stopped \
   -v stocktake-config:/config \
   -v stocktake-data:/data \
   -e TZ=Australia/Melbourne \
-  <image>
+  ghcr.io/jarrodruggiero/stocktake:latest
 ```
 
 Then open `http://localhost:8000`. There is nothing to configure first: with no

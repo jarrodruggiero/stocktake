@@ -17,8 +17,8 @@ change something by hand than through the admin page.
 
 Nothing here terminates TLS, and the app will not pretend otherwise. Put a
 reverse proxy in front (Caddy, Traefik, nginx). The wizard's **Environment**
-step asks for the HTTPS URL and sets both of the settings below for you; to do
-it by hand afterwards, in `config.yaml`:
+step asks for the HTTPS URL and your proxy's address, and sets the two settings
+below from them; to do it by hand afterwards, in `config.yaml`:
 
 ```yaml
 auth:
@@ -45,12 +45,15 @@ roll forward, and rolling an image back after one has run is not supported.
 ## Backups
 
 ```sh
-docker compose exec app sh -c 'sqlite3 /data/stocktake.db ".backup /data/backup.db"'
+# Python's sqlite3 module: the image has no sqlite3 command.
+docker compose exec app python -c "import sqlite3; sqlite3.connect('/data/stocktake.db').backup(sqlite3.connect('/data/backup.db'))"
 docker compose cp app:/data/backup.db ./stocktake-backup.db
+docker compose cp app:/config/config.yaml ./stocktake-config.yaml
 ```
 
-That file is the entire application state. Restore by putting it back as
-`/data/stocktake.db`. Test the restore — an untested backup is a hope.
+Those two files are the entire application state. Restore them with the app
+stopped, as `/data/stocktake.db` and `/config/config.yaml`. Test the restore —
+an untested backup is a hope.
 
 ## Useful commands
 

@@ -9,9 +9,9 @@
 #
 # To submit it: fork IceWhaleTech/CasaOS-AppStore, add
 # Apps/Stocktake/docker-compose.yml plus icon.svg, thumbnail.png and at least
-# one screenshot, and open a pull request. The `icon`/`screenshot_link` URLs
-# below must resolve before that will be accepted — they land with the branding
-# work.
+# one screenshot, and open a pull request. Every URL below must resolve before
+# that will be accepted: `icon` does, but `screenshot_link` names
+# docs/assets/screenshot-dashboard.png, which does not exist yet.
 name: stocktake
 services:
   stocktake:
@@ -113,5 +113,5 @@ x-casaos:
   project_url: https://github.com/jarrodruggiero/stocktake
   website: https://github.com/jarrodruggiero/stocktake
   repo: https://github.com/jarrodruggiero/stocktake
-  support: https://github.com/jarrodruggiero/stocktake/discussions
+  support: https://github.com/jarrodruggiero/stocktake/issues
   docs: https://jarrodruggiero.github.io/stocktake

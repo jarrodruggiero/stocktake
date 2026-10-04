@@ -1,7 +1,8 @@
 # Deployment
 
-Four ways in. All run the same image and need the same two things: a config
-file, and somewhere to write.
+Four ways in, plus [NAS platforms](nas.md), most of which take the Compose file.
+All run the same image and need somewhere to write. The config file is yours on
+Kubernetes; everywhere else the setup wizard writes it.
 
 | Path | For | Database |
 | --- | --- | --- |
@@ -65,8 +66,9 @@ docker compose up -d
 Open <http://localhost:8000> and the [setup wizard](../getting-started/index.md)
 takes it from there — no configuration file has to exist first.
 
-`config.yaml` beside the compose file is the annotated default, mounted at
-`/config/config.yaml`. Every setting and its default is in the
+The wizard writes `config.yaml` to the `stocktake-config` volume, mounted at
+`/config`. The `config.yaml` beside the compose file is the annotated default,
+there to read rather than mounted; every setting and its default is also in the
 [configuration reference](../reference/configuration.md).
 
 ```sh
@@ -78,11 +80,14 @@ docker compose exec app python -m app.recover --list # locked out
 ### Backing up
 
 ```sh
-docker compose exec app sh -c 'sqlite3 /data/stocktake.db ".backup /data/backup.db"'
+# Python's sqlite3 module: the image has no sqlite3 command.
+docker compose exec app python -c "import sqlite3; sqlite3.connect('/data/stocktake.db').backup(sqlite3.connect('/data/backup.db'))"
 docker compose cp app:/data/backup.db ./stocktake-backup.db
+docker compose cp app:/config/config.yaml ./stocktake-config.yaml
 ```
 
-That file is the entire application state. Restore it as `/data/stocktake.db`.
+Those two files are the entire application state. Restore them with the app
+stopped, as `/data/stocktake.db` and `/config/config.yaml`.
 
 ---
 
@@ -93,13 +98,14 @@ One file, five resources, no Helm:
 
 ```sh
 kubectl create namespace stocktake
-# edit the four CHANGE ME markers first
+# edit the six CHANGE ME markers first
 kubectl apply -f deploy/kubernetes/stocktake.yaml
 kubectl -n stocktake rollout status deploy/stocktake
 ```
 
-The markers are: the image, the timezone (twice — config and the `TZ`
-environment variable), `trusted_proxies`, and the Ingress host. Delete the
+The markers are: the timezone (twice — config and the `TZ` environment
+variable), `cookie_secure` and `trusted_proxies` for when TLS is in front, the
+StorageClass if your cluster has no default, and the Ingress host. Delete the
 Ingress if you reach the Service another way.
 
 !!! warning "`strategy: Recreate` is not a preference"
@@ -161,9 +167,11 @@ not take your portfolio with it.
 
 ## Helm with Postgres
 
-Choose Postgres when you want more than one replica, expect a background writer
-concurrent with user writes, or already run one and would rather keep
-everything in it. Otherwise SQLite is simpler and enough.
+Choose Postgres when you already run one and would rather keep everything in
+it. Otherwise SQLite is simpler and enough. It is still **one replica**: the
+import preview, the statement mapper and the price feed each live in the one
+process, so a second replica would lose an import whose preview and commit
+reached different pods.
 
 **The chart ships no bundled Postgres, on purpose.** A database that appears
 and disappears with `helm uninstall` is a way to lose your data. Point it at
@@ -245,6 +253,8 @@ What it does have is a `/metrics` endpoint, **off by default**:
 metrics:
   enabled: true
 ```
+
+With the Helm chart, that goes under `extraConfig`.
 
 It publishes the app's own health — when prices were last fetched, whether the
 last fetch worked, whether the database answers — and deliberately nothing about

@@ -10,7 +10,7 @@ services:
     image: ghcr.io/jarrodruggiero/stocktake:latest   # or build: below
     # build:
     #   context: ../..
-    #   dockerfile: apps/stocktake/Dockerfile
+    #   dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "8000:8000"
