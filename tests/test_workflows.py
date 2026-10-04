@@ -118,6 +118,24 @@ def test_a_release_written_by_hand_keeps_its_notes():
         assert writer.get("if") == "steps.existing.outputs.found == 'false'", writer
 
 
+def test_the_release_verifies_the_commit_it_publishes():
+    """Every job checks out the same commit, on a tag push and on a manual run.
+
+    A manual run starts from the default branch and names its tag in
+    `inputs.tag`. `verify` checked out without a `ref`, so a manual run tested
+    the default branch and then published the tag. Its tests had never run on
+    what it published, which is the one thing `verify` is there to prevent.
+    """
+    refs = {}
+    for job_name, step in _steps(RELEASE):
+        if str(step.get("uses", "")).startswith("actions/checkout@"):
+            refs.setdefault(job_name, []).append((step.get("with") or {}).get("ref"))
+
+    assert {"verify", "publish"} <= set(refs), refs
+    assert all(ref == "${{ inputs.tag || github.ref }}"
+               for job in refs.values() for ref in job), refs
+
+
 @pytest.mark.parametrize("listed, gh_exit, expected", [
     ("https://github.com/o/r/releases/tag/v1.0.0", 0, "found=true"),
     ("", 0, "found=false"),
