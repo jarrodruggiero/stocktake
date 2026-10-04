@@ -1,6 +1,6 @@
 [project]
 name = "stocktake"
-version = "0.64.0"
+dynamic = ["version"]   # the release's tag; see [tool.hatch.version]
 description = "Share portfolio tracker — performance, dividends, AU tax"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -39,6 +39,11 @@ Documentation = "https://jarrodruggiero.github.io/stocktake"
 Source = "https://github.com/jarrodruggiero/stocktake"
 Issues = "https://github.com/jarrodruggiero/stocktake/issues"
 
+[tool.uv]
+# Rebuild the project when the tag or commit moves, not only when this file
+# does, or an install made before a release goes on naming the version before.
+cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
+
 [tool.uv.sources]
 # Pinned to a revision rather than tracking a branch: nothing here changes
 # because somebody pushed to appcore. Moving the pin is a deliberate act, and
@@ -47,8 +52,17 @@ Issues = "https://github.com/jarrodruggiero/stocktake/issues"
 appcore = { git = "https://github.com/jarrodruggiero/appcore", rev = "3638b61ef2d2abe345d46156da646d484bf3d1f8" }
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+# The version is read from the git tag, so the tag is the only place a release
+# number is written: one kept here by hand said 0.64.0 for five releases
+# (decisions.md #137). A tree with no git history, such as a source zip,
+# installs as 0.0.0 rather than failing. Nothing in the app reads it, and the
+# image never builds the project (`--no-install-project`).
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]

@@ -113,11 +113,14 @@ Ingress if you reach the Service another way.
 ## Helm
 
 ```sh
-helm install stocktake ./deploy/helm/stocktake \
+helm install stocktake oci://ghcr.io/jarrodruggiero/charts/stocktake \
   --namespace stocktake --create-namespace \
-  --set image.repository=ghcr.io/jarrodruggiero/stocktake \
   --set timezone=Australia/Melbourne
 ```
+
+Each release publishes the chart with the same version as the app, and the
+chart runs that release's image. Without `--version` Helm takes the newest;
+add `--version 0.67.2` to choose one.
 
 Defaults give you SQLite on a 2 GiB PersistentVolume, which is the right choice
 for almost everyone.
@@ -170,7 +173,7 @@ one you run and back up.
 kubectl -n stocktake create secret generic stocktake-db \
   --from-literal=password='...'
 
-helm install stocktake ./deploy/helm/stocktake \
+helm install stocktake oci://ghcr.io/jarrodruggiero/charts/stocktake \
   --namespace stocktake \
   --set database.type=postgres \
   --set database.postgres.host=postgres.databases.svc \
@@ -199,6 +202,20 @@ run is not a supported path.
 outright — a typo should be loud, not silently ignored — which also means a
 config written for a newer version is refused by an older one, and vice versa.
 Move them together, in one apply.
+
+**Installed the Helm chart from a clone of this repository before 0.67.2?** It
+ran 0.64.0 however many times you upgraded, unless you set `image.tag`: the
+chart picked its image from a version number nobody had updated. Back up, then
+move to the published chart with the values you installed with:
+
+```sh
+helm upgrade stocktake oci://ghcr.io/jarrodruggiero/charts/stocktake \
+  --namespace stocktake -f your-values.yaml
+```
+
+The release and its data volume carry over; the image moves to the newest
+release, which migrates the database as it starts. The chart in the repository
+now refuses to install without `image.tag` instead of guessing.
 
 ## Reverse proxies
 

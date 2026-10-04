@@ -1569,7 +1569,6 @@ wheels = [
 
 [[package]]
 name = "stocktake"
-version = "0.64.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },

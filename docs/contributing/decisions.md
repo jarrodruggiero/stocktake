@@ -1252,3 +1252,16 @@ revision it started from and fixing the cause is enough. The cost is that no
 migration may need to run outside a transaction: `PRAGMA foreign_keys` is
 ignored inside one and VACUUM refuses to run, and none of the current ones do
 either.
+
+**137. The release's tag is the only place a version is written.** The Helm
+chart picks the image it runs from its `appVersion`, which was kept by hand in
+Chart.yaml. It said 0.64.0 for every release from 0.64.0 to 0.67.1, so every
+Helm install ran 0.64.0 however often it was upgraded, without the fixes four
+advisories told people to upgrade for. `pyproject.toml` said 0.64.0 beside it,
+and the test comparing the two passed because neither had moved. Now the
+release packages the chart with the tag as its version and appVersion and
+pushes it to ghcr.io, and the project reads its version from the tag through
+hatch-vcs. The chart in the repository names no release and refuses to render
+without `image.tag`, rather than run an image it was not given. A release
+needs no commit beforehand; the cost is that the chart is installed from the
+registry, not from a clone.

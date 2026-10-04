@@ -11,7 +11,7 @@ covers the image push to ghcr.io.
 | File | Does |
 | --- | --- |
 | `workflows/ci.yml` | ruff, then pytest on SQLite **and** Postgres, then build the image and run the suite inside it — and on a push to main, publish `dev` |
-| `workflows/release.yml` | on a `v*` tag: re-verify, then push a multi-arch (amd64 + arm64) image to ghcr.io and open a Release |
+| `workflows/release.yml` | on a `v*` tag: re-verify, then push a multi-arch (amd64 + arm64) image and the Helm chart to ghcr.io and open a Release |
 | `workflows/docs.yml` | publish `docs/` to GitHub Pages |
 | `dependabot.yml` | weekly pip updates (grouped), monthly actions and Docker |
 
@@ -48,6 +48,12 @@ ships from — including OCR, which skips on a runner without Tesseract.
 A prerelease tag (`v1.0.0-rc1`) publishes its own version and **leaves `latest`
 alone** — that is `flavor: latest=auto` in release.yml, and the reason it is not
 `latest=true`.
+
+**The tag is the version, and nothing in the tree is.** The release packages
+the Helm chart with the tag as its version and its `appVersion`, which picks
+the image it runs, and the project reads its version from the tag through
+hatch-vcs. So a release needs no commit first, and there is no number to forget:
+one kept by hand in Chart.yaml said 0.64.0 for five releases (decisions.md #137).
 
 There is deliberately no long-lived `dev` branch. It would be exactly as public
 as `main`, so it would relocate the noisy history rather than remove it. What

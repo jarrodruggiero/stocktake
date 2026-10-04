@@ -271,28 +271,6 @@ def test_what_it_boots_into_is_a_working_app(monkeypatch):
     assert settings.imports.max_upload_mb == 10
 
 
-def test_the_helm_chart_declares_the_version_this_release_is():
-    """Chart.yaml's appVersion must equal the app's version.
-
-    values.yaml ships `tag: ""`, which the deployment resolves to
-    .Chart.AppVersion — so an appVersion left behind at the previous release
-    does not fail, it quietly deploys the OLD image to everybody using the
-    chart. Nothing in the release workflow bumps this, so the check has to be
-    here.
-    """
-    import tomllib
-    from pathlib import Path
-
-    from ruamel.yaml import YAML
-
-    root = Path(__file__).resolve().parent.parent
-    version = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
-    chart = YAML(typ="safe").load((root / "deploy/helm/stocktake/Chart.yaml").read_text())
-    assert str(chart["appVersion"]) == version, (
-        f"Chart.yaml appVersion is {chart['appVersion']!r} but the app is "
-        f"{version!r} — bump it with the release")
-
-
 def test_the_compose_copy_of_the_config_has_not_drifted():
     """deploy/compose/config.yaml must be the same file as the shipped default.
 

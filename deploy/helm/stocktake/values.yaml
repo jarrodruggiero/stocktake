@@ -4,7 +4,7 @@
 
 image:
   repository: ghcr.io/jarrodruggiero/stocktake
-  tag: ""            # defaults to .Chart.AppVersion
+  tag: ""            # defaults to the release the chart was published with
   pullPolicy: IfNotPresent
 
 # Every date decision — which financial year today is in, whether a trade is in

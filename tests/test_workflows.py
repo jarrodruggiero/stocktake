@@ -177,3 +177,54 @@ def test_every_action_is_pinned_to_a_commit(workflow: Path):
                               text, re.M)]
 
     assert not loose, f"{workflow.name} uses actions by tag: {loose}"
+
+
+def _flag(args: list[str], name: str) -> str | None:
+    return args[args.index(name) + 1] if name in args else None
+
+
+def test_the_release_publishes_the_chart_at_the_tags_version(tmp_path):
+    """The chart is packaged with the tag's version, after the image it names.
+
+    Its appVersion was a number kept by hand in Chart.yaml, and it said 0.64.0
+    for five releases: every Helm install ran 0.64.0. decisions.md #137.
+    """
+    steps = [step for _job, step in _steps(RELEASE)]
+    chart = next((s for s in steps if s.get("id") == "chart"), None)
+    assert chart is not None, "release.yml does not publish the Helm chart"
+    image = next(i for i, s in enumerate(steps)
+                 if str(s.get("uses", "")).startswith("docker/build-push-action"))
+    version = next(i for i, s in enumerate(steps) if s.get("id") == "version")
+    # A chart published before its image fails every install until the image
+    # arrives, and for good if the image push then fails.
+    assert steps.index(chart) > max(image, version)
+    assert chart.get("env") == {
+        "VERSION": "${{ steps.version.outputs.number }}",
+        "OWNER": "${{ github.repository_owner }}",
+        "ACTOR": "${{ github.actor }}",
+        "TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+    }
+
+    fake = tmp_path / "helm"
+    fake.write_text("#!/bin/sh\n"
+                    f"printf '%s\\n' \"$*\" >> {tmp_path}/calls\n"
+                    f'[ "$1" = registry ] && cat > {tmp_path}/stdin\n'
+                    "exit 0\n")
+    fake.chmod(0o755)
+    result = subprocess.run(
+        ["bash", "-e", "-c", chart["run"]], capture_output=True, text=True,
+        stdin=subprocess.DEVNULL,
+        env={"PATH": f"{tmp_path}:{os.environ['PATH']}", "RUNNER_TEMP": str(tmp_path),
+             "VERSION": "1.2.3", "OWNER": "o", "ACTOR": "a", "TOKEN": "t"})
+    assert result.returncode == 0, result.stderr
+
+    calls = [line.split() for line in (tmp_path / "calls").read_text().splitlines()]
+    package = next(c for c in calls if c[0] == "package")
+    assert package[1] == "deploy/helm/stocktake"
+    assert _flag(package, "--version") == "1.2.3"
+    assert _flag(package, "--app-version") == "1.2.3"
+    assert ["push", f"{tmp_path}/stocktake-1.2.3.tgz", "oci://ghcr.io/o/charts"] in calls
+    login = next(c for c in calls if c[:2] == ["registry", "login"])
+    # The token on stdin, never in the arguments, where a process list shows it.
+    assert "t" not in login and (tmp_path / "stdin").read_text() == "t"
+    assert calls.index(login) < calls.index(next(c for c in calls if c[0] == "push"))
