@@ -47,7 +47,12 @@ jobs:
       matrix:
         backend: [sqlite, postgres]
     steps:
+      # The commit `publish` builds, on a manual run too. A manual run starts
+      # from the default branch, so without `ref` this tested main and then
+      # published the tag.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
