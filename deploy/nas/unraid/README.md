@@ -50,16 +50,17 @@ restore.
 
 ## Submitting to Community Applications
 
-**Not done yet — it needs the public repo first.** When it exists:
+**Not done yet.** What CA asks for:
 
-1. The repo must be **public**, active, and carry an **OSI-approved licence**
-   (AGPL-3.0 qualifies).
+1. The repo must be **public**, active, and carry an **OSI-approved licence**.
+   It is public, under AGPL-3.0, which qualifies.
 2. `ca_profile.xml` must be present **at the repository root** with the
    maintainer details filled in.
 3. The `Icon` URL must resolve — it points at `docs/assets/icon.png` on the
    default branch, so the file has to be committed, not just rendered locally.
    Check `TemplateURL` still matches this file's path if either has moved.
-4. Point `Support` at a real destination (GitHub Discussions is fine; some
-   maintainers use an Unraid forum thread).
+4. `Support` must point at a real destination. It is the repository's issues,
+   because Discussions are off; an Unraid forum thread is the other common
+   choice.
 5. Submit the repository at <https://ca.unraid.net/submit/new> — sign in with
    an Unraid account, give the GitHub URL, address anything the review flags.

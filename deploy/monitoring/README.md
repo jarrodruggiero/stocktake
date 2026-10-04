@@ -37,7 +37,8 @@ metrics:
   enabled: true
 ```
 
-Restart the app and check it:
+With the Helm chart, that goes under `extraConfig`. Restart the app and check
+it:
 
 ```sh
 curl http://stocktake.example.com/metrics
@@ -71,7 +72,8 @@ A scrape config for the plain case:
     - targets: ["stocktake.example.com:8000"]
 ```
 
-On Kubernetes, if you scrape by pod annotation:
+On Kubernetes, if you scrape by pod annotation (the plain manifest; the Helm
+chart has no value for pod annotations, so scrape its Service instead):
 
 ```yaml
 annotations:
@@ -80,8 +82,9 @@ annotations:
   prometheus.io/path: "/metrics"
 ```
 
-The rules use `job="stocktake"` in one place (`StocktakeMetricsTargetDown`).
-Rename it to match your job.
+The rules use `job="stocktake"` in one place (`StocktakeMetricsTargetDown`),
+and the Kubernetes group matches `namespace="stocktake"`. Rename them to match
+your job and namespace.
 
 ### 2. Optional: a blackbox exporter, for the availability group
 
@@ -125,7 +128,7 @@ Probe the root path, not `/healthz` — `/healthz` and `/readyz` are public by
 design (a liveness probe cannot log in), so they prove the process is running
 and say nothing about whether the gate in front of everything else is shut.
 
-One caveat worth knowing: a request that asks for HTML gets a **302 to the login
+One caveat worth knowing: a request that asks for HTML gets a **303 to the login
 page** rather than a 401, because sending a browser a bare "401" instead of a
 sign-in form is a bad experience. Blackbox does not send `Accept: text/html`, so
 it gets the 401 — but if you build your own probe and set that header, expect

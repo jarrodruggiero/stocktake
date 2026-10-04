@@ -42,7 +42,7 @@
   <MyIP/>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/jarrodruggiero/stocktake/discussions</Support>
+  <Support>https://github.com/jarrodruggiero/stocktake/issues</Support>
   <Project>https://github.com/jarrodruggiero/stocktake</Project>
   <Overview>
     A self-hosted share portfolio tracker, built for Australian investors.

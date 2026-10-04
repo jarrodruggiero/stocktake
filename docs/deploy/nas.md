@@ -39,7 +39,8 @@ TrueNAS moved from Kubernetes to Docker in 24.10 "Electric Eel", so current
 versions take a Compose file directly.
 
 **Apps → Discover Apps → ⋮ → Install via YAML**, name it `stocktake`, and paste
-`deploy/compose/docker-compose.yml`. Change the image and `TZ` before saving.
+`deploy/compose/docker-compose.yml`. Change `TZ` to your own timezone before
+saving.
 
 The Compose file uses Docker named volumes, which TrueNAS manages and which
 arrive with the right ownership. To keep the data on a dataset you can snapshot
@@ -108,7 +109,8 @@ Two caveats, from Proxmox rather than from this app:
 - It is a **tech preview** in 9.1 — no live migration, and updating means
   recreating the container rather than swapping the image.
 - The console shows the main process's output, not a shell. `pct enter <vmid>`
-  gets you one, which is where you would run `python -m app.recover`.
+  gets you one, without the image's working directory or `PATH`, so run the
+  recovery tool as `cd /srv/stocktake && .venv/bin/python -m app.recover`.
 
 ### Before 9.1
 

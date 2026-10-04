@@ -144,8 +144,9 @@ Two caveats from the Proxmox side, worth knowing before you commit to it:
 - **It is a tech preview** at 9.1. Live migration is unsupported, and updating
   means recreating the container rather than swapping the image.
 - The console shows the main process's output rather than a shell. Use
-  `pct enter <vmid>` when you need one — which is where you would run
-  `python -m app.recover`.
+  `pct enter <vmid>` when you need one. It does not carry the image's working
+  directory or `PATH`, so run the recovery tool as
+  `cd /srv/stocktake && .venv/bin/python -m app.recover`.
 
 **On older Proxmox**, run an ordinary Debian LXC or VM with Docker inside it
 and follow the [Compose instructions](../compose/README.md). Nesting must be

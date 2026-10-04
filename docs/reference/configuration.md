@@ -95,8 +95,10 @@ database:
   # sqlite (default) or postgres.
   #
   # SQLite needs nothing else running and is the right choice for one
-  # household. Postgres is worth it for concurrent writers, more than one
-  # replica, or a database into the gigabytes.
+  # household. Postgres is worth it if you already run one, for many people
+  # writing at once, or for a database into the gigabytes. Either way the app
+  # runs as one replica: the import preview, the statement mapper and the price
+  # feed each live in its one process.
   type: sqlite
 
   # Where the SQLite file lives. MUST be on a mounted volume that survives a

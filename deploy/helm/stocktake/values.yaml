@@ -15,9 +15,9 @@ timezone: Australia/Melbourne
 database:
   # sqlite | postgres
   #
-  # SQLite unless you need otherwise. Choose postgres when you want more than
-  # one replica, expect a background writer concurrent with user writes, or
-  # already run Postgres and would rather keep everything in it.
+  # SQLite unless you need otherwise. Choose postgres when you already run it
+  # and would rather keep everything in it. It is still one replica: the import
+  # preview, the statement mapper and the price feed each live in the one pod.
   #
   # There is no bundled Postgres subchart on purpose: a database that appears
   # and disappears with `helm uninstall` is a way to lose your data. Point this

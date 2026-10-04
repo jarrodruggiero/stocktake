@@ -48,9 +48,10 @@ does not own, so it exits non-zero and retries forever.
 **SQLite, unless you know you need otherwise.** One file, nothing else to run,
 backed up by copying it. A personal portfolio is a few thousand rows.
 
-**Postgres** if you want more than one replica, expect a background writer
-concurrent with user writes, or already run one and would rather keep
-everything in it.
+**Postgres** if you already run one and would rather keep everything in it.
+Either way the app runs as **one replica**: the import preview, the statement
+mapper and the price feed each live in its one process, so a second replica
+would lose an import whose preview and commit reached different pods.
 
 The Helm chart deliberately ships **no bundled Postgres**. A database that
 appears and disappears with `helm uninstall` is a way to lose your data — point
@@ -97,7 +98,9 @@ newer version is refused by an older one. Move them together.
 
 ## Backups
 
-The database is the entire application state. Nothing else needs preserving,
-and there is no external service holding anything.
+The database and `config.yaml` are the entire application state, and there is
+no external service holding anything. On Kubernetes the config is your manifest
+or values; under Compose and on a NAS the wizard wrote it, so back it up with
+the database.
 
 Test the restore. An untested backup is a hope.
