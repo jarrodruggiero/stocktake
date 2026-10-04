@@ -2,9 +2,10 @@ apiVersion: v2
 name: stocktake
 description: A self-hosted share portfolio tracker, built for Australian investors
 type: application
-version: 0.1.0
-# The application version this chart deploys. Track it with each release.
-appVersion: "0.64.0"
+# The release packages this chart with its tag as both the chart's version and
+# the appVersion, which picks the image it runs. Neither is kept here: a number
+# kept by hand said 0.64.0 for five releases (decisions.md #137).
+version: 0.0.0
 home: https://github.com/jarrodruggiero/stocktake
 icon: https://raw.githubusercontent.com/jarrodruggiero/stocktake/main/docs/assets/icon.png
 sources:

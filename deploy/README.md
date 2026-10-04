@@ -10,6 +10,10 @@ Several ways in, in order of how much you already run.
 | [`helm/stocktake/`](helm/stocktake/) | A cluster, with Helm | SQLite (default) |
 | [`helm/stocktake/`](helm/stocktake/) + values | A cluster, sharing your Postgres | Postgres |
 
+The Helm chart is published with each release as
+`oci://ghcr.io/jarrodruggiero/charts/stocktake`, at the app's version;
+`helm/stocktake/` is its source, and names no release until one is packaged.
+
 **All of them run the same image.** No platform gets a variant, and nothing
 here needs building per-NAS — the differences are entirely in how each one
 takes a container definition. Most take the Compose file unchanged.

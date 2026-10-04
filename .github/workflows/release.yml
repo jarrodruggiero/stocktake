@@ -1,5 +1,5 @@
-# Publish a multi-arch image to GitHub Container Registry when a version tag
-# is pushed, and open a GitHub Release for it.
+# Publish a multi-arch image and the Helm chart to GitHub Container Registry
+# when a version tag is pushed, and open a GitHub Release for it.
 #
 # Public-repo workflow: GitHub-hosted runners, ghcr.io, and the token GitHub
 # issues to the job itself. No registry credentials to manage, and nothing
@@ -23,7 +23,7 @@ on:
 
 permissions:
   contents: write   # create the Release
-  packages: write   # push to ghcr.io
+  packages: write   # push the image and the chart to ghcr.io
 
 jobs:
   # Never publish an image whose tests do not pass, even though CI has usually
@@ -128,6 +128,26 @@ jobs:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: echo "number=${TAG#v}" >> "$GITHUB_OUTPUT"
 
+      # The tag is the chart's version and its appVersion, which picks the
+      # image an install runs. Neither is kept in Chart.yaml: a number kept by
+      # hand said 0.64.0 for five releases (decisions.md #137). After the image,
+      # so the chart never names one that is not there. Helm comes with the
+      # runner; `helm version` records which one in the log.
+      - name: Publish the Helm chart
+        id: chart
+        env:
+          VERSION: ${{ steps.version.outputs.number }}
+          OWNER: ${{ github.repository_owner }}
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          helm version
+          helm package deploy/helm/stocktake --version "$VERSION" \
+            --app-version "$VERSION" --destination "$RUNNER_TEMP"
+          printf '%s' "$TOKEN" |
+            helm registry login ghcr.io --username "$ACTOR" --password-stdin
+          helm push "$RUNNER_TEMP/stocktake-$VERSION.tgz" "oci://ghcr.io/$OWNER/charts"
+
       # The step below replaces an existing release's notes, so it runs only
       # when there is no release for this tag, drafts included. An API failure
       # stops the job rather than reading as "none". decisions.md #129.
@@ -156,6 +176,10 @@ jobs:
             Container image:
 
                 docker pull ghcr.io/${{ github.repository }}:${{ steps.version.outputs.number }}
+
+            Helm chart:
+
+                helm install stocktake oci://ghcr.io/${{ github.repository_owner }}/charts/stocktake --version ${{ steps.version.outputs.number }}
 
             See the README for the docker-compose and Helm quickstarts.
 
