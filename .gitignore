@@ -24,3 +24,4 @@ shots/
 # Planning notes are local: a public repository should not carry an internal
 # list. Read it in the working directory.
 TODO.md
+.hypothesis/
