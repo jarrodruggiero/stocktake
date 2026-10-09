@@ -176,7 +176,7 @@ def test_a_passkey_does_not_stop_at_the_code_step(secure, session_factory):
     assert secure.get("/", headers=HTML, follow_redirects=False).status_code == 200
 
 
-def test_an_unregistered_key_is_refused_without_saying_why(secure, session_factory):
+def test_an_unregistered_key_is_refused(secure, session_factory):
     make_login(secure, session_factory)
     _add_passkey(secure, session_factory)
     secure.post("/logout", data={"_csrf": session_csrf(session_factory)},
@@ -187,7 +187,31 @@ def test_an_unregistered_key_is_refused_without_saying_why(secure, session_facto
     resp = _sign_in_with(secure, stranger)
 
     assert resp.status_code == 400
+    assert resp.json() == {"error": "That passkey is not registered here."}
     assert secure.get("/", headers=HTML, follow_redirects=False).status_code == 303
+
+
+def test_a_registration_that_does_not_verify_says_so_in_the_apps_words(
+        secure, session_factory, caplog):
+    """The library's own reason stays in the log, where whoever runs the
+    install can read it. The person adding a key gets one sentence: an
+    exception's text is not written for them, and CodeQL flags it reaching a
+    page for that reason."""
+    make_login(secure, session_factory)
+    csrf = session_csrf(session_factory)
+    options = secure.post("/profile/passkeys/options", data={"_csrf": csrf}).json()
+    attestation = VerifyingDevice().create(_for_device(json.dumps(options["options"])),
+                                           "https://elsewhere.example.test")
+    with caplog.at_level("WARNING"):
+        resp = secure.post("/profile/passkeys", follow_redirects=False, data={
+            "_csrf": csrf, "token": options["token"],
+            "credential": _as_json(attestation), "name": "My phone"})
+
+    assert resp.headers["location"] == (
+        "/profile/passkeys?error=That+passkey+could+not+be+registered.")
+    assert "elsewhere.example.test" in caplog.text
+    with session_factory() as db:
+        assert db.scalar(select(WebauthnCredential)) is None
 
 
 # --------------------------------------------------------------------------- #
