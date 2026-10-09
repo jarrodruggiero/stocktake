@@ -126,6 +126,7 @@ def acme(client, session_factory):
     with session_factory() as s:
         bind_to_only_portfolio(s)
         inst = fac.make_instrument(s, "ACME", asset_class="share")
+        fac.hold(s, inst)
         s.commit()
         return inst.id
 
@@ -209,7 +210,8 @@ def test_the_holding_preferences_are_checked_and_nothing_moves(
     assert resp.status_code == 400
     assert message in resp.text
     with reading(session_factory) as s:
-        assert s.scalars(select(HoldingPref)).all() == []
+        # The setting it already had, untouched.
+        assert [p.note for p in s.scalars(select(HoldingPref))] == [None]
         assert s.get(Instrument, acme).yahoo_symbol != "y" * 21
 
 

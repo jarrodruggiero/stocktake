@@ -81,8 +81,8 @@ def test_the_form_fills_the_brokerage_from_the_portfolios_fees(
         portfolio.brokerage_flat, portfolio.brokerage_percent = 5, 0.1
         portfolio.foreign_brokerage_percent = 0.11
         portfolio.foreign_brokerage_minimum = 14.95
-        fac.make_instrument(s, "ACME")
-        fac.make_instrument(s, "ZULU", exchange="NASDAQ", currency="USD")
+        fac.hold(s, fac.make_instrument(s, "ACME"))
+        fac.hold(s, fac.make_instrument(s, "ZULU", exchange="NASDAQ", currency="USD"))
         s.commit()
     page = client.get("/", headers=HTML)
     target = tmp_path / "dashboard.html"

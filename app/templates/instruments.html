@@ -17,19 +17,12 @@
     <button type="button" id="addinst-open" class="primary">+ Add an instrument</button>
   </div>
 </div>
-{% if removed %}<p class="panel ok"><strong>{{ removed }}</strong> is no longer
-tracked. Its prices stop updating; adding it again brings it back with its
-history.</p>{% endif %}
+{% if removed %}<p class="panel {{ 'warn' if unplanned else 'ok' }}"><strong>{{ removed }}</strong> removed{% if unplanned %}, and taken out of the DCA plan{% endif %}.</p>{% endif %}
 
 {% if error %}<p class="panel error">{{ error }}</p>{% endif %}
-{% if added %}
-<p class="panel ok">
-  {% if added_is_new %}<strong>{{ added }}</strong> added to the shared instrument
-  list and to yours. Its price history arrives with the feed run just started.
-  {% else %}<strong>{{ added }}</strong> was already in the shared list — it's on
-  your holdings now.{% endif %}
-</p>
-{% endif %}
+{# The same words whether or not the instrument was new to the catalogue:
+   saying so would tell this portfolio what another one had added. #}
+{% if added %}<p class="panel ok"><strong>{{ added }}</strong> added.</p>{% endif %}
 
 {# One form per row, declared OUTSIDE the table.
 
@@ -104,13 +97,11 @@ history.</p>{% endif %}
             <p class="sub">…and {{ block.mine | length - 8 }} more, on
             <a href="/holding/{{ i.ticker }}?return=/holdings">its page</a>.</p>
             {% endif %}
-            {% set elsewhere = block.total - block.mine | length %}
-            {% if elsewhere > 0 %}
-            {# Counted, never listed: these belong to another portfolio and
-               showing them here would be a leak. #}
-            <p class="sub">{{ elsewhere }} more {% if block.mine %}are{% else %}is{% endif %}
-            recorded in another portfolio sharing this instrument.</p>
-            {% endif %}
+            <form method="post" action="/holdings/{{ i.id }}/delete-trades"
+                  onsubmit="return confirm('Delete every trade and distribution of {{ i.ticker }} in this portfolio?');">
+              <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+              <button type="submit" class="danger small">Delete all trades</button>
+            </form>
           </div>
         </details>
         {% else %}
@@ -150,7 +141,7 @@ history.</p>{% endif %}
           <option value="crypto">Crypto</option>
         </select>
       </label>
-      <label>Currency <input name="currency" value="AUD" size="4"></label>
+      <label>Currency <input name="currency" value="" placeholder="AUD" size="4"></label>
     </div>
     <label>Name <span class="sub">optional</span>
       <input name="name" placeholder="Vanguard Australian Shares Index ETF">

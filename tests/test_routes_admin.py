@@ -457,7 +457,8 @@ def test_an_unknown_asset_class_is_refused(client, session_factory):
 def test_adding_an_instrument_someone_else_already_added_puts_it_on_your_list(
         client, session_factory, monkeypatch):
     """The catalogue is shared, so "add" often means "it existed; it is now
-    yours to track" — which the message has to distinguish."""
+    yours to track". The answer is the same either way: saying which would tell
+    this portfolio what another one had added."""
     from app import main as main_mod
 
     monkeypatch.setattr(main_mod.pricefeed, "lookup", lambda t, e: {"symbol": None,
@@ -474,9 +475,10 @@ def test_adding_an_instrument_someone_else_already_added_puts_it_on_your_list(
                              "_csrf": csrf(session_factory)},
                        headers=HTML, follow_redirects=False)
 
-    assert "new=0" in resp.headers["location"]     # existed already
+    assert resp.headers["location"] == "/holdings?added=ACME"
     with reading(session_factory) as s:
         assert len(s.scalars(select(HoldingPref)).all()) == 1
+    assert "ACME" in client.get("/holdings", headers=HTML).text
 
 
 def test_the_drp_preference_saves_immediately(client, session_factory):
@@ -543,7 +545,7 @@ def test_the_instruments_page_lists_what_is_held(client, session_factory):
         from test_routes import bind_to_only_portfolio
         bind_to_only_portfolio(s)
         held = fac.make_instrument(s, "ACME", name="Acme Industries")
-        fac.make_instrument(s, "NOVA", name="Nova Group")
+        fac.hold(s, fac.make_instrument(s, "NOVA", name="Nova Group"))   # added, not traded
         fac.add_trade(s, held, "2026-01-05", "buy", 10, "5.00")
         s.commit()
         assert tenancy is not None

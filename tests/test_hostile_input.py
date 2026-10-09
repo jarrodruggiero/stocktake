@@ -372,7 +372,9 @@ def _fresh(world: World, name: str) -> str:
         elif name == "dividend_id":
             made = fac.add_dividend(s, acme, TODAY - dt.timedelta(days=10), "3.00")
         elif name == "instrument_id":
+            # On this portfolio's list, as every Manage holdings row is.
             made = fac.make_instrument(s, f"FRESH{n}", asset_class="share")
+            fac.hold(s, made)
         elif name == "chart_id":
             made = tenancy.owned(s, SavedChart(name=f"Chart {n}", spec={}, position=n))
             s.add(made)

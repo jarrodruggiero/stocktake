@@ -39,7 +39,7 @@ def holdings(client, session_factory):
     with session_factory() as s:
         bind_to_only_portfolio(s)
         for ticker in ("ACME", "NOVA"):
-            fac.make_instrument(s, ticker, name=f"{ticker.title()} Ltd")
+            fac.hold(s, fac.make_instrument(s, ticker, name=f"{ticker.title()} Ltd"))
         s.commit()
 
 

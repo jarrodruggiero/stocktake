@@ -58,6 +58,18 @@ def _new(client, session_factory, ticker="MSFT", **overrides):
     return client.post("/trade/new", data=data, headers=HTML, follow_redirects=False)
 
 
+def _listed_here(session_factory, **kwargs):
+    """MSFT in this portfolio's list: a holding setting for it, as adding it
+    on Manage holdings leaves."""
+    from app import tenancy
+    from app.models import HoldingPref
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        inst = fac.make_instrument(s, "MSFT", exchange="NASDAQ", currency="USD", **kwargs)
+        s.add(tenancy.owned(s, HoldingPref(instrument_id=inst.id)))
+        s.commit()
+
+
 def _trades(session_factory) -> list[Trade]:
     with reading(session_factory) as s:
         return s.scalars(select(Trade)).all()
@@ -90,9 +102,7 @@ def test_without_a_symbol_the_price_symbol_is_worked_out_not_asked(
 def test_an_instrument_already_listed_is_refused_not_reused(signed_in, session_factory):
     """The MSFT report. The class typed for the second one was thrown away and
     nothing said so."""
-    with session_factory() as s:
-        fac.make_instrument(s, "MSFT", exchange="NASDAQ", asset_class="etf", currency="USD")
-        s.commit()
+    _listed_here(session_factory, asset_class="etf")
 
     resp = _new(signed_in, session_factory)
 
@@ -135,8 +145,6 @@ def test_the_class_is_never_assumed(signed_in, session_factory):
 
 def test_the_listed_instruments_carry_their_ticker_and_exchange(signed_in, session_factory):
     """So the form can switch to one when its ticker is typed as new."""
-    with session_factory() as s:
-        fac.make_instrument(s, "MSFT", exchange="NASDAQ", currency="USD")
-        s.commit()
+    _listed_here(session_factory)
     page = signed_in.get("/trade/new", headers=HTML).text
     assert re.search(r'<option[^>]*data-ticker="MSFT"[^>]*data-exchange="NASDAQ"', page)

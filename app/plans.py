@@ -255,6 +255,36 @@ def set_entries(session: Session, plan: InvestmentPlan, instrument_ids: list[int
     session.expire(plan, ["entries"])
 
 
+def remove_instrument(session: Session, instrument_id: int) -> bool:
+    """Take an instrument out of every plan this portfolio has, closing up the
+    rotation behind it. True if any plan had it.
+
+    Not `set_entries`, which keeps a slot's row only where the same instrument
+    stays at the same position: every slot after the gap would be a new row,
+    the buys recorded against them would resolve to nothing, and the rotation
+    would lose its place. Here the slots left keep their rows, so it carries on
+    from the last buy still in it.
+    """
+    removed = False
+    for plan in session.scalars(select(InvestmentPlan)).all():
+        left = [e for e in plan.entries if e.instrument_id != instrument_id]
+        if len(left) == len(plan.entries):
+            continue
+        removed = True
+        offset = 1000 + max(e.position for e in plan.entries)
+        for entry in plan.entries:
+            if entry.instrument_id == instrument_id:
+                session.delete(entry)
+            else:
+                entry.position += offset    # parked: positions are unique
+        session.flush()
+        for position, entry in enumerate(left):
+            entry.position = position
+        session.flush()
+        session.expire(plan, ["entries"])
+    return removed
+
+
 # --------------------------------------------------------------------------- #
 # Prefilling the trade form from the schedule
 # --------------------------------------------------------------------------- #
