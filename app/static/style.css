@@ -292,6 +292,10 @@ td.up { color: var(--up); } td.down { color: var(--down); }
 .panel input, .panel select { display: block; margin-top: var(--sp-1); padding: 0.45rem 0.6rem; width: 100%; max-width: 22rem;
   background: var(--sunken); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-xs); }
 .panel fieldset { border: 1px solid var(--line); border-radius: var(--radius-sm); margin-top: var(--sp-3); }
+/* A value the app filled in, under its label where a field would be, and
+   lined up with the fields beside it. Not a box: it is not editable. */
+.panel output { display: block; margin-top: var(--sp-1); padding: 0.45rem 0;
+  border: 1px solid transparent; font-size: 0.8333rem; line-height: normal; }
 /* The bare element stays the filled, emphatic one: templates rely on a plain
    <button> being the submit that matters ("Save plan", "Save columns"), and
    `.secondary` is what steps down from it. Flipping that default would quietly

@@ -3435,6 +3435,7 @@ def _instrument_options(db, instruments):
     return [{
         "id": inst.id,
         "ticker": inst.ticker,
+        "exchange": inst.exchange,
         "name": inst.name,
         "asset_class": inst.asset_class,
         "currency": inst.currency,
@@ -4304,7 +4305,7 @@ async def trade_create(
     new_ticker: str = Form(""),
     new_name: str = Form(""),
     new_exchange: str = Form("ASX"),
-    new_asset_class: str = Form("etf"),
+    new_asset_class: str = Form(""),
     new_currency: str = Form("AUD"),
     new_yahoo: str = Form(""),
     new_drp: str = Form(""),
@@ -4408,26 +4409,36 @@ async def trade_create(
                                                 "Yahoo symbol"))
                 if problem:
                     return _reject(f"{problem}." if problem[-1] not in ".?" else problem)
-                if new_asset_class not in ("etf", "share", "crypto"):
-                    return _reject("Pick an asset class for the new instrument.")
                 exchange = (new_exchange or "ASX").strip().upper()
                 inst = db.scalar(
                     select(Instrument).where(
                         Instrument.exchange == exchange, Instrument.ticker == ticker
                     )
                 )
-                if inst is None:
-                    found = pricefeed.lookup(ticker, exchange)
+                if inst is not None and inst.active:
+                    # Listed already. Reusing it here dropped what was typed
+                    # for the "new" one, its class above all, with nothing
+                    # said; the form switches to it before getting this far.
+                    return _reject(f"{ticker} is already recorded. Pick it from the list.")
+                if inst is not None:
+                    # Removed earlier, so not in the list to pick: adding it
+                    # again brings it back, with its history and its class.
+                    inst.active = True
+                else:
+                    if new_asset_class not in ("etf", "share", "crypto"):
+                        return _reject("Pick an asset class for the new instrument.")
+                    # No call to the provider here: the form asked it as the
+                    # ticker was typed and carries the answer, and a save that
+                    # waited on it again was slow enough to be pressed twice.
                     inst = Instrument(
                         ticker=ticker,
                         exchange=exchange,
-                        name=(new_name.strip() or found.get("name") or None),
-                        currency=typed_currency or _yahoo_currency(found) or "AUD",
+                        name=new_name.strip() or None,
+                        currency=typed_currency or "AUD",
                         asset_class=new_asset_class,
                         drp=bool(new_drp),
                         active=True,
                         yahoo_symbol=new_yahoo.strip()
-                        or found.get("symbol")
                         or pricefeed.yahoo_symbol_for(ticker, exchange),
                     )
                     db.add(inst)

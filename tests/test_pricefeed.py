@@ -298,7 +298,7 @@ def test_a_lookup_maps_the_name_and_currency(monkeypatch):
     found = pricefeed.lookup("acme", "ASX")
 
     assert found == {"symbol": "ACME.AX", "name": "Acme Industries Ltd",
-                     "currency": "AUD", "found": True}
+                     "currency": "AUD", "asset_class": None, "found": True}
 
 
 def test_a_name_yahoo_gives_is_cut_to_fit_its_column(monkeypatch):
@@ -318,7 +318,8 @@ def test_a_dead_feed_does_not_break_the_add_instrument_form(monkeypatch):
 
     found = pricefeed.lookup("ACME", "ASX")
 
-    assert found == {"symbol": "ACME.AX", "name": None, "currency": None, "found": False}
+    assert found == {"symbol": "ACME.AX", "name": None, "currency": None,
+                     "asset_class": None, "found": False}
 
 
 def test_a_symbol_yahoo_does_not_recognise_reports_not_found(monkeypatch):

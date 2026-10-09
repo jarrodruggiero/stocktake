@@ -51,6 +51,7 @@
          date, and `tradeform.js` asks the server for them. #}
       {% for i in options %}
       <option value="{{ i.id }}" data-currency="{{ i.currency }}"
+        data-ticker="{{ i.ticker }}" data-exchange="{{ i.exchange }}"
         {% if form.instrument_id and form.instrument_id|string == i.id|string %}selected
         {% elif ticker and i.ticker == ticker %}selected
         {% elif prefill and not form and prefill.instrument_id == i.id %}selected{% endif %}>
@@ -78,8 +79,12 @@
           {% endfor %}
         </select>
       </label>
+      {# Filled from the provider as the ticker is looked up, and then shown as
+         the value alone; picked by hand only when the provider has no answer. #}
       <label>Class
-        <select name="new_asset_class">
+        <output id="new_class-shown" hidden></output>
+        <select name="new_asset_class" id="new_class">
+          <option value="">— choose —</option>
           <option value="etf" {% if form.new_asset_class == 'etf' %}selected{% endif %}>ETF</option>
           <option value="share" {% if form.new_asset_class == 'share' %}selected{% endif %}>Share</option>
           <option value="crypto" {% if form.new_asset_class == 'crypto' %}selected{% endif %}>Crypto</option>
