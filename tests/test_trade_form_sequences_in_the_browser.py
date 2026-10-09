@@ -197,15 +197,19 @@ window.addEventListener("load", async function () {
     };
   };
 
+  var SCRIPTS = %(scripts)s;
   var runs = [];
-  for (var s = 0; s < SEEDS.length; s++) {
-    var rand = mulberry(SEEDS[s]);
+  var count = SCRIPTS ? SCRIPTS.length : SEEDS.length;
+  for (var s = 0; s < count; s++) {
+    var rand = mulberry(SCRIPTS ? s + 1 : SEEDS[s]);
     window.random = rand;
+    var script = SCRIPTS ? SCRIPTS[s] : null;
     var one = function (list) { return list[Math.floor(rand() * list.length)]; };
     var log = [];
     var open = function () { byId("opentrade").click(); };
     open(); await settle();
-    for (var step = 0; step < STEPS; step++) {
+    var steps = script ? script.length : STEPS;
+    for (var step = 0; step < steps; step++) {
       var isNew = pick.value === "new";
       var actions = ["pick", "pick", "date", "type:quantity", "type:unit_price",
                      "type:brokerage", "reopen"];
@@ -215,19 +219,21 @@ window.addEventListener("load", async function () {
                                   "type:new_currency"]);
       }
       if (!byId("fxfield").hidden) { actions.push("type:fx_rate"); }
-      var action = one(actions), value = null;
+      var action = script ? script[step][0] : one(actions);
+      var value = script ? script[step][1] : null;
+      var given = function (list) { return script ? value : one(list); };
       if (action === "pick") {
         var values = Array.prototype.map.call(pick.options, function (o) { return o.value; });
-        value = one(values);
+        value = given(values);
         pick.value = value; fire(pick, "change");
       } else if (action === "ticker") {
-        value = one(TICKERS);
+        value = given(TICKERS);
         field("new_ticker").value = value; fire(field("new_ticker"), "change");
       } else if (action === "exchange") {
-        value = one(EXCHANGES);
+        value = given(EXCHANGES);
         field("new_exchange").value = value; fire(field("new_exchange"), "change");
       } else if (action === "date") {
-        value = one(DATES);
+        value = given(DATES.concat([DATES[1], DATES[2]]));
         byId("tradedate").value = value; fire(byId("tradedate"), "change");
       } else if (action === "reopen") {
         dialog.close(); await sleep(5); open();
@@ -237,18 +243,19 @@ window.addEventListener("load", async function () {
                        "brokerage": ["12.00", ""], "fx_rate": ["0.70", ""],
                        "new_name": ["My own name", ""], "new_yahoo": SYMBOLS,
                        "new_currency": ["USD", "AUD", "EUR"]}[name];
-        value = one(choices);
+        value = given(choices);
         var el = field(name) || byId(name);
         el.value = value; fire(el, "input"); fire(el, "change");
       }
       // Now and then the next step comes before this one's answers do.
       var entry = {step: step, action: action, value: value};
-      if (rand() < 0.7) { await settle(); entry.state = state(); }
+      var wait = script ? script[step][2] !== false : rand() < %(settle)s;
+      if (wait) { await settle(); entry.state = state(); }
       log.push(entry);
     }
     await settle();
-    log.push({step: STEPS, action: "settled", value: null, state: state()});
-    runs.push({seed: SEEDS[s], log: log});
+    log.push({step: steps, action: "settled", value: null, state: state()});
+    runs.push({seed: SCRIPTS ? "script " + (s + 1) : SEEDS[s], log: log});
   }
   var pre = document.createElement("pre");
   pre.id = "result";
@@ -280,22 +287,30 @@ def _fee(fees: dict, currency: str, quantity: str, price: str) -> str:
     return str(due.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
-def _typed_after(log: list, upto: int, listed: dict) -> dict:
+def _typed_after(log: list, upto: int, listed: dict) -> tuple[dict, set]:
     """What somebody has typed and the form still holds, replayed in order.
 
     Reopening starts clean. Picking an instrument with no FX, including by
     typing a listed ticker as new, clears a typed rate: there is nothing to
-    convert, and the field is hidden.
+    convert, and the field is hidden. A name or symbol emptied by hand stays
+    empty until the next lookup fills it: a blank symbol is the server's to
+    guess. Emptied while a lookup is still out, it may be either — that is the
+    second thing returned.
     """
     typed: dict = {}
+    loose: set = set()
+    in_flight = False
     picked, ticker, exchange = "", "", "ASX"
     no_fx = {str(i) for i, ccy in listed.values() if ccy == "AUD"} | {"", "new"}
     for entry in log[:upto + 1]:
         action, value = entry["action"], entry["value"]
         if action == "reopen":
             typed, picked, ticker, exchange = {}, "", "", "ASX"
+            loose = set()
         elif action.startswith("type:"):
             typed[action[5:]] = value
+            if in_flight and action[5:] in ("new_name", "new_yahoo") and value == "":
+                loose.add(action[5:])
         elif action == "pick":
             picked = value
         elif action == "ticker":
@@ -309,7 +324,15 @@ def _typed_after(log: list, upto: int, listed: dict) -> dict:
                     picked = str(i)
         if action in ("pick", "ticker", "exchange") and picked in no_fx:
             typed.pop("fx_rate", None)
-    return typed
+        if action in ("ticker", "exchange") and picked == "new" and ticker.strip():
+            for name in ("new_name", "new_yahoo"):
+                if typed.get(name) == "":
+                    del typed[name]
+            loose -= {"new_name", "new_yahoo"}
+            in_flight = True
+        if "state" in entry:
+            in_flight = False
+    return typed, loose
 
 
 def _expected(state: dict, typed: dict, answers: dict, listed: dict) -> dict:
@@ -342,7 +365,7 @@ def _expected(state: dict, typed: dict, answers: dict, listed: dict) -> dict:
                         clsShown=CLASS_LABELS[found["asset_class"]])
         else:
             want.update(cls="", clsPicker=True, clsShown=None)
-        symbol = (typed.get("new_yahoo") or found["symbol"]).strip() or s["ticker"].strip()
+        symbol = s["yahoo"].strip() or s["ticker"].strip()
         answer = answers[f"/holdings/price?symbol={symbol}&date={s['date']}"]
         want.update(price=answer["price"] or "", fx="")
         currency = typed.get("new_currency", want["currency"]).strip().upper()
@@ -352,22 +375,26 @@ def _expected(state: dict, typed: dict, answers: dict, listed: dict) -> dict:
         want.update(newHidden=True, fxHidden=True, quantity="")
     # What was typed wins over every answer above.
     for name, value in typed.items():
-        if name in ("new_name", "new_yahoo") and not value.strip():
-            continue                  # emptied: nothing left to protect
         key = {"new_name": "name", "new_yahoo": "yahoo", "new_currency": "currency",
                "unit_price": "price", "fx_rate": "fx"}.get(name, name)
         want[key] = value
     return want
 
 
-def _walk(client, session_factory, tmp_path, monkeypatch, app_module, seeds, steps=40):
+def _walk(client, session_factory, tmp_path, monkeypatch, app_module, seeds=(), steps=40,
+          settle=0.7, scripts=None):
     listed = _setup(client, session_factory)
     _stub_yahoo(monkeypatch, app_module)
     answers = _answers(client, listed)
     page = client.get("/", headers=HTML)
     assert page.status_code == 200
     symbols = TYPED_SYMBOLS
-    driver = WALK % {"seeds": json.dumps(seeds), "steps": steps,
+    if scripts:
+        scripts = [[[a, v.replace("{nova}", str(listed["NOVA"][0])).replace(
+            "{acme}", str(listed["ACME"][0])) if isinstance(v, str) else v, *rest]
+            for a, v, *rest in script] for script in scripts]
+    driver = WALK % {"seeds": json.dumps(list(seeds)), "steps": steps, "settle": settle,
+                     "scripts": json.dumps(scripts),
                      "tickers": json.dumps(TICKERS), "exchanges": json.dumps(EXCHANGES),
                      "dates": json.dumps(DATES), "symbols": json.dumps(symbols)}
     head = STUB % {"answers": json.dumps(answers)}
@@ -392,8 +419,11 @@ def _check(runs, answers, listed):
         for i, entry in enumerate(run["log"]):
             if "state" not in entry:
                 continue
-            typed = _typed_after(run["log"], i, listed)
+            typed, loose = _typed_after(run["log"], i, listed)
             want = _expected(entry["state"], typed, answers, listed)
+            for name in loose:
+                want.pop({"new_name": "name", "new_yahoo": "yahoo"}[name], None)
+                typed.pop(name, None)
             got = {k: entry["state"][k] for k in want}
             if got != want:
                 steps = "\n".join(f"  {e['step']}: {e['action']} {e['value']!r}"
@@ -505,3 +535,29 @@ def test_an_answer_that_arrives_late_does_not_overwrite_a_newer_one(
     out = json.loads(found.group(1).replace("&quot;", '"'))
     assert out == {"symbol": "GOOG", "name": "Alphabet Inc.", "currency": "USD",
                    "price": "11", "fx": "1.55"}
+
+
+# Each fault the walk found, as the shortest sequence that shows it, checked
+# by the same model. [action, value, wait for the answers first (default yes)]
+SCRIPTS = {
+    "a symbol typed by hand is the one priced": [
+        ["pick", "new"], ["date", D1], ["ticker", "ZZZ"], ["type:new_yahoo", "GOOGL"],
+        ["exchange", "NYSE"]],
+    "nothing found keeps nothing from the last answer": [
+        ["pick", "new"], ["date", D1], ["exchange", "NASDAQ"], ["ticker", "GOOG"],
+        ["exchange", "ASX"]],
+    "the newest answer wins": [
+        ["pick", "new"], ["date", D2], ["ticker", "GOOG", False], ["exchange", "NASDAQ"]],
+    "a typed rate cleared by an AUD instrument does not stay empty": [
+        ["date", D2], ["pick", "{nova}"], ["type:fx_rate", "0.70"], ["pick", "{acme}"],
+        ["pick", "{nova}"]],
+    "reopening hides the FX field": [["pick", "{nova}"], ["reopen", None]],
+}
+
+
+@pytest.mark.parametrize("name", SCRIPTS)
+def test_each_fault_the_walk_found(client, session_factory, tmp_path, monkeypatch,
+                                   app_module, name):
+    runs, answers, listed = _walk(client, session_factory, tmp_path, monkeypatch,
+                                  app_module, scripts=[SCRIPTS[name]])
+    _check(runs, answers, listed)

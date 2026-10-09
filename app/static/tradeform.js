@@ -135,8 +135,9 @@
         /* Now that the symbol is known, the price for the date can be. Here
            rather than beside the ticker's own handler because the symbol
            arrives with this response — asking any earlier has nothing to ask
-           about. Nothing found, and the last answer's price goes with it. */
-        if (d.found) { priceForDate(); } else { fillPrice({}); }
+           about. Asked when nothing was found too: the last answer's price
+           has to go, and a symbol typed by hand may still have one. */
+        priceForDate();
       })
       .catch(function () { if (status) { status.textContent = ""; } });
   }
@@ -173,21 +174,20 @@
       return;                              // nothing chosen yet
     }
 
+    var price = document.getElementById("unit_price");
+    var fx = document.getElementById("fx_rate");
     var url = "/holdings/price?" + query +
               "&date=" + encodeURIComponent(date.value);
     var newest = ask("price");
     fetch(url)
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { if (d && newest()) { fillPrice(d); } })
+      .then(function (d) {
+        if (!d || !newest()) { return; }
+        if (price && !price.dataset.typed) { price.value = d.price || ""; }
+        if (fx && !fx.dataset.typed) { fx.value = d.fx || ""; }
+        suggestBrokerage();
+      })
       .catch(function () { /* leave whatever is in the fields */ });
-  }
-
-  function fillPrice(d) {
-    var price = document.getElementById("unit_price");
-    var fx = document.getElementById("fx_rate");
-    if (price && !price.dataset.typed) { price.value = d.price || ""; }
-    if (fx && !fx.dataset.typed) { fx.value = d.fx || ""; }
-    suggestBrokerage();
   }
 
   /* The brokerage the portfolio's fee gives for what is on the form: a flat
@@ -289,7 +289,7 @@
     if (target.id === "instpick") {
       toggleNew(); instrumentChosen(); priceForDate(); suggestBrokerage();
     }
-    if (target.id === "tradedate") { priceForDate(); }
+    if (target.id === "tradedate" || target.name === "new_yahoo") { priceForDate(); }
     if (target.id === "settime") { toggleTime(); }
     if (target.dataset && target.dataset.autofill && !switchToListed()) {
       autofill(target.dataset.autofill);
