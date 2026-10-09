@@ -3560,7 +3560,9 @@ def dashboard(request: Request, fy: int | None = None):
                 # repeating it.
                 "one_ccy": columns.one_currency_everywhere(
                     _one_currency(open_positions)),
-                "col_groups": columns.groups(),
+                "col_groups": columns.chooser_groups(
+                    columns.one_currency_everywhere(_one_currency(open_positions)),
+                    {c.key for c in cols}),
                 "chosen_keys": {c.key for c in cols},
                 "chosen_order": [c.key for c in cols],
                 "sort": sort,

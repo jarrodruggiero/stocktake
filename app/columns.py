@@ -224,6 +224,32 @@ def groups() -> list[tuple[str, list[Column]]]:
     return out
 
 
+# Each native-currency money column and its reporting-currency twin: same label,
+# same group, the other currency.
+TWINS = {
+    native.key: reporting.key
+    for native in COLUMNS if native.currency == "native"
+    for reporting in COLUMNS
+    if reporting.currency == "reporting" and reporting.label == native.label
+    and reporting.group == native.group
+}
+
+
+def chooser_groups(one_currency: bool, chosen: set[str]) -> list[tuple[str, list[Column]]]:
+    """The chooser's groups. With one currency everywhere a column and its
+    twin show the same numbers, so only one of each pair is offered: the one
+    the layout already names, else the native one. Offering both was two
+    identical boxes, each saying "(AUD)"."""
+    if not one_currency:
+        return groups()
+    dropped = {
+        native if (reporting in chosen and native not in chosen) else reporting
+        for native, reporting in TWINS.items()
+    }
+    return [(group, [c for c in items if c.key not in dropped])
+            for group, items in groups()]
+
+
 def clean(keys: list[str]) -> list[str]:
     """A submitted selection, filtered to what exists and always answerable.
 

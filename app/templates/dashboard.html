@@ -28,14 +28,14 @@
       {# Order matters here: the PRIMARY button sits last so it lands hard in
          the corner, where the eye goes. Reading order is still quietest to
          loudest. Charts is not in the nav, so that link is the ONLY way to
-         them — pinned by a test after it went missing once. #}
-      <a href="/charts"><button type="button" class="secondary">View charts</button></a>
-      {% if not feed.running %}
+         them — pinned by a test after it went missing once. Refresh stays
+         while a run is going, busy, rather than vanishing: feedwatch.js
+         reloads the page when it finishes. #}
       <form method="post" action="/refresh">
         <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-        <button type="submit" class="secondary">Refresh prices</button>
+        <button type="submit" class="secondary"{% if feed.running %} disabled aria-busy="true"{% endif %}>Refresh prices</button>
       </form>
-      {% endif %}
+      <a href="/charts"><button type="button" class="secondary">View charts</button></a>
       <button type="button" id="opentrade" class="primary">Record trade</button>
     </div>
 
@@ -176,11 +176,12 @@ short by those holdings, not by a rounding.</p>
 {% endif %}
 
 <section>
-  <h2>Holdings{% if one_ccy %} <span class="inccy">in {{ reporting_ccy }}</span>{% endif %}
+  <h2 class="tablehead">Holdings{% if one_ccy %} <span class="inccy">in {{ reporting_ccy }}</span>{% endif %}
     {# "Manage holdings" sits on the holdings table's own header rather than in
        the nav, and "Edit columns" says what it does — "Columns" was a noun
-       where a verb was needed. #}
-    <a href="/holdings"><button type="button" class="secondary">Manage holdings</button></a>
+       where a verb was needed. Both on the right, over the table they act on. #}
+    <span class="tabletools">
+    <a href="/holdings"><button type="button" class="secondary small">Manage holdings</button></a>
     {# <details> rather than a modal: it needs no JavaScript, it is keyboard
        operable for free, and the browser handles the open/close state. #}
     <details class="colchooser menu">
@@ -207,7 +208,7 @@ short by those holdings, not by a rounding.</p>
               <input type="checkbox" name="column" value="{{ c.key }}"
                      {% if c.key in chosen_keys %}checked{% endif %}
                      {% if c.locked %}disabled checked{% endif %}>
-              {{ c.heading(native_ccy) }}{% if c.locked %} <span class="sub">always shown</span>{% endif %}
+              {{ c.heading(native_ccy, mark=not one_ccy) }}{% if c.locked %} <span class="sub">always shown</span>{% endif %}
             </label>
             {# A disabled checkbox is not submitted, so the locked column would
                be lost on save. Carry it explicitly. #}
@@ -243,7 +244,7 @@ short by those holdings, not by a rounding.</p>
             {# The position, because a two-column grid of names is ambiguous
                about whether it reads across or down. #}
             <span class="colpos" aria-hidden="true">{{ loop.index }}</span>
-            <span class="colname">{{ cols[loop.index0].heading(native_ccy) }}</span>
+            <span class="colname">{{ cols[loop.index0].heading(native_ccy, mark=not one_ccy) }}</span>
             <button type="submit" name="move" value="{{ key }}:up"
                     {% if loop.first %}disabled{% endif %}
                     aria-label="Move {{ cols[loop.index0].label }} left">↑</button>
@@ -257,6 +258,7 @@ short by those holdings, not by a rounding.</p>
       </form>
       </div>
     </details>
+    </span>
   </h2>
   <form id="resetcols" method="post" action="/profile/columns/reset" hidden>
     <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
