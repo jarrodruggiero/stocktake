@@ -34,6 +34,17 @@ STATIC = ROOT / "app" / "static"
 
 MEASURE = """
 <script>
+/* The space between the word "Live" and the date after it, in pixels. */
+function liveGap() {
+  var badge = document.querySelector(".livedot");
+  if (!badge) { return null; }
+  var word = Array.prototype.find.call(badge.childNodes, function (n) {
+    return n.nodeType === 3 && n.textContent.trim(); });
+  var range = document.createRange();
+  range.selectNodeContents(word);
+  return badge.querySelector("strong").getBoundingClientRect().left
+    - range.getBoundingClientRect().right;
+}
 window.addEventListener("load", function () {
   var box = function (el) { var r = el.getBoundingClientRect(); return {top: r.top, bottom: r.bottom, left: r.left, right: r.right}; };
   var head = document.querySelector(".tablehead");
@@ -45,6 +56,7 @@ window.addEventListener("load", function () {
     tabs: box(document.querySelector(".fytabs")),
     head: box(head),
     tools: box(tools),
+    live: liveGap(),
     width: document.documentElement.clientWidth,
     scroll: document.documentElement.scrollWidth
   });
@@ -129,3 +141,27 @@ def test_the_table_tools_sit_on_the_right(ten_years):
     at = _measure(ten_years, 1000)
     assert abs(at["tools"]["right"] - at["head"]["right"]) <= 2, at
     assert at["tools"]["left"] > at["head"]["left"] + 300, at
+
+
+@pytest.fixture
+def live(client, session_factory, tmp_path):
+    """Crypto held, so an exchange is always trading and the Live badge shows."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        coin = fac.make_instrument(s, "BTC", exchange="CRYPTO", asset_class="crypto",
+                                   currency="USD", yahoo_symbol="BTC-USD")
+        fac.add_trade(s, coin, "2026-01-05", "buy", 1, "100.00")
+        fac.add_prices(s, coin, [("2026-01-05", "100.00")])
+        s.commit()
+    page = client.get("/", headers=HTML)
+    assert "livedot" in page.text, "no Live badge to measure"
+    (tmp_path / "page.html").write_text(_standalone(page.text))
+    return tmp_path
+
+
+def test_live_and_its_date_are_apart(live):
+    """Reported run together as "Live2026-10-09": the badge is a flex box, and
+    the space between a word and the element after it collapses there."""
+    gap = _measure(live, 1000)["live"]
+    assert gap is not None and gap >= 5, gap
