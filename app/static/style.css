@@ -1182,6 +1182,9 @@ button[aria-busy="true"]::before { content: ""; display: inline-block; width: 0.
   margin-right: 0.4rem; vertical-align: 0.05rem; border-radius: 50%;
   background: var(--accent); animation: livepulse 2.4s ease-in-out infinite; }
 @keyframes livepulse { 50% { opacity: 0.35; } }
+/* The badge is a flex box, where the space before the date collapses; the
+   same 0.4rem the dot keeps from the word. */
+.livedot strong { margin-left: 0.4rem; }
 @media (prefers-reduced-motion: reduce) { .livedot::before { animation: none; } }
 
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden;

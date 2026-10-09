@@ -15,9 +15,6 @@
   </div>
 </div>
 
-<p class="note">Drag a card by its handle to rearrange it; Edit changes what it
-shows.</p>
-
 {% for b in broken %}
 <p class="panel error"><strong>{{ b.name }}</strong> can't be drawn: {{ b.why }}
   — <a href="/charts/build?edit={{ b.id }}">fix it</a>.</p>
