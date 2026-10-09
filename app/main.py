@@ -3549,6 +3549,7 @@ def dashboard(request: Request, fy: int | None = None):
                 "options": _instrument_options(db, db.scalars(
                     select(Instrument).where(Instrument.active.is_(True))
                     .order_by(Instrument.asset_class, Instrument.ticker)).all()),
+                "last_brokerage": queries.last_brokerage(db),
                 "cols": cols,
                 # The one currency these holdings trade in, or None when they
                 # trade in several — which is what lets a native-currency
@@ -3849,6 +3850,7 @@ def plan_page(
                 "sched": sched,
                 "plan": sched["plan"],
                 "instruments": instruments,
+                "last_brokerage": queries.last_brokerage(db),
                 # Only needed when there is no plan to show; cheap either way.
                 "suggested_rotation": plans.suggested_rotation(db),
                 "edit": bool(edit),
@@ -3955,7 +3957,7 @@ async def plan_save(
     name: str = Form(...),
     interval_days: int = Form(...),
     amount: str = Form(""),
-    brokerage: str = Form("9.50"),
+    brokerage: str = Form(""),
     start_date: str = Form(""),
     tickers: str = Form(""),
 ):
@@ -4039,7 +4041,7 @@ def plan_complete_form(request: Request):
                 "nxt": nxt,
                 "price": latest[0] if latest else None,
                 "today": clock.today().isoformat(),
-                "brokerage": plan.brokerage if plan else Decimal("9.50"),
+                "brokerage": plan.brokerage if plan else (queries.last_brokerage(db) or ""),
             },
         )
 
@@ -4052,7 +4054,7 @@ async def plan_complete(
     trade_date: str = Form(...),
     quantity: str = Form(...),
     unit_price: str = Form(...),
-    brokerage: str = Form("9.50"),
+    brokerage: str = Form(""),
 ):
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
@@ -4277,6 +4279,7 @@ def trade_form(request: Request, ticker: str = "", error: str = ""):
                 "today": clock.today().isoformat(),
                 "prefill": _dca_prefill(db),
                 "options": _instrument_options(db, instruments),
+                "last_brokerage": queries.last_brokerage(db),
                 "error": error,
                 "form": {},
                 "edit": None,
@@ -4337,6 +4340,8 @@ async def trade_create(
                     "trade_new.html",
                     {
                         "instruments": instruments,
+                        "options": _instrument_options(db, instruments),
+                        "last_brokerage": queries.last_brokerage(db),
                         "ticker": "",
                         "today": clock.today().isoformat(),
                         "error": message,

@@ -1217,6 +1217,16 @@ def instrument_series(session: Session, inst: Instrument) -> dict:
     return {"dates": dates, "invested": inv_out, "value": val_out}
 
 
+def last_brokerage(session: Session) -> Decimal | None:
+    """What this portfolio paid its broker last: the brokerage on its most
+    recent buy or sell by the trade's own date. None before the first trade,
+    so a form offers nothing rather than one broker's fee. A reinvested
+    distribution costs nothing and says nothing about the broker."""
+    return session.scalar(
+        select(Trade.brokerage).where(Trade.type.in_(("buy", "sell")))
+        .order_by(Trade.date.desc(), Trade.id.desc()).limit(1))
+
+
 def latest_prices(session: Session, instrument_ids: list[int]) -> dict[int, Decimal]:
     """The most recent stored close for each instrument, by id.
 

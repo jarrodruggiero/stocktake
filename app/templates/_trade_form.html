@@ -143,7 +143,8 @@
       <input name="unit_price" inputmode="decimal" id="unit_price" min="0"
            value="{{ form.unit_price or (prefill.unit_price | qty if prefill and not form else '') }}" required></label>
     <label>Brokerage <input name="brokerage" inputmode="decimal"
-           value="{{ form.brokerage or (prefill.brokerage | qty if prefill and not form else '9.50') }}"></label>
+           value="{{ form.brokerage or (prefill.brokerage | qty if prefill and not form
+                     else ('%.2f' | format(last_brokerage) if last_brokerage is not none else '')) }}"></label>
   </div>
 
   {# Hidden entirely for an instrument already in the reporting currency —
