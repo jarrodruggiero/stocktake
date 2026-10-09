@@ -1275,3 +1275,20 @@ give the people who chose a provider two second factors for one sign-in. It is
 the reasoning a passkey already follows (#113). The cost is that turning on
 OIDC trusts the provider as far as the app's own 2FA, so use one that enforces
 MFA. `test_a_provider_sign_in_does_not_ask_for_the_code` pins it.
+
+**139. A portfolio is shown its own instruments, and removes only its own.**
+The catalogue stays shared (#125): one row per exchange and ticker, with one
+price history. What changed is what a portfolio sees and can do with it.
+Manage holdings and the trade and plan dropdowns list the instruments this
+portfolio has — a holding setting, a trade, a dividend or a place in its plan —
+where they listed the whole catalogue, which showed every portfolio the tickers
+the others had added. Remove drops this portfolio's setting; the feed stops
+fetching an instrument only once no portfolio has it, which is asked after the
+removal commits, because the question goes through a session of its own. Only
+this portfolio's trades and dividends block it, and another portfolio's are
+not counted on the page. One in the plan comes out of the plan too, with a
+warning rather than a refusal; the rotation closes up and carries on from the
+last buy still in it, because the slots left keep their rows. A ticker another portfolio added is reused through
+"Something not listed", and the add form says "added" either way. "Delete all
+trades" clears this portfolio's trades and distributions for one instrument and
+leaves it listed, so removing it stays a step of its own.

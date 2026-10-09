@@ -329,6 +329,7 @@ def test_the_picker_carries_no_price_of_its_own(client, session_factory):
     with session_factory() as s:
         bind_to_only_portfolio(s)
         inst = fac.make_instrument(s, "ACME", asset_class="share")
+        fac.hold(s, inst)
         fac.add_prices(s, inst, [("2026-09-18", "4.00")])
         fac.add_fx(s, "USDAUD", "2026-09-18", "1.50")
         s.commit()

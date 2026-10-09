@@ -110,6 +110,7 @@ from .models import (
     HoldingPref,
     Instrument,
     InvestmentPlan,
+    InvestmentPlanEntry,
     PlannedPurchase,
     Portfolio,
     PortfolioInvite,
@@ -3589,11 +3590,7 @@ def dashboard(request: Request, fy: int | None = None):
                 # The Record trade dialog renders the same include `/trade/new`
                 # does, so it needs the same two things. Cheap: one indexed
                 # query, and the dialog is on every dashboard load anyway.
-                "instruments": db.scalars(
-                    select(Instrument)
-                    .where(Instrument.active.is_(True))
-                    .order_by(Instrument.asset_class, Instrument.ticker)
-                ).all(),
+                "instruments": queries.portfolio_instruments(db),
                 "today": clock.today().isoformat(),
                 # The performance chart, below the year tabs. Built from the
                 # same daily series every other chart uses, so it cannot
@@ -3602,9 +3599,7 @@ def dashboard(request: Request, fy: int | None = None):
                     db, clock.today(),
                     fyreport.fy_bounds(fyreport.current_fy(clock.today()))[0]),
                 "prefill": _dca_prefill(db),
-                "options": _instrument_options(db, db.scalars(
-                    select(Instrument).where(Instrument.active.is_(True))
-                    .order_by(Instrument.asset_class, Instrument.ticker)).all()),
+                "options": _instrument_options(db, queries.portfolio_instruments(db)),
                 **_brokerage_context(db, ctx),
                 "cols": cols,
                 # The one currency these holdings trade in, or None when they
@@ -3894,9 +3889,7 @@ def plan_page(
         # 24 rather than 6: these are the Preview plan's rows, and a preview
         # you cannot scroll is a list. Roughly two years of a monthly plan.
         sched = plans.schedule(db, upcoming=24)
-        instruments = db.scalars(
-            select(Instrument).where(Instrument.active.is_(True)).order_by(Instrument.ticker)
-        ).all()
+        instruments = sorted(queries.portfolio_instruments(db), key=lambda i: i.ticker)
         return _render(
             request,
             ctx,
@@ -3990,10 +3983,7 @@ async def plan_preview(
             return JSONResponse({"rows": [], "why": problem})
 
         wanted = [t.strip().upper() for t in tickers.replace("\n", ",").split(",") if t.strip()]
-        known = {
-            i.ticker
-            for i in db.scalars(select(Instrument).where(Instrument.ticker.in_(set(wanted))))
-        }
+        known = {i.ticker for i in queries.portfolio_instruments(db) if i.ticker in set(wanted)}
         # An unknown ticker is refused on save, so the preview says so here
         # rather than drawing dates for a plan that cannot be saved.
         unknown = sorted({t for t in wanted if t not in known})
@@ -4039,10 +4029,8 @@ async def plan_save(
             raise HTTPException(400, problem)
 
         wanted = [t.strip().upper() for t in tickers.replace("\n", ",").split(",") if t.strip()]
-        by_ticker = {
-            i.ticker: i
-            for i in db.scalars(select(Instrument).where(Instrument.ticker.in_(set(wanted))))
-        }
+        by_ticker = {i.ticker: i for i in queries.portfolio_instruments(db)
+                     if i.ticker in set(wanted)}
         unknown = [t for t in wanted if t not in by_ticker]
         if unknown:
             raise HTTPException(
@@ -4319,11 +4307,7 @@ def _breach(
 @app.get("/trade/new", response_class=HTMLResponse)
 def trade_form(request: Request, ticker: str = "", error: str = ""):
     with scoped(request) as (ctx, db):
-        instruments = db.scalars(
-            select(Instrument)
-            .where(Instrument.active.is_(True))
-            .order_by(Instrument.asset_class, Instrument.ticker)
-        ).all()
+        instruments = queries.portfolio_instruments(db)
         return _render(
             request,
             ctx,
@@ -4383,11 +4367,7 @@ async def trade_create(
         with scoped(request) as (ctx, db):
             await auth.verify_csrf(request, db)
             _require_write(ctx)
-            instruments = db.scalars(
-                select(Instrument)
-                .where(Instrument.active.is_(True))
-                .order_by(Instrument.asset_class, Instrument.ticker)
-            ).all()
+            instruments = queries.portfolio_instruments(db)
 
             def _reject(message: str):
                 return _render(
@@ -4478,14 +4458,15 @@ async def trade_create(
                         Instrument.exchange == exchange, Instrument.ticker == ticker
                     )
                 )
-                if inst is not None and inst.active:
+                if inst is not None and inst in instruments:
                     # Listed already. Reusing it here dropped what was typed
                     # for the "new" one, its class above all, with nothing
                     # said; the form switches to it before getting this far.
                     return _reject(f"{ticker} is already recorded. Pick it from the list.")
                 if inst is not None:
-                    # Removed earlier, so not in the list to pick: adding it
-                    # again brings it back, with its history and its class.
+                    # Not in this portfolio's list — another portfolio added
+                    # it, or it was removed — so this is how it is added here:
+                    # the shared row, with its history and its class.
                     inst.active = True
                 else:
                     if new_asset_class not in ("etf", "share", "crypto"):
@@ -5148,62 +5129,37 @@ async def dividend_delete(request: Request, dividend_id: RowId):
 # --------------------------------------------------------------------------- #
 
 def _blocking_trades(db, instruments) -> dict[int, dict]:
-    """What stands in the way of removing each instrument.
-
-    Two counts, and the difference between them is the point:
-
-    * **`mine`** — this portfolio's trades, listed with links, because those
-      are the ones the person reading can actually go and fix.
-    * **`total`** — every portfolio's, counted through `unscoped_session`.
-
-    The total is what decides whether removal is allowed: an instrument is
-    shared, so deactivating one that another household member is using would
-    stop their prices updating. The *list* stays scoped, because showing
-    somebody another portfolio's trades would be a leak — so when the two
-    numbers differ, the panel says how many others exist and nothing more.
-    """
+    """What stands in the way of removing each instrument from this portfolio:
+    its own trades, listed with links so each is one click from being fixed,
+    and its own distributions, counted. Another portfolio's never block it —
+    removing drops the instrument from this portfolio, not from the shared
+    catalogue — and are never mentioned, which would say what they hold."""
     ids = [i.id for i in instruments]
     if not ids:
         return {}
-
     mine: dict[int, list[Trade]] = {}
     for trade in db.scalars(
         select(Trade).where(Trade.instrument_id.in_(ids)).order_by(Trade.date.desc())
     ):
         mine.setdefault(trade.instrument_id, []).append(trade)
-
-    with tenancy.unscoped_session(SessionLocal) as everyone:
-        totals = dict(
-            everyone.execute(
-                select(Trade.instrument_id, func.count())
-                .where(Trade.instrument_id.in_(ids))
-                .group_by(Trade.instrument_id)
-            ).all()
-        )
-        dividends = dict(
-            everyone.execute(
-                select(Dividend.instrument_id, func.count())
-                .where(Dividend.instrument_id.in_(ids))
-                .group_by(Dividend.instrument_id)
-            ).all()
-        )
-
+    dividends = dict(db.execute(
+        select(Dividend.instrument_id, func.count())
+        .where(Dividend.instrument_id.in_(ids)).group_by(Dividend.instrument_id)
+    ).all())
     return {
-        iid: {
-            "mine": mine.get(iid, []),
-            "total": totals.get(iid, 0) + dividends.get(iid, 0),
-        }
+        iid: {"mine": mine.get(iid, []),
+              "total": len(mine.get(iid, [])) + dividends.get(iid, 0)}
         for iid in ids
     }
 
 
 @app.get("/holdings", response_class=HTMLResponse)
 def instruments_page(request: Request, error: str = "", added: str = "",
-                     new: str = "1", removed: str = ""):
+                     removed: str = "", unplanned: bool = False):
     with scoped(request) as (ctx, db):
-        instruments = db.scalars(
-            select(Instrument).order_by(Instrument.asset_class, Instrument.ticker)
-        ).all()
+        # This portfolio's, not the whole shared catalogue: listing that showed
+        # every portfolio the tickers the others had added.
+        instruments = queries.portfolio_instruments(db)
         prefs = queries.prefs_by_instrument(db)
         held = {
             iid
@@ -5225,41 +5181,101 @@ def instruments_page(request: Request, error: str = "", added: str = "",
                 "prices": queries.latest_prices(db, [i.id for i in instruments]),
                 "error": error,
                 "added": added,
-                "added_is_new": new != "0",
                 "removed": removed,
+                "unplanned": unplanned,
             },
         )
 
 
 @app.post("/holdings/{instrument_id}/remove")
 async def instrument_remove(request: Request, instrument_id: RowId):
-    """Stop tracking an instrument nobody has traded.
+    """Take an instrument off this portfolio.
 
-    **Deactivated, not deleted**, and the distinction is not squeamishness:
-    the instrument list is shared, and its price history is shared with it.
-    Deleting the row would take that history from anybody who later re-adds the
-    same ticker. Setting `active = False` achieves what this is for — the feed
-    stops fetching it and it leaves the lists — and is reversible by re-adding.
+    Refused while this portfolio has trades or distributions for it: those
+    would refer to nothing here. Otherwise this portfolio's setting for it
+    goes, and so do its places in the plan, which closes up around them
+    (`plans.remove_instrument`). The instrument stays in the shared catalogue
+    with its price history. Only once no portfolio has it at all does the feed
+    stop fetching it — **deactivated, not deleted**, so adding it again brings
+    it back.
     """
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
         _require_write(ctx)
         inst = db.get(Instrument, instrument_id)
-        if inst is None:
+        if inst is None or inst.id not in queries.portfolio_instrument_ids(db):
             raise HTTPException(404, "no such instrument")
 
         blocking = _blocking_trades(db, [inst]).get(instrument_id, {})
         if blocking.get("total"):
-            # Refused rather than cascaded. Removing an instrument out from
-            # under its own trades would leave a ledger referring to nothing.
             raise HTTPException(
                 409,
                 f"{inst.ticker} still has {blocking['total']} trade(s) or "
                 f"dividend(s) recorded against it. Delete those first.",
             )
-        inst.active = False
-        log.info("instrument %s deactivated by user %d", inst.ticker, ctx.user.id)
-        return _redirect("/holdings?removed=" + quote_plus(inst.ticker))
+        unplanned = plans.remove_instrument(db, instrument_id)
+        for pref in db.scalars(
+            select(HoldingPref).where(HoldingPref.instrument_id == instrument_id)
+        ).all():
+            db.delete(pref)
+        # Committed before asking who else has it: the question goes through a
+        # session of its own, which cannot see this one's uncommitted delete.
+        db.commit()
+        if not _anyone_has(instrument_id):
+            inst.active = False
+        log.info("instrument %s removed from portfolio %s by user %d",
+                 inst.ticker, ctx.active_portfolio_id, ctx.user.id)
+        return _redirect("/holdings?removed=" + quote_plus(inst.ticker)
+                         + ("&unplanned=1" if unplanned else ""))
+
+
+def _anyone_has(instrument_id: int) -> bool:
+    """Whether any portfolio still has this instrument, counted across all of
+    them — the one question here that is not this portfolio's to answer
+    alone, because the feed fetches for everybody."""
+    with tenancy.unscoped_session(SessionLocal) as everyone:
+        for model in (HoldingPref, Trade, Dividend, InvestmentPlanEntry):
+            if everyone.scalar(select(model.id).where(
+                    model.instrument_id == instrument_id).limit(1)) is not None:
+                return True
+    return False
+
+
+@app.post("/holdings/{instrument_id}/delete-trades")
+async def instrument_delete_trades(request: Request, instrument_id: RowId):
+    """Every trade and distribution this portfolio has for an instrument, in
+    one go, so that it can then be removed. Another portfolio's are untouched.
+
+    The same steps as deleting each in turn: a reinvested distribution takes
+    its trade with it, and a planned buy keeps its history with the link to
+    the trade dropped (`_release_planned_purchases`). Nothing can be left
+    stranded — with every trade gone there is no sell to outrun its buys.
+    """
+    with scoped(request) as (ctx, db):
+        await auth.verify_csrf(request, db)
+        _require_write(ctx)
+        inst = db.get(Instrument, instrument_id)
+        if inst is None or inst.id not in queries.portfolio_instrument_ids(db):
+            raise HTTPException(404, "no such instrument")
+        dividends = db.scalars(
+            select(Dividend).where(Dividend.instrument_id == instrument_id)).all()
+        for dividend in dividends:
+            dividend.reinvest_trade = None
+            db.delete(dividend)
+        db.flush()
+        trades = db.scalars(select(Trade).where(Trade.instrument_id == instrument_id)).all()
+        for trade in trades:
+            _release_planned_purchases(db, trade.id)
+            db.delete(trade)
+        # Still listed afterwards, so removing it is a step of its own. A
+        # holding known only through its trades would otherwise vanish here.
+        if queries.prefs_by_instrument(db).get(instrument_id) is None:
+            db.add(tenancy.owned(db, HoldingPref(instrument_id=instrument_id)))
+        db.flush()
+        log.info("all of portfolio %s's %s deleted: %d trades, %d dividends, by user %d",
+                 ctx.active_portfolio_id, inst.ticker, len(trades), len(dividends),
+                 ctx.user.id)
+        return _redirect("/holdings")
 
 
 @app.get("/holdings/lookup")
@@ -5362,7 +5378,9 @@ async def instruments_add(
     name: str = Form(""),
     exchange: str = Form("ASX"),
     asset_class: str = Form("etf"),
-    currency: str = Form("AUD"),
+    # "" not "AUD": an empty field takes this default, and "AUD" here beat
+    # the lookup below, so a USD stock was added as AUD.
+    currency: str = Form(""),
     yahoo_symbol: str = Form(""),
     drp: str = Form(""),
 ):
@@ -5386,7 +5404,6 @@ async def instruments_add(
                 Instrument.exchange == exchange, Instrument.ticker == ticker
             )
         )
-        was_new = existing is None
         if existing is None:
             # Anything left blank is filled from Yahoo; what was typed wins.
             found = pricefeed.lookup(ticker, exchange) if not (name.strip() and currency) else {}
@@ -5403,6 +5420,10 @@ async def instruments_add(
             )
             db.add(existing)
             db.flush()
+        elif not existing.active:
+            # Every portfolio removed it, which only deactivated it: back it
+            # comes, with its price history.
+            existing.active = True
         # Adding it to MY list is the per-user half: a pref row is what makes
         # the instrument mine to track (the catalogue entry itself is shared).
         pref = queries.prefs_by_instrument(db).get(existing.id)
@@ -5416,9 +5437,9 @@ async def instruments_add(
             pref.drp = bool(drp)
         db.flush()
     _kick_feed()  # prices for a brand-new instrument arrive with the next run
-    # Say which of the two things happened — the catalogue is shared, so
-    # "added" is often "was already there, and is now on your list".
-    return _redirect(f"/holdings?added={ticker}&new={'1' if was_new else '0'}")
+    # The same answer whether or not it was new to the shared catalogue:
+    # saying which would tell this portfolio what another one had added.
+    return _redirect(f"/holdings?added={ticker}")
 
 
 @app.post("/holdings/{instrument_id}/pref")

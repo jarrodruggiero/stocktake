@@ -110,7 +110,7 @@ def _drive(client, session_factory, tmp_path, driver: str, head: str = "") -> di
     make_login(client, session_factory)
     with session_factory() as s:
         bind_to_only_portfolio(s)
-        fac.make_instrument(s, "ACME")
+        fac.hold(s, fac.make_instrument(s, "ACME"))
         s.commit()
     page = client.get("/", headers=HTML)
     assert page.status_code == 200

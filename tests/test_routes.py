@@ -574,7 +574,7 @@ def _instruments_page(client, session_factory) -> str:
     make_login(client, session_factory)
     with session_factory() as s:
         bind_to_only_portfolio(s)
-        fac.make_instrument(s, "ACME", name="Acme Industries")
+        fac.hold(s, fac.make_instrument(s, "ACME", name="Acme Industries"))
         s.commit()
     return client.get("/holdings", headers={"accept": "text/html"}).text
 

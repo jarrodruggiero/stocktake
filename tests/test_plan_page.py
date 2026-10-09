@@ -27,7 +27,7 @@ TODAY = "2026-08-08"
 def _plan(client, session_factory, *, tickers="ALPHA", amount="500"):
     make_login(client, session_factory)
     with session_factory() as s:
-        fac.make_instrument(s, "ALPHA")
+        fac.hold(s, fac.make_instrument(s, "ALPHA"))
         s.commit()
     token = re.search(
         r'name="_csrf" value="([^"]+)"', client.get("/schedule", headers=HTML).text).group(1)
@@ -166,8 +166,8 @@ def test_a_repeated_ticker_survives_the_round_trip(client, session_factory):
     """
     make_login(client, session_factory)
     with session_factory() as s:
-        fac.make_instrument(s, "ALPHA")
-        fac.make_instrument(s, "BETAX")
+        fac.hold(s, fac.make_instrument(s, "ALPHA"))
+        fac.hold(s, fac.make_instrument(s, "BETAX"))
         s.commit()
     token = re.search(
         r'name="_csrf" value="([^"]+)"', client.get("/schedule", headers=HTML).text).group(1)
@@ -191,8 +191,8 @@ def test_the_rotation_palette_offers_every_instrument(client, session_factory):
     script builds nothing from a hard-coded list."""
     make_login(client, session_factory)
     with session_factory() as s:
-        fac.make_instrument(s, "ALPHA")
-        fac.make_instrument(s, "BETAX")
+        fac.hold(s, fac.make_instrument(s, "ALPHA"))
+        fac.hold(s, fac.make_instrument(s, "BETAX"))
         s.commit()
 
     page = client.get("/schedule", headers=HTML).text
@@ -210,7 +210,7 @@ def test_the_rotation_still_submits_from_a_plain_textarea(client, session_factor
     `required` in the markup so a scriptless browser enforces it."""
     make_login(client, session_factory)
     with session_factory() as s:
-        fac.make_instrument(s, "ALPHA")
+        fac.hold(s, fac.make_instrument(s, "ALPHA"))
         s.commit()
 
     page = client.get("/schedule", headers=HTML).text
@@ -233,7 +233,7 @@ def test_the_preview_projects_a_draft_without_saving_it(client, session_factory)
     """
     _plan(client, session_factory, tickers="ALPHA")
     with session_factory() as s:
-        fac.make_instrument(s, "BETAX")
+        fac.hold(s, fac.make_instrument(s, "BETAX"))
         s.commit()
     token = re.search(
         r'name="_csrf" value="([^"]+)"', client.get("/schedule", headers=HTML).text).group(1)

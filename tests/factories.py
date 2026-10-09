@@ -22,6 +22,7 @@ from app import tenancy
 from app.models import (
     Dividend,
     FxRate,
+    HoldingPref,
     Instrument,
     MarketDividend,
     Portfolio,
@@ -140,6 +141,20 @@ def add_market_dividend(db, inst: Instrument, ex_date, amount) -> MarketDividend
 # --------------------------------------------------------------------------- #
 # Personal data (portfolio-scoped)
 # --------------------------------------------------------------------------- #
+
+def hold(db, inst: Instrument, portfolio_id: int | None = None) -> HoldingPref:
+    """The instrument on a portfolio's list, as "+ Add an instrument" leaves
+    it: a holding setting. A portfolio lists only what it has — a setting, a
+    trade, a dividend or a place in its plan — so an instrument made with
+    nothing else is in the shared catalogue and on nobody's list."""
+    if portfolio_id is None:
+        portfolio_id = tenancy.current_portfolio_id(db) or db.query(Portfolio.id) \
+            .order_by(Portfolio.id).first()[0]
+    pref = HoldingPref(instrument_id=inst.id, portfolio_id=portfolio_id)
+    db.add(pref)
+    db.flush()
+    return pref
+
 
 def add_trade(db, inst: Instrument, date, type: str, quantity, unit_price, *,
               brokerage=0, fx_rate="auto", note: str | None = None,

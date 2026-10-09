@@ -17,7 +17,17 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from . import clock, money
-from .models import FxRate, HoldingPref, Instrument, Price, Trade, trade_order
+from .models import (
+    Dividend,
+    FxRate,
+    HoldingPref,
+    Instrument,
+    InvestmentPlan,
+    InvestmentPlanEntry,
+    Price,
+    Trade,
+    trade_order,
+)
 
 ZERO = Decimal(0)
 ONE = Decimal(1)
@@ -1215,6 +1225,29 @@ def instrument_series(session: Session, inst: Instrument) -> dict:
         inv_out.append(round(float(invested), 2))
         val_out.append(round(float(units * close), 2))
     return {"dates": dates, "invested": inv_out, "value": val_out}
+
+
+def portfolio_instrument_ids(session: Session) -> set[int]:
+    """The instruments this portfolio has: a holding setting, a trade, a
+    dividend, or a place in its plan. The catalogue is shared (decisions.md
+    #125); what a portfolio is shown of it, and picks from, is its own."""
+    plans = select(InvestmentPlan.id)
+    return (set(session.scalars(select(HoldingPref.instrument_id)))
+            | set(session.scalars(select(Trade.instrument_id).distinct()))
+            | set(session.scalars(select(Dividend.instrument_id).distinct()))
+            | set(session.scalars(select(InvestmentPlanEntry.instrument_id)
+                                  .where(InvestmentPlanEntry.plan_id.in_(
+                                      list(session.scalars(plans)))))))
+
+
+def portfolio_instruments(session: Session) -> list[Instrument]:
+    """This portfolio's active instruments, in the order every list uses."""
+    ids = portfolio_instrument_ids(session)
+    if not ids:
+        return []
+    return list(session.scalars(
+        select(Instrument).where(Instrument.id.in_(ids), Instrument.active.is_(True))
+        .order_by(Instrument.asset_class, Instrument.ticker)))
 
 
 def last_brokerage(session: Session, *, foreign: bool = False) -> Decimal | None:
