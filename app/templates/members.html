@@ -40,6 +40,26 @@ all of them.</p>
         </select>
       </label>
     </div>
+    <div class="optline"><strong>Brokerage</strong></div>
+    {% macro fee(column, kind, money=True) -%}
+    {%- set v = portfolio[column] if portfolio else none -%}
+    <td><input name="{{ column }}" inputmode="decimal" aria-label="{{ kind }}"
+               value="{{ ('%.2f' | format(v) if money else v | qty) if v is not none else '' }}"></td>
+    {%- endmacro %}
+    <table class="feetable">
+      <thead><tr><th></th><th scope="col">Flat fee</th><th scope="col">Percentage</th>
+                 <th scope="col">Minimum</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">{{ reporting_ccy }}</th>
+          {{ fee("brokerage_flat", reporting_ccy ~ " flat fee") }}
+          {{ fee("brokerage_percent", reporting_ccy ~ " percentage", money=False) }}
+          {{ fee("brokerage_minimum", reporting_ccy ~ " minimum") }}</tr>
+        <tr><th scope="row">Other currencies</th>
+          {{ fee("foreign_brokerage_flat", "Other currencies flat fee") }}
+          {{ fee("foreign_brokerage_percent", "Other currencies percentage", money=False) }}
+          {{ fee("foreign_brokerage_minimum", "Other currencies minimum") }}</tr>
+      </tbody>
+    </table>
     {# Said plainly rather than implied. A setting that silently does nothing is
        worse than no setting, and totals are still computed in the built-in
        reporting currency until T28b rewires the places that assume it. #}

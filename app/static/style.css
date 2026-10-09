@@ -884,6 +884,16 @@ button.primary { background: var(--accent-grad); border-color: transparent; colo
 .colgroups fieldset { margin: 0; }
 .colgroups legend { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .optline { display: flex; align-items: center; gap: 0.35rem; margin: 0.9rem 0 0.2rem; }
+/* Three figures for each kind of trade, labelled once across the top. A form
+   laid out in rows, not a data table: plain labels, no bands or rules, and
+   inputs that share the width so a phone fits all three. */
+.feetable { width: 100%; max-width: 30rem; table-layout: fixed; border-collapse: collapse;
+  margin-bottom: var(--sp-3); }
+.feetable th, .feetable td { background: none; border: 0; text-transform: none;
+  letter-spacing: normal; font-size: inherit; font-weight: 400; text-align: left;
+  padding: 0.2rem 0.5rem 0.2rem 0; color: var(--text); }
+.feetable th[scope="row"] { width: 32%; }
+.feetable td input { width: 100%; margin-top: 0; }
 .optline label.check { margin: 0; font-size: 0.95rem; }
 label.check { display: flex; align-items: center; gap: 0.4rem; margin: 0.2rem 0; font-size: 0.85rem; }
 label.check input { width: auto; margin: 0; }

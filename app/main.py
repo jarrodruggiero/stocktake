@@ -53,6 +53,7 @@ from appcore.config import DatabaseSettings
 from . import (
     auth,
     branding,
+    brokerage,
     brokerdesign,
     calendarview,
     chart_templates,
@@ -2854,8 +2855,15 @@ async def portfolio_settings(
     name: str = Form(...),
     reporting_currency: str = Form("AUD"),
     jurisdiction: str = Form("AU"),
+    brokerage_flat: str = Form(""),
+    brokerage_percent: str = Form(""),
+    brokerage_minimum: str = Form(""),
+    foreign_brokerage_flat: str = Form(""),
+    foreign_brokerage_percent: str = Form(""),
+    foreign_brokerage_minimum: str = Form(""),
 ):
-    """Rename this portfolio, and set the currency and jurisdiction it reports in.
+    """Rename this portfolio, set the currency and jurisdiction it reports in,
+    and what its broker charges (app/brokerage.py).
 
     **Both are stored and only partly wired.** Totals are still computed in
     `money.REPORTING` and the financial-year logic is still AU's — T28b is the
@@ -2880,10 +2888,36 @@ async def portfolio_settings(
         place = jurisdiction.strip().upper()
         if len(place) != 2 or not place.isalpha():
             raise HTTPException(400, "country must be a two-letter code")
+        typed = {"brokerage_flat": brokerage_flat, "brokerage_percent": brokerage_percent,
+                 "brokerage_minimum": brokerage_minimum,
+                 "foreign_brokerage_flat": foreign_brokerage_flat,
+                 "foreign_brokerage_percent": foreign_brokerage_percent,
+                 "foreign_brokerage_minimum": foreign_brokerage_minimum}
+        fees = {}
+        for column, text in typed.items():
+            # Blank is "not set", which is not the same as free.
+            if not text.strip():
+                fees[column] = None
+                continue
+            percent = column.endswith("percent")
+            label = "Percentage" if percent else "Brokerage"
+            try:
+                figure = money.parse(text, getattr(Portfolio, column), label)
+            except money.FigureError as exc:
+                raise HTTPException(400, f"{exc}.")
+            except ValueError:
+                raise HTTPException(400, f"{label} must be a number.")
+            if figure < 0:
+                raise HTTPException(400, f"{label} can't be negative.")
+            if percent and figure > 100:
+                raise HTTPException(400, "Percentage can't be more than 100.")
+            fees[column] = figure
         portfolio = db.get(Portfolio, ctx.active_portfolio_id)
         portfolio.name = cleaned[:80]
         portfolio.reporting_currency = currency
         portfolio.jurisdiction = place
+        for column, figure in fees.items():
+            setattr(portfolio, column, figure)
         db.commit()
         return _redirect("/members")
 
@@ -3442,6 +3476,28 @@ def _instrument_options(db, instruments):
     } for inst in instruments]
 
 
+def _brokerage_context(db, ctx) -> dict:
+    """What the trade and plan forms need to suggest a brokerage: each kind's
+    fee if the portfolio set one, and each kind's last trade for when it did
+    not. The value a form starts at is the local fee on nothing — its flat
+    part, or its minimum — or else the last local trade's."""
+    portfolio = db.get(Portfolio, ctx.active_portfolio_id)
+    local, foreign = brokerage.local(portfolio), brokerage.foreign(portfolio)
+    last_local = queries.last_brokerage(db)
+    last_foreign = queries.last_brokerage(db, foreign=True)
+
+    def cents(v):
+        return f"{v:.2f}" if v is not None else None
+
+    start = local.on(Decimal(0)) if local.is_set else last_local
+    return {
+        "brokerage_fees": {"local": local.as_json(), "foreign": foreign.as_json(),
+                           "last": {"local": cents(last_local),
+                                    "foreign": cents(last_foreign)}},
+        "initial_brokerage": cents(start) or "",
+    }
+
+
 def _dca_prefill(db):
     """Today's scheduled buy, as form values — or None.
 
@@ -3549,6 +3605,7 @@ def dashboard(request: Request, fy: int | None = None):
                 "options": _instrument_options(db, db.scalars(
                     select(Instrument).where(Instrument.active.is_(True))
                     .order_by(Instrument.asset_class, Instrument.ticker)).all()),
+                **_brokerage_context(db, ctx),
                 "cols": cols,
                 # The one currency these holdings trade in, or None when they
                 # trade in several — which is what lets a native-currency
@@ -3849,6 +3906,7 @@ def plan_page(
                 "sched": sched,
                 "plan": sched["plan"],
                 "instruments": instruments,
+                **_brokerage_context(db, ctx),
                 # Only needed when there is no plan to show; cheap either way.
                 "suggested_rotation": plans.suggested_rotation(db),
                 "edit": bool(edit),
@@ -3955,7 +4013,7 @@ async def plan_save(
     name: str = Form(...),
     interval_days: int = Form(...),
     amount: str = Form(""),
-    brokerage: str = Form("9.50"),
+    brokerage: str = Form(""),
     start_date: str = Form(""),
     tickers: str = Form(""),
 ):
@@ -4039,7 +4097,7 @@ def plan_complete_form(request: Request):
                 "nxt": nxt,
                 "price": latest[0] if latest else None,
                 "today": clock.today().isoformat(),
-                "brokerage": plan.brokerage if plan else Decimal("9.50"),
+                "brokerage": plan.brokerage if plan else (queries.last_brokerage(db) or ""),
             },
         )
 
@@ -4052,7 +4110,7 @@ async def plan_complete(
     trade_date: str = Form(...),
     quantity: str = Form(...),
     unit_price: str = Form(...),
-    brokerage: str = Form("9.50"),
+    brokerage: str = Form(""),
 ):
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
@@ -4277,6 +4335,7 @@ def trade_form(request: Request, ticker: str = "", error: str = ""):
                 "today": clock.today().isoformat(),
                 "prefill": _dca_prefill(db),
                 "options": _instrument_options(db, instruments),
+                **_brokerage_context(db, ctx),
                 "error": error,
                 "form": {},
                 "edit": None,
@@ -4337,6 +4396,8 @@ async def trade_create(
                     "trade_new.html",
                     {
                         "instruments": instruments,
+                        "options": _instrument_options(db, instruments),
+                        **_brokerage_context(db, ctx),
                         "ticker": "",
                         "today": clock.today().isoformat(),
                         "error": message,
