@@ -54,6 +54,15 @@ Then open `http://localhost:8000`. There is nothing to configure first: with no
 configuration file the app boots into a setup wizard that chooses where to keep
 the data, creates your account, and writes `config.yaml` for you.
 
+| Volume | Mounted at | Holds |
+| --- | --- | --- |
+| `stocktake-config` | `/config` | `config.yaml`, which the setup wizard writes |
+| `stocktake-data` | `/data` | The database and any formats you add — **back this up** |
+
+Both are named volumes, which Docker creates with the right owner. To use
+folders on the host instead, run `chown -R 1000:1000` on them first: the app
+runs as uid 1000.
+
 Full instructions, including what to set behind a reverse proxy, are in
 [the deployment guide](docs/deploy/index.md).
 

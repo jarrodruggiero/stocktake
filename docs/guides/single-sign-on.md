@@ -82,6 +82,11 @@ on it would be a way to sign in as somebody else. That is why linking an
 existing account is something you do while signed in, rather than something
 that happens by itself.
 
+**A provider sign-in does not ask for Stocktake's two-factor code.** The
+provider's own sign-in stands in for it, the same way a passkey does, so use a
+provider that enforces multi-factor authentication. Signing in with a password
+still asks for the code.
+
 ## Signing out
 
 Signing out of Stocktake also ends your session at the provider, when you

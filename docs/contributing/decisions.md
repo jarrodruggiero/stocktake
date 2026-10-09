@@ -1265,3 +1265,13 @@ hatch-vcs. The chart in the repository names no release and refuses to render
 without `image.tag`, rather than run an image it was not given. A release
 needs no commit beforehand; the cost is that the chart is installed from the
 registry, not from a clone.
+
+**138. A provider sign-in does not ask for Stocktake's own code.** An account
+with 2FA on gets the code step after a password, but not after signing in
+through its identity provider: `login_oidc_callback` creates a full session.
+The provider authenticated the person, and its own multi-factor policy is
+where an organisation running one enforces a second factor; asking again would
+give the people who chose a provider two second factors for one sign-in. It is
+the reasoning a passkey already follows (#113). The cost is that turning on
+OIDC trusts the provider as far as the app's own 2FA, so use one that enforces
+MFA. `test_a_provider_sign_in_does_not_ask_for_the_code` pins it.

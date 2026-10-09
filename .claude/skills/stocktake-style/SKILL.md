@@ -70,6 +70,14 @@ decision record wearing a comment's clothes — put it in
 
 ## Before you finish
 
+**List every string the diff adds or changes that a person will read**
+(`git diff origin/main -- app/templates app/static`): labels, buttons,
+notices, errors, tooltips, `title`, `aria-label`. Check each against the
+table above, cut what fails, then check the trimmed version again — it is
+usually still one clause too long. Put the final list in the pull request.
+This is the step that keeps the rule above from being broken; it is not
+optional.
+
 Read the page you changed, rendered. Every layout fault this project has had
 was found by somebody looking at a page — `uv run pytest tests -m visual`
 drives a real browser over every page at 1400px and 412px and states the fault
