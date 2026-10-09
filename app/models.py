@@ -175,6 +175,11 @@ class User(Base):
         String(36), index=True, default=_new_public_id
     )
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    # The portfolio a sign-in opens. NULL means the last one opened, from a
+    # cookie holding only its id; either is used only while the person is a
+    # member of it. Cleared if the portfolio goes.
+    default_portfolio_id: Mapped[int | None] = mapped_column(
+        ForeignKey("portfolio.id", name="fk_user_default_portfolio", ondelete="SET NULL"))
     name: Mapped[str] = mapped_column(String(120))
     # NULL where the account signs in another way — an account provisioned by
     # an identity provider never had one. `auth.verify_password` refuses None
