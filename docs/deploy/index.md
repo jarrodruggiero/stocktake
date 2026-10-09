@@ -126,7 +126,7 @@ helm install stocktake oci://ghcr.io/jarrodruggiero/charts/stocktake \
 
 Each release publishes the chart with the same version as the app, and the
 chart runs that release's image. Without `--version` Helm takes the newest;
-add `--version 0.67.2` to choose one.
+add `--version 0.68.0` to choose one.
 
 Defaults give you SQLite on a 2 GiB PersistentVolume, which is the right choice
 for almost everyone.
@@ -211,7 +211,7 @@ outright — a typo should be loud, not silently ignored — which also means a
 config written for a newer version is refused by an older one, and vice versa.
 Move them together, in one apply.
 
-**Installed the Helm chart from a clone of this repository before 0.67.2?** It
+**Installed the Helm chart from a clone of this repository before 0.68.0?** It
 ran 0.64.0 however many times you upgraded, unless you set `image.tag`: the
 chart picked its image from a version number nobody had updated. Back up, then
 move to the published chart with the values you installed with:
