@@ -1,0 +1,10 @@
+{# How strong the password above it is: a bar and one word, guidance only — it
+   never stops a submit. zxcvbn loads on the first keystroke, not with the
+   page: it is 800 KB. `words` are what the person would think of, which a
+   guess would try first. strength.js. #}
+<div class="strength" hidden data-zxcvbn="/static/vendor/zxcvbn.js?v={{ asset_v }}"
+     data-words="{{ words | default('') }}">
+  <span class="strengthbar" aria-hidden="true"><span></span></span>
+  <span class="strengthword" aria-live="polite"></span>
+</div>
+<script src="/static/strength.js?v={{ asset_v }}" defer></script>

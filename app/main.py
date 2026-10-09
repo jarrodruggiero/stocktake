@@ -1145,14 +1145,15 @@ async def setup_account_create(
 ):
     _wizard_step(request, "account")
     await auth.verify_pre_auth_csrf(request)
-    problem = (auth.password_problem(password) or auth.email_problem(email)
-               or textfield.problem(name, User.name, "Name"))
+    problem = (auth.password_problem(password) or await _confirm_problem(request, password)
+               or auth.email_problem(email) or textfield.problem(name, User.name, "Name"))
     if problem:
         setupwizard.draft().want_2fa = bool(want_2fa)
         return _wizard_page(request, "account", {
             "db_description": database.describe(database.current() or settings.database),
             "error": problem,
             "want_2fa": bool(want_2fa),
+            "typed": {"name": name, "email": email},
         }, skip=_skipped_steps())
     with anon() as db:
         if _users_exist(db):
@@ -3095,8 +3096,18 @@ async def members_invite_revoke(request: Request, invite_id: RowId):
 # checked on every one of these.
 # --------------------------------------------------------------------------- #
 
+async def _confirm_problem(request: Request, password: str) -> str | None:
+    """A mismatch with the confirm field, when the form has one — the account
+    forms do. Read from the raw form because an empty field would otherwise
+    arrive as "not sent", and an empty confirm is a mismatch."""
+    form = await request.form()
+    if "confirm" in form and form.get("confirm") != password:
+        return "The passwords don't match."
+    return None
+
+
 def _invite_page(request: Request, token: str, *, error: str = "",
-                 ctx=None) -> HTMLResponse:
+                 ctx=None, typed: dict | None = None) -> HTMLResponse:
     with anon() as db:
         try:
             invite = invites.lookup(db, token)
@@ -3114,7 +3125,7 @@ def _invite_page(request: Request, token: str, *, error: str = "",
     resp = templates.TemplateResponse(
         request, "invite.html",
         {"auth": ctx, "csrf": csrf, "refused": None, "invite": detail,
-         "token": token, "error": error or None, **_oidc_context()},
+         "token": token, "error": error or None, "typed": typed, **_oidc_context()},
     )
     if ctx is None:
         _set_pre_auth_csrf(resp, csrf)
@@ -3160,10 +3171,11 @@ async def invite_signup(
     without one, which is what stops a public instance growing accounts.
     """
     await auth.verify_pre_auth_csrf(request)
-    problem = (auth.password_problem(password) or auth.email_problem(email)
-               or textfield.problem(name, User.name, "Name"))
+    problem = (auth.password_problem(password) or await _confirm_problem(request, password)
+               or auth.email_problem(email) or textfield.problem(name, User.name, "Name"))
     if problem:
-        return _invite_page(request, token, error=problem)
+        return _invite_page(request, token, error=problem,
+                            typed={"name": name, "email": email})
     with anon() as db:
         try:
             invites.lookup(db, token)

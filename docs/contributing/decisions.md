@@ -1293,6 +1293,20 @@ last buy still in it, because the slots left keep their rows. A ticker another p
 trades" clears this portfolio's trades and distributions for one instrument and
 leaves it listed, so removing it stays a step of its own.
 
+**140. A password is 10 to 64 characters; how strong it is gets shown, never
+enforced.** The length is the only rule, at every form where a password is
+chosen and never at sign-in, so an account with a longer one from before still
+gets in. No mix of character types: NIST 800-63B-4 and OWASP ASVS 5.0 both
+forbid it, and on a self-hosted app a gate on strength mostly produces
+`Password1!`. No banned list either, though both ask for one: the meter shows a
+common password as Very weak, and the person decides. The meter under each
+chosen password is
+zxcvbn (Dropbox, USENIX Security 2016), which estimates guesses from what people
+actually choose, the app's name and the person's own email included; it is a
+word and a bar, and a weak password still saves. zxcvbn is 800 KB, so it loads
+on the first keystroke rather than with the page. Admins' temporary passwords
+get the cap but no meter: the person replaces them at first sign-in.
+
 **141. A sign-in opens the default portfolio, else the last one opened.** Every
 way of signing in goes through `_landing_portfolio`: the portfolio chosen in the
 profile, else the one in a cookie set whenever a portfolio is switched to,

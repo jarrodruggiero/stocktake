@@ -182,7 +182,8 @@ def test_needs_rehash_is_false_for_a_freshly_hashed_password():
     ("x" * 9, True),     # 9 characters — one short of the minimum
     ("x" * 10, False),   # 10 characters — the boundary is inclusive
     ("x" * 11, False),
-    ("x" * 200, False),  # no upper bound: argon2 hashes any length
+    ("x" * 64, False),   # the cap: NIST 800-63B-4 asks that 64 be allowed
+    ("x" * 65, True),    # one over it; checked where a password is chosen only
 ])
 def test_password_problem_boundary_is_ten_characters(password, rejected):
     assert (auth.password_problem(password) is not None) is rejected
