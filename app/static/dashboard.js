@@ -11,6 +11,8 @@
   if (!dialog) { return; }
 
   function openTrade() {
+    var form = dialog.querySelector("form");
+    if (form && window.resetTradeForm) { window.resetTradeForm(form); }
     if (dialog.showModal) {
       dialog.showModal();
     } else {
