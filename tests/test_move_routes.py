@@ -23,7 +23,7 @@ from sqlalchemy import select
 import factories as fac
 from app import tenancy
 from app.models import Dividend, PlannedPurchase, Portfolio, PortfolioMember, Trade, User
-from test_routes import make_login, session_csrf
+from test_routes import bind_to_only_portfolio, make_login, session_csrf
 
 HTML = {"accept": "text/html"}
 TODAY = "2026-09-23"
@@ -271,19 +271,42 @@ def test_moving_a_trade_reassigns_it(client, session_factory):
 
 
 @freeze_time(TODAY)
-def test_moving_everything_out_lands_on_an_empty_holding_not_a_404(
-    client, session_factory
-):
+def test_moving_everything_out_never_ends_on_a_404(client, session_factory):
     """Where the redirect goes when the source keeps nothing.
 
-    It works because `Instrument` is a catalogue: ACME still exists after the
-    last of its trades has left, so `queries.ledger` finds it and renders an
-    empty ledger. If instruments were ever portfolio-scoped this would become a
-    404 at the end of a successful move.
+    A portfolio has an instrument while it holds a row for it or a setting
+    (decisions.md #139), and its holding page exists only while it does. With
+    the last trade gone and no setting, that page is another portfolio's, so
+    the move ends on the portfolio. With a setting the holding stays, empty.
     """
     make_login(client, session_factory)
     rows = _furnish(session_factory, sell=100)
     target = _second_portfolio(session_factory)
+
+    resp = client.post(
+        f"/trade/{rows['buy']}/move",
+        data={"target": str(target),
+              "row": [f"trade:{rows['buy']}", f"trade:{rows['sell']}"],
+              "_csrf": session_csrf(session_factory)},
+        headers=HTML, follow_redirects=False,
+    )
+
+    assert resp.headers["location"] == "/"
+    assert client.get("/", headers=HTML).status_code == 200
+    assert client.get("/holding/ACME", headers=HTML).status_code == 404
+
+
+@freeze_time(TODAY)
+def test_a_holding_kept_by_its_setting_stays_after_moving_everything_out(
+    client, session_factory
+):
+    make_login(client, session_factory)
+    rows = _furnish(session_factory, sell=100)
+    target = _second_portfolio(session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        fac.hold(s, s.get(Trade, rows["buy"]).instrument)
+        s.commit()
 
     resp = client.post(
         f"/trade/{rows['buy']}/move",

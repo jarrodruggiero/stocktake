@@ -4576,6 +4576,8 @@ async def trade_create(
                 # Parsed here rather than typed as RowId because "new" is valid too,
                 # so the bounds RowId would apply are applied by hand.
                 inst = db.get(Instrument, wanted) if 1 <= wanted <= ROW_ID_MAX else None
+                if inst not in instruments:
+                    inst = None             # the catalogue's, not this portfolio's
             if inst is None:
                 return _reject("Pick an instrument.")
 
@@ -4615,6 +4617,17 @@ async def trade_create(
 
 def _owning_dividend(db: DbSession, trade_id: int) -> Dividend | None:
     return db.scalar(select(Dividend).where(Dividend.reinvest_trade_id == trade_id))
+
+
+def _back_to_holding(db: DbSession, inst: Instrument, path: str | None = None) -> str:
+    """`path`, by default the holding's page. Once the last row this portfolio
+    had for the instrument has gone, that page is another portfolio's or
+    nobody's, so the portfolio's own page is where to land instead."""
+    page = f"/holding/{inst.ticker}"
+    path = path or page
+    if path.split("?")[0] == page and inst.id not in queries.portfolio_instrument_ids(db):
+        return "/"
+    return path
 
 
 def _trade_for_move(db: DbSession, trade_id: int) -> Trade:
@@ -5006,7 +5019,7 @@ async def trade_move(
                  inst.ticker, sorted(chosen.trades), sorted(chosen.dividends),
                  target)
         db.flush()
-        return _redirect(f"/holding/{inst.ticker}")
+        return _redirect(_back_to_holding(db, inst))
 
 
 @app.post("/trade/{trade_id}/delete")
@@ -5034,7 +5047,7 @@ async def trade_delete(request: Request, trade_id: RowId, return_to: str = Form(
         log.info("trade %s deleted: %s", trade.id, _trade_snapshot(trade))
         db.delete(trade)
         db.flush()
-        return _redirect(back)
+        return _redirect(_back_to_holding(db, inst, back))
 
 
 def _dividend_for_edit(db: DbSession, dividend_id: int) -> Dividend:
@@ -5194,7 +5207,7 @@ async def dividend_delete(request: Request, dividend_id: RowId):
             _release_planned_purchases(db, drp.id)
             db.delete(drp)
         db.flush()
-        return _redirect(f"/holding/{inst.ticker}")
+        return _redirect(_back_to_holding(db, inst))
 
 
 # --------------------------------------------------------------------------- #
@@ -5456,7 +5469,7 @@ def instruments_price_on(request: Request, date: str = "",
             raise HTTPException(400, "instrument or symbol is required")
         if instrument:
             inst = db.get(Instrument, instrument)
-            if inst is None:
+            if inst is None or inst.id not in queries.portfolio_instrument_ids(db):
                 raise HTTPException(404, "no such instrument")
             close = queries.close_on_or_before(db, inst.id, on)
             rate = queries.fx_on_or_before(db, inst.currency, on)

@@ -271,7 +271,9 @@ def _instrument(db, ticker: str) -> Instrument:
     if problem:
         raise HTTPException(400, problem)
     inst = db.scalar(
-        select(Instrument).where(Instrument.ticker == ticker.strip().upper())
+        select(Instrument).where(Instrument.ticker == ticker.strip().upper(),
+                                 Instrument.id.in_(queries.portfolio_instrument_ids(db)))
+        .order_by(Instrument.id)
     )
     if inst is None:
         raise HTTPException(

@@ -269,6 +269,7 @@ def test_recording_a_trade_stores_it_and_returns_to_the_instrument(client, sessi
     with session_factory() as s:
         bind_to_only_portfolio(s)
         acme = fac.make_instrument(s, "ACME", name="Acme Industries")
+        fac.hold(s, acme)
         s.commit()
         acme_id = acme.id
 
