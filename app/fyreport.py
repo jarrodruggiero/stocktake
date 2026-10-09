@@ -53,20 +53,6 @@ def regime_warning(fy_end_year: int) -> str | None:
     )
 
 
-def spans_regime_change(disposals) -> bool:
-    """Whether any disposal here is of an asset held across 1 July 2027.
-
-    Those need the transitional apportionment — a market valuation at the
-    changeover — which cannot be computed until the method is published. Worth
-    flagging even in a year this module still calculates, because the parcel is
-    already straddling the boundary.
-    """
-    return any(
-        p.acquired < CGT_INDEXATION_START <= d.date
-        for d in disposals for p in d.parcels
-    )
-
-
 def fy_bounds(fy_end_year: int) -> tuple[dt.date, dt.date]:
     """FY2026 = 1 Jul 2025 → 30 Jun 2026."""
     return dt.date(fy_end_year - 1, 7, 1), dt.date(fy_end_year, 6, 30)
@@ -308,14 +294,6 @@ def fy_cgt(session: Session, fy_end_year: int) -> CgtSummary:
     else:
         out.net_capital_gain = (out.gains_other - out.losses_applied_other) + disc_after - out.discount
     out.disposals.sort(key=lambda d: d.date)
-    if spans_regime_change(out.disposals):
-        out.regime_warning = (
-            "One or more parcels here were acquired before 1 July 2027 and "
-            "sold after it. From that date the CGT rules change, and such a "
-            "parcel is apportioned using its market value at the changeover — "
-            "a method that is not yet published. These figures use the earlier "
-            "rules for the whole gain. Check for an update before lodging."
-        )
     return out
 
 
@@ -404,20 +382,6 @@ def _price_at(session: Session, instrument_id: int, asof: dt.date):
     ).first()
 
 
-def _fx_at(session: Session, currency: str, asof: dt.date) -> Decimal:
-    if currency == "AUD":
-        return Decimal(1)
-    from .models import FxRate
-
-    rate = session.execute(
-        select(FxRate.rate)
-        .where(FxRate.pair == f"{currency}AUD", FxRate.date <= asof)
-        .order_by(FxRate.date.desc())
-        .limit(1)
-    ).scalar()
-    return rate if rate is not None else Decimal(1)
-
-
 @dataclass
 class FyActivity:
     invested: Decimal = ZERO  # AUD buys incl. brokerage
@@ -463,9 +427,12 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
             continue
         price_row = _price_at(session, inst.id, asof)
         price, price_date = (price_row.close, price_row.date) if price_row else (None, None)
+        # The stored rate nearest the date, and no value at all for a currency
+        # with none: never 1:1 (decisions.md #5).
+        rate = fx_book.rate(inst.currency, asof)
         value = gain = None
-        if price is not None and units > 0:
-            value = units * price * _fx_at(session, inst.currency, asof)
+        if price is not None and units > 0 and rate is not None:
+            value = units * price * rate
             gain = value - invested
         if units > 0:
             snapshot.append(

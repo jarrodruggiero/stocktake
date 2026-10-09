@@ -590,38 +590,17 @@ def test_the_same_disposal_a_year_earlier_is_calculated_normally(pf):
     assert summary.discount > 0            # the 50% discount still applies
 
 
-def test_a_parcel_held_across_the_change_is_flagged_even_in_a_year_we_compute(pf):
-    """A parcel bought before and sold after 1 July 2027 needs the transitional
-    apportionment — a market valuation at the changeover, whose method is not
-    published. Worth saying even where the year itself is calculable."""
-    alpha = make_instrument(pf, "ALPHA")
-    add_trade(pf, alpha, "2020-01-06", "buy", 100, "10.00")
-    disposals = [
-        fyreport.Disposal(
-            instrument=alpha, date=dt.date(2027, 9, 1), quantity=Decimal(100),
-            proceeds=Decimal(3000),
-            parcels=[fyreport.ParcelUse(
-                acquired=dt.date(2020, 1, 6), quantity=Decimal(100),
-                cost_base=Decimal(1000), proceeds=Decimal(3000), discountable=True)],
-        )
-    ]
-
-    assert fyreport.spans_regime_change(disposals) is True
-
-
-def test_a_parcel_wholly_before_the_change_is_not_flagged(pf):
-    alpha = make_instrument(pf, "ALPHA")
-    disposals = [
-        fyreport.Disposal(
-            instrument=alpha, date=dt.date(2026, 9, 1), quantity=Decimal(100),
-            proceeds=Decimal(3000),
-            parcels=[fyreport.ParcelUse(
-                acquired=dt.date(2020, 1, 6), quantity=Decimal(100),
-                cost_base=Decimal(1000), proceeds=Decimal(3000), discountable=True)],
-        )
-    ]
-
-    assert fyreport.spans_regime_change(disposals) is False
+def test_no_year_that_is_calculated_can_hold_a_sale_after_the_change():
+    """Why there is no warning for a parcel held across 1 July 2027. Sold after
+    that date, it is sold in FY2028 or later, and those years are refused
+    outright (decisions.md #26). Every year that IS calculated ends first, so a
+    straddling sale cannot appear in one. There used to be such a warning, and
+    no test could make it show."""
+    for fy in range(2000, 2100):
+        if fyreport.regime_warning(fy) is None:
+            assert fyreport.fy_bounds(fy)[1] < fyreport.CGT_INDEXATION_START, fy
+        else:
+            assert fyreport.fy_bounds(fy)[0] >= fyreport.CGT_INDEXATION_START, fy
 
 
 @freeze_time("2027-09-15")

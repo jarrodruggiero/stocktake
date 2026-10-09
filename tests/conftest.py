@@ -56,6 +56,8 @@ sys.path.insert(0, str(APP_ROOT))
 sys.path.insert(0, str(TESTS_DIR))
 
 import pytest  # noqa: E402
+from hypothesis import HealthCheck  # noqa: E402
+from hypothesis import settings as generated  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 from app import pricefeed, providers, queries, tenancy  # noqa: E402
@@ -63,6 +65,18 @@ from app.models import Portfolio, PortfolioMember, User  # noqa: E402
 from appcore import make_session_factory, upgrade_to_head  # noqa: E402
 from appcore.config import DatabaseSettings  # noqa: E402
 from appcore.db import make_engine  # noqa: E402
+
+# Generated cases (the tests using Hypothesis) are the same every run, so a red
+# build can be reproduced from its log. `HYPOTHESIS_PROFILE=explore` searches
+# afresh, with far more of them. Function-scoped fixtures are fine here: each
+# case rolls back what it wrote rather than relying on a fresh fixture.
+_RELAXED = [HealthCheck.function_scoped_fixture, HealthCheck.too_slow,
+            HealthCheck.data_too_large]
+generated.register_profile("default", derandomize=True, database=None, deadline=None,
+                           max_examples=40, suppress_health_check=_RELAXED)
+generated.register_profile("explore", deadline=None, max_examples=1500,
+                           suppress_health_check=_RELAXED)
+generated.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
 
 # A frozen "today" for every test that depends on the current date. Chosen so
 # the reference portfolio (which starts 2019) fills the 1d/1m/6m/1y/3y/5y
