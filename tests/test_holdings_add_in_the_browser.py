@@ -81,3 +81,60 @@ def test_changing_the_exchange_looks_the_ticker_up_again(client, session_factory
     assert out["onNasdaq"] == {"symbol": "GOOG", "name": "Alphabet Inc.", "currency": "USD",
                                "cls": "share"}
     assert out["typedKept"] == {"symbol": "GOOGL", "cls": "etf"}
+
+
+# The ASX answer is slow and the NASDAQ one quick, so the ASX one lands last.
+LATE_ASX = """
+<script>
+window.fetch = function (url) {
+  url = String(url);
+  var nasdaq = url.indexOf("exchange=NASDAQ") > 0;
+  var answer = nasdaq
+    ? {found: true, name: "Alphabet Inc.", currency: "USD", symbol: "GOOG", asset_class: "share"}
+    : {found: false, name: null, currency: null, symbol: "GOOG.AX", asset_class: null};
+  return new Promise(function (resolve) {
+    setTimeout(function () {
+      resolve({ok: true, json: function () { return Promise.resolve(answer); }});
+    }, nasdaq ? 5 : 200);
+  });
+};
+</script>
+"""
+
+RACE = """
+<script>
+window.addEventListener("load", async function () {
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var form = document.querySelector('form[action="/holdings/add"]');
+  var field = function (name) { return form.querySelector('[name="' + name + '"]'); };
+  var change = function (name) { field(name).dispatchEvent(new Event("change", {bubbles: true})); };
+  document.getElementById("addinst-open").click(); await sleep(20);
+  field("ticker").value = "GOOG"; change("ticker");
+  field("exchange").value = "NASDAQ"; change("exchange");
+  await sleep(400);
+  var pre = document.createElement("pre");
+  pre.id = "result";
+  pre.textContent = JSON.stringify({symbol: field("yahoo_symbol").value,
+                                    name: field("name").value,
+                                    currency: field("currency").value});
+  document.body.appendChild(pre);
+});
+</script>
+"""
+
+
+def test_an_answer_that_arrives_late_does_not_overwrite_a_newer_one(
+        client, session_factory, tmp_path):
+    make_login(client, session_factory)
+    page = client.get("/holdings", headers=HTML)
+    target = tmp_path / "holdings.html"
+    target.write_text(_standalone(page.text, RACE).replace("<head>", "<head>" + LATE_ASX, 1))
+    dom = subprocess.run(
+        [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
+         "--allow-file-access-from-files", "--window-size=1400,1000",
+         "--virtual-time-budget=8000", target.as_uri()],
+        capture_output=True, text=True, timeout=90).stdout
+    found = re.search(r'<pre id="result">(.*?)</pre>', dom, re.S)
+    assert found, "the driver did not finish"
+    assert json.loads(found.group(1).replace("&quot;", '"')) == {
+        "symbol": "GOOG", "name": "Alphabet Inc.", "currency": "USD"}

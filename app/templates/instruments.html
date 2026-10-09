@@ -192,16 +192,20 @@
   /* Ask the server what the ticker is as soon as there's something to look up.
      Anything typed or picked by hand is kept; what the lookup filled in gives
      way to its next answer, because the exchange often changes after the
-     ticker and the first answer, the ASX guess, is then wrong. */
+     ticker and the first answer, the ASX guess, is then wrong. Only the newest
+     question's answer is used: the first can come back last. */
+  let asked = 0;
   function autofill(prefix) {
     const q = (n) => document.querySelector(`[name="${prefix}${n}"]`);
     const ticker = q("ticker"), exchange = q("exchange");
     if (!ticker || !ticker.value.trim()) return;
     const status = document.getElementById(prefix + "lookup-status");
     if (status) status.textContent = "looking up…";
+    const mine = ++asked;
     fetch(`/holdings/lookup?ticker=${encodeURIComponent(ticker.value)}&exchange=${encodeURIComponent(exchange ? exchange.value : "ASX")}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
+        if (mine !== asked) return;
         if (!d) { if (status) status.textContent = ""; return; }
         const fill = (n, v) => {
           const el = q(n);
