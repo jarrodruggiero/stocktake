@@ -15,7 +15,7 @@ import urllib.parse
 import pytest
 from sqlalchemy import select
 
-from app import federation
+from app import federation, twofactor
 from app.models import ExternalIdentity, PortfolioMember, User, UserSession
 from appcore import oidc
 from appcore.testing import FakeIdp
@@ -102,6 +102,32 @@ def test_a_linked_account_signs_in(client, session_factory, oidc_on, idp):
     resp = _callback(client, idp, state)
 
     assert resp.headers["location"] == "/"
+    assert client.get("/", headers=HTML, follow_redirects=False).status_code == 200
+
+
+def test_a_provider_sign_in_does_not_ask_for_the_code(
+        client, session_factory, oidc_on, idp):
+    """Decision #138: the provider's sign-in stands in for the second factor.
+
+    Pinned so that changing it is a decision rather than an accident: an
+    account with 2FA on comes back from its provider fully signed in.
+    """
+    make_login(client, session_factory)
+    with session_factory() as db:
+        user = db.scalar(select(User))
+        twofactor.enable(db, user, twofactor.new_secret())
+        federation.link(db, user, oidc.Identity(
+            subject="idp-subject-1", issuer=ISSUER, email="user@example.test",
+            email_verified=True, name="User"))
+        db.commit()
+    client.post("/logout", data={"_csrf": session_csrf(session_factory)},
+                follow_redirects=False)
+
+    resp = _callback(client, idp, _begin(client))
+
+    assert resp.headers["location"] == "/"
+    with session_factory() as db:
+        assert db.scalars(select(UserSession.awaiting_totp)).all() == [False]
     assert client.get("/", headers=HTML, follow_redirects=False).status_code == 200
 
 

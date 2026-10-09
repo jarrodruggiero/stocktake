@@ -8,6 +8,19 @@ Open <http://localhost:8000> and a setup wizard takes it from there: it asks
 where to keep the data, creates your account (the first one is the
 administrator), and writes `config.yaml` for you.
 
+## Volumes
+
+| Volume | Mounted at | Holds |
+| --- | --- | --- |
+| `stocktake-config` | `/config` | `config.yaml`, which the setup wizard writes |
+| `stocktake-data` | `/data` | The database and any formats you add — **back this up** |
+
+Both are named volumes, which Docker creates with the right owner. To use
+folders on the host instead, replace the two volume lines with bind mounts and
+run `chown -R 1000:1000` on those folders first: the app runs as uid 1000.
+
+## The annotated config
+
 The `config.yaml` in this directory is the annotated default — every option
 documented, almost every line commented out. You do not need to edit it before
 starting; it is there to read, and to edit afterwards if you would rather

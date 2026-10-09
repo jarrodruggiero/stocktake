@@ -123,6 +123,19 @@ attribute cannot.
 And where the explanation is longer than a `(?)`, it belongs in
 `docs/guides/` with a link to it — never inline on the page.
 
+### Check every string before the pull request
+
+A rule broken this often needs a step, not a reminder. Before opening a pull
+request that touches `app/templates` or `app/static`:
+
+1. List every string the diff adds or changes that a person will read:
+   labels, buttons, notices, errors, tooltips, `title` and `aria-label`.
+2. Check each one against the table above. Cut the purpose clause as well as
+   the explanation, and check the trimmed version again: it is usually still
+   one clause too long.
+3. Put the final list in the pull request, so the wording can be reviewed
+   without opening every page.
+
 ## Controls
 
 **Primary is the one committing action of a form.** `.secondary` is everything
