@@ -6,13 +6,19 @@
 <form method="post" action="/setup/profile" class="panel" autocomplete="on">
   <input type="hidden" name="_csrf" value="{{ csrf }}">
   <label>Name
-    <input name="name" required autofocus autocomplete="name">
+    <input name="name" value="{{ typed.name if typed else '' }}" required autofocus autocomplete="name">
   </label>
   <label>Email
-    <input type="email" name="email" required autocomplete="username">
+    <input type="email" name="email" value="{{ typed.email if typed else '' }}" required
+           autocomplete="username">
   </label>
   <label>Password <span class="sub">at least 10 characters</span>
-    <input type="password" name="password" required minlength="10"
+    <input type="password" name="password" required minlength="10" maxlength="64"
+           autocomplete="new-password">
+  </label>
+  {% include "_strength.html" %}
+  <label>Confirm password
+    <input type="password" name="confirm" required minlength="10" maxlength="64"
            autocomplete="new-password">
   </label>
   {%- set tfa_tip %}

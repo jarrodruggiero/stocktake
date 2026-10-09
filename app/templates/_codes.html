@@ -26,4 +26,8 @@
   <ul class="codes">
     {% for code in codes %}<li><code>{{ code }}</code></li>{% endfor %}
   </ul>
+  <div class="commitbar">
+    <button type="button" class="secondary small" data-copy-codes>Copy all</button>
+  </div>
+  <script src="/static/codes.js?v={{ asset_v }}" defer></script>
 </section>

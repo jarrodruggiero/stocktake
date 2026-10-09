@@ -55,7 +55,7 @@ they must change it at next login. It won't be shown again.</p>
         </form>
         <form method="post" action="/users/{{ u.id }}/reset" class="inline">
           <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-          <input type="text" name="password" placeholder="new temp password" minlength="10" required>
+          <input type="text" name="password" placeholder="new temp password" minlength="10" maxlength="64" required>
           <button class="linkish" type="submit">Reset</button>
         </form>
         {# Last resort for someone who lost the phone AND the recovery codes. #}
@@ -81,7 +81,7 @@ they must change it at next login. It won't be shown again.</p>
     <label>Name <input name="name" required></label>
     <label>Email <input type="email" name="email" required></label>
     <label>Temporary password <span class="sub">at least 10 characters; they replace it at first login</span>
-      <input type="text" name="password" required minlength="10">
+      <input type="text" name="password" required minlength="10" maxlength="64">
     </label>
     {# A role dropdown rather than a "Can manage users" tickbox: the checkbox
        named one permission for a role that carries several, and left the

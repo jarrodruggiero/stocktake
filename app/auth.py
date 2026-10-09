@@ -90,8 +90,15 @@ def needs_rehash(stored_hash: str) -> bool:
 
 
 def password_problem(password: str) -> str | None:
+    """Length only: at least 10 characters, at most 64. No mix of character
+    types and no banned list — NIST 800-63B-4 and ASVS both rule out the first,
+    and how strong a password is gets shown, not enforced. `len` counts code
+    points, as NIST asks. Checked where a password is chosen, never at sign-in,
+    so an account with a longer one from before still gets in."""
     if len(password or "") < 10:
         return "Password must be at least 10 characters."
+    if len(password) > 64:
+        return "Password must be at most 64 characters."
     return None
 
 
