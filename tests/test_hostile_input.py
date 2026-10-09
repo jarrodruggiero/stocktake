@@ -153,7 +153,7 @@ BY_HAND: dict[str, list[Field]] = {
     "/profile/passkeys": [Field("name", "form")],
     "/profile/columns": [Field("column", "form"), Field("back", "form")],
     "/profile/columns/order": [Field(n, "form") for n in ("order", "move", "back")],
-    "/profile/appearance": [Field("nav_show", "form")],
+    "/profile/appearance": [Field(n, "form") for n in ("nav_show", "default_portfolio")],
     "/profile/colors": [Field(s.token, "form") for s in theming.SWATCHES],
     "/admin/settings": [Field(o.name, "form") for o in configfile.OPTIONS],
     "/setup/features": [Field("feature", "form")],

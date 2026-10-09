@@ -75,6 +75,17 @@
           <option value="icon" {% if auth.user.nav_style == 'icon' %}selected{% endif %}>Icon only</option>
         </select>
       </label>
+      {# Where a sign-in lands. Only with somewhere else to land. #}
+      {% if auth.memberships | length > 1 %}
+      <label>Default portfolio
+        <select name="default_portfolio">
+          <option value="">Last opened</option>
+          {% for m in auth.memberships | sort(attribute="name") %}
+          <option value="{{ m.portfolio_id }}" {% if auth.user.default_portfolio_id == m.portfolio_id %}selected{% endif %}>{{ m.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
     </div>
 
     {# Which entries the top bar carries. Portfolio is hideable too: the brand

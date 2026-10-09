@@ -1292,3 +1292,17 @@ last buy still in it, because the slots left keep their rows. A ticker another p
 "Something not listed", and the add form says "added" either way. "Delete all
 trades" clears this portfolio's trades and distributions for one instrument and
 leaves it listed, so removing it stays a step of its own.
+
+**141. A sign-in opens the default portfolio, else the last one opened.** Every
+way of signing in goes through `_landing_portfolio`: the portfolio chosen in the
+profile, else the one in a cookie set whenever a portfolio is switched to,
+created or joined and whenever a sign-in lands, else the first one owned. A
+password still waiting on its code sets nothing, so it learns no id. The cookie
+holds the portfolio's id and nothing else, lives a year from the last time it
+was set and survives sign-out, which is the point. It
+is a hint, not a credential: both it and the default count only while the
+person is a member of that portfolio, so a cookie naming someone else's opens
+nothing of theirs, and a value that is not an id is ignored. Its name follows
+the session cookie's, so two apps on one host keep theirs apart. The profile
+offers the choice only to someone with more than one portfolio. An invite still
+opens the portfolio it invited to.

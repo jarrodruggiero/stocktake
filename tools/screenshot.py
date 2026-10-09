@@ -287,6 +287,14 @@ def render_all() -> None:
     # only when a dialog is open — which no default screenshot would show.
     save("21-plan-editing", client.get("/schedule?edit=1", headers=HTML).text)
 
+    # In two portfolios, the profile offers where a sign-in lands. Last, since
+    # making a portfolio opens it, and every page after would show it empty.
+    client.post("/portfolio/new", data={
+        "_csrf": token("/profile"),
+        "name": "Self-managed super fund — international shares, bonds and term deposits"},
+        headers=HTML, follow_redirects=False)
+    save("11c-profile-portfolios", client.get("/profile", headers=HTML).text)
+
 
 if __name__ == "__main__":
     render_all()

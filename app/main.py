@@ -1600,7 +1600,7 @@ async def login_submit(
             return _fail("Invalid email or password.")
         if auth.needs_rehash(user.password_hash):
             user.password_hash = auth.hash_password(password)
-        landing = _landing_portfolio(db, user)
+        landing = _landing_portfolio(db, user, request)
         # With a second factor on, the password only buys a half-authenticated
         # session: `auth.load_session` refuses it everywhere, so the cookie is
         # useless until the code step flips the flag.
@@ -1615,16 +1615,56 @@ async def login_submit(
             return resp
         resp = _redirect("/profile" if user.must_change_password else "/")
         _set_session_cookie(resp, raw)
+        _remember_portfolio(resp, landing)
         return resp
 
 
-def _landing_portfolio(db: DbSession, user: User) -> int | None:
+def _portfolio_cookie() -> str:
+    """The last portfolio opened, on this browser: named after the session's
+    cookie, so two apps on one host do not share it."""
+    return f"{settings.auth.cookie_name}_portfolio"
+
+
+def _remember_portfolio(resp: Response, portfolio_id: int | None) -> None:
+    """Note which portfolio is open, for the next sign-in on this browser.
+    The id and nothing else — no name, no person — and a hint, never a
+    credential: `_landing_portfolio` uses it only for a portfolio the person is
+    a member of. It outlives the session on purpose; that is what it is for.
+    Set only once a sign-in is complete, never by a password still waiting on
+    its code."""
+    if portfolio_id is None:
+        return
+    resp.set_cookie(_portfolio_cookie(), str(portfolio_id), max_age=365 * 86400,
+                    httponly=True, samesite="lax", secure=settings.auth.cookie_secure,
+                    path="/")
+
+
+def _row_id(raw: str) -> int | None:
+    """An id as a form or a cookie sends it, else None. ASCII digits only:
+    isdigit() also passes "²", which int() cannot parse, and 5000 digits,
+    which it refuses."""
+    return int(raw) if re.fullmatch(r"[0-9]{1,18}", raw) else None
+
+
+def _remembered_portfolio(request: Request | None) -> int | None:
+    return _row_id(request.cookies.get(_portfolio_cookie(), "") if request is not None else "")
+
+
+def _landing_portfolio(db: DbSession, user: User, request: Request | None = None) -> int | None:
     """Where a sign-in lands. Shared by every way in, so they cannot drift.
 
-    A portfolio they own comes before one merely shared with them — otherwise
+    The portfolio chosen in the profile; else the last one opened on this
+    browser; else one they own before one merely shared with them — otherwise
     the lowest id wins and someone invited into an older portfolio opens
-    somebody else's holdings instead of their own.
+    somebody else's holdings instead of their own. The first two count only
+    while the person is still a member: the cookie is whatever the browser
+    sends, and a default can outlast a membership.
     """
+    mine = set(db.scalars(select(PortfolioMember.portfolio_id)
+                          .where(PortfolioMember.user_id == user.id)))
+    for wanted in (user.default_portfolio_id, _remembered_portfolio(request)):
+        if wanted in mine:
+            return wanted
     return db.scalar(
         select(PortfolioMember.portfolio_id)
         .where(PortfolioMember.user_id == user.id)
@@ -1700,11 +1740,7 @@ async def recover_submit(request: Request, email: str = Form(""), code: str = Fo
         # The code proved possession of the list; it did NOT prove the second
         # factor. If one is enrolled, this session stays half-authenticated
         # exactly as a password login would.
-        landing = db.scalar(
-            select(PortfolioMember.portfolio_id)
-            .where(PortfolioMember.user_id == user.id)
-            .order_by((PortfolioMember.role != "owner"), PortfolioMember.portfolio_id)
-        )
+        landing = _landing_portfolio(db, user, request)
         pending = twofactor.is_enabled(user)
         # Whatever password they could not remember is now unusable to anyone
         # who might have learned it, and they are made to choose a new one
@@ -1721,6 +1757,8 @@ async def recover_submit(request: Request, email: str = Form(""), code: str = Fo
         log.warning("user %d signed in with a recovery code (%d left)", user.id, left)
         resp = _redirect("/login/code" if pending else "/profile")
         _set_session_cookie(resp, raw)
+        if not pending:
+            _remember_portfolio(resp, landing)
         return resp
 
 
@@ -1774,7 +1812,9 @@ async def login_code_submit(request: Request, code: str = Form(...)):
         if used_recovery:
             left = twofactor.remaining_recovery_codes(db, user)
             log.info("user %s signed in with a recovery code (%d left)", user.id, left)
-        return _redirect("/profile" if user.must_change_password else "/")
+        resp = _redirect("/profile" if user.must_change_password else "/")
+        _remember_portfolio(resp, pending.active_portfolio_id)
+        return resp
 
 
 # --------------------------------------------------------------------------- #
@@ -2194,14 +2234,16 @@ async def login_passkey(request: Request):
         except passkeys.PasskeyError as exc:
             auth.record_attempt(db, "", ip, success=False)
             return JSONResponse({"error": str(exc)}, status_code=400)
+        landing = _landing_portfolio(db, user, request)
         raw = auth.create_session(
-            db, user, settings, active_portfolio_id=_landing_portfolio(db, user),
+            db, user, settings, active_portfolio_id=landing,
             ip=ip, user_agent=request.headers.get("user-agent"),
         )
         log.info("passkey sign-in for user %s", user.id)
         target = "/profile" if user.must_change_password else "/"
     resp = JSONResponse({"next": target})
     _set_session_cookie(resp, raw)
+    _remember_portfolio(resp, landing)
     return resp
 
 
@@ -2274,8 +2316,9 @@ def login_oidc_callback(request: Request, code: str = "", state: str = "",
             target = "/profile"
         else:
             target = "/"
+        landing = _landing_portfolio(db, user, request)
         raw = auth.create_session(
-            db, user, settings, active_portfolio_id=_landing_portfolio(db, user),
+            db, user, settings, active_portfolio_id=landing,
             ip=ip, user_agent=request.headers.get("user-agent"),
         )
         # So signing out can end the provider's session too — and only for the
@@ -2289,6 +2332,7 @@ def login_oidc_callback(request: Request, code: str = "", state: str = "",
         log.info("oidc sign-in for user %s", user.id)
     resp = _redirect(target)
     _set_session_cookie(resp, raw)
+    _remember_portfolio(resp, landing)
     resp.delete_cookie(OIDC_STATE_COOKIE, path="/")
     return resp
 
@@ -2829,7 +2873,9 @@ async def portfolio_switch(request: Request, portfolio_id: Annotated[RowId, Form
             raise HTTPException(403, "you're not a member of that portfolio")
         ctx.session.active_portfolio_id = portfolio_id
         db.flush()
-    return _redirect(_back_to_referer(request))
+    resp = _redirect(_back_to_referer(request))
+    _remember_portfolio(resp, portfolio_id)
+    return resp
 
 
 @app.get("/admin/logs.json")
@@ -2940,7 +2986,9 @@ async def portfolio_new(request: Request, name: str = Form(...)):
         )
         ctx.session.active_portfolio_id = portfolio.id
         db.flush()
-        return _redirect("/members")
+        resp = _redirect("/members")
+        _remember_portfolio(resp, portfolio.id)
+        return resp
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -3092,7 +3140,10 @@ async def invite_accept(request: Request, token: str):
         ctx.session.active_portfolio_id = invite.portfolio_id
         db.flush()
         log.info("invite accepted by existing user %s", ctx.user.id)
-    return _redirect("/")
+        joined = invite.portfolio_id
+    resp = _redirect("/")
+    _remember_portfolio(resp, joined)
+    return resp
 
 
 @app.post("/invite/{token}/signup")
@@ -3434,12 +3485,22 @@ async def account_appearance(
         ctx.user.theme = theme
         ctx.user.nav_style = nav_style
         ctx.user.times_in = times_in
+        form = await request.form()
+        # Only offered with more than one portfolio, so only changed when sent.
+        if "default_portfolio" in form:
+            wanted = str(form.get("default_portfolio") or "")
+            chosen = _row_id(wanted)
+            if not wanted:
+                ctx.user.default_portfolio_id = None          # the last one opened
+            elif chosen in {m.portfolio_id for m in ctx.memberships}:
+                ctx.user.default_portfolio_id = chosen
+            else:
+                raise HTTPException(400, "not one of your portfolios")
         # Checkboxes say what to SHOW; what gets stored is what to hide. An
         # unticked box submits nothing, so "shown" cannot be read from absence —
         # and storing the hidden set means a nav entry added to the app later
         # appears for everybody rather than staying invisible until they find
         # this page.
-        form = await request.form()
         shown = set(form.getlist("nav_show"))
         hidden = [key for key in navigation.HIDEABLE if key not in shown]
         ctx.user.nav_hidden = hidden or None
