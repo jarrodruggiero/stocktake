@@ -280,6 +280,17 @@ class Portfolio(Base):
     jurisdiction: Mapped[str] = mapped_column(
         String(2), default="AU", server_default="AU"
     )
+    # What the broker charges, for the trade form to fill in: a flat fee plus a
+    # percentage of the trade's value, or the minimum if that is more. One set
+    # for trades in the reporting currency, one for everything else. All NULL
+    # means not set, so the form falls back to the last trade of that kind;
+    # zeros mean free. app/brokerage.py.
+    brokerage_flat: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    brokerage_percent: Mapped[Decimal | None] = mapped_column(Numeric(7, 4))
+    brokerage_minimum: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    foreign_brokerage_flat: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    foreign_brokerage_percent: Mapped[Decimal | None] = mapped_column(Numeric(7, 4))
+    foreign_brokerage_minimum: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow
     )

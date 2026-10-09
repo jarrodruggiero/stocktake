@@ -16,7 +16,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import clock
+from . import clock, money
 from .models import FxRate, HoldingPref, Instrument, Price, Trade, trade_order
 
 ZERO = Decimal(0)
@@ -1217,13 +1217,17 @@ def instrument_series(session: Session, inst: Instrument) -> dict:
     return {"dates": dates, "invested": inv_out, "value": val_out}
 
 
-def last_brokerage(session: Session) -> Decimal | None:
-    """What this portfolio paid its broker last: the brokerage on its most
-    recent buy or sell by the trade's own date. None before the first trade,
-    so a form offers nothing rather than one broker's fee. A reinvested
+def last_brokerage(session: Session, *, foreign: bool = False) -> Decimal | None:
+    """What this portfolio paid its broker last for a trade of this kind — in
+    the reporting currency, or (`foreign`) in any other: the brokerage on the
+    most recent buy or sell by the trade's own date. None before the first
+    trade, so a form offers nothing rather than one broker's fee. A reinvested
     distribution costs nothing and says nothing about the broker."""
+    kind = (Instrument.currency != money.REPORTING) if foreign \
+        else (Instrument.currency == money.REPORTING)
     return session.scalar(
-        select(Trade.brokerage).where(Trade.type.in_(("buy", "sell")))
+        select(Trade.brokerage).join(Instrument, Trade.instrument_id == Instrument.id)
+        .where(Trade.type.in_(("buy", "sell")), kind)
         .order_by(Trade.date.desc(), Trade.id.desc()).limit(1))
 
 

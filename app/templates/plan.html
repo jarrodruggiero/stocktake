@@ -145,8 +145,7 @@
         </label>
         <label>Brokerage
           <input name="brokerage" inputmode="decimal"
-                 value="{{ plan.brokerage if plan
-                           else ('%.2f' | format(last_brokerage) if last_brokerage is not none else '') }}">
+                 value="{{ plan.brokerage if plan else initial_brokerage }}">
         </label>
       </div>
       <label>First buy date <span class="sub">only used before you've recorded anything</span>

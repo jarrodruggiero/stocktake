@@ -91,6 +91,9 @@ WITHHELD: dict[str, str] = {
     ),
     "portfolio.reporting_currency": "Stored for T28b; the API is AUD-only today.",
     "portfolio.jurisdiction": "Stored for T28b; the tax engine is AU-only today.",
+    **{f"portfolio.{kind}brokerage_{part}": "What the broker charges, for the trade "
+       "form to suggest. The brokerage each trade recorded is published with it."
+       for kind in ("", "foreign_") for part in ("flat", "percent", "minimum")},
 }
 
 # Whole tables with nothing to publish. One reason each, not one per column.

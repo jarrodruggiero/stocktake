@@ -66,6 +66,7 @@
         toggleNew();
         instrumentChosen();
         priceForDate();
+        suggestBrokerage();
         return true;
       }
     }
@@ -162,8 +163,38 @@
         if (!d) { return; }
         if (price && !price.dataset.typed) { price.value = d.price || ""; }
         if (fx && !fx.dataset.typed) { fx.value = d.fx || ""; }
+        suggestBrokerage();
       })
       .catch(function () { /* leave whatever is in the fields */ });
+  }
+
+  /* The brokerage the portfolio's fee gives for what is on the form: a flat
+     fee plus a percentage of the value, or the minimum if that is more — the
+     sum app/brokerage.py does. Trades in another currency have their own fee.
+     Without a fee, the last trade of that kind. Never over a typed figure. */
+  function suggestBrokerage() {
+    var field = document.getElementById("brokerage");
+    if (!field || !field.dataset.fees || field.dataset.typed) { return; }
+    var fees = JSON.parse(field.dataset.fees);
+    var picker = document.getElementById("instpick");
+    var currency = "";
+    if (picker && picker.value === "new") {
+      var typed = byName("new_currency");
+      currency = typed ? typed.value.trim().toUpperCase() : "";
+    } else if (picker && picker.selectedIndex >= 0) {
+      currency = picker.options[picker.selectedIndex].dataset.currency || "";
+    }
+    var foreign = currency && currency !== (window.reportingCurrency || "AUD");
+    var fee = foreign ? fees.foreign : fees.local;
+    if (!fee) {
+      field.value = (foreign ? fees.last.foreign : fees.last.local) || "";
+      return;
+    }
+    var units = parseFloat((document.getElementById("quantity") || {}).value) || 0;
+    var price = parseFloat((document.getElementById("unit_price") || {}).value) || 0;
+    var charged = (parseFloat(fee.flat) || 0) + (parseFloat(fee.percent) || 0) * units * price / 100;
+    var due = Math.max(parseFloat(fee.minimum) || 0, charged);
+    field.value = (Math.round((due + Number.EPSILON) * 100) / 100).toFixed(2);
   }
 
   /* Picking an instrument decides whether the FX field applies at all, off the
@@ -210,14 +241,19 @@
   document.addEventListener("input", function (event) {
     var id = event.target.id;
     if (id === "quantity" || id === "unit_price" || id === "fx_rate" ||
-        event.target.name === "new_currency") {
+        id === "brokerage" || event.target.name === "new_currency") {
       event.target.dataset.typed = "1";
+    }
+    if (id === "quantity" || id === "unit_price" || event.target.name === "new_currency") {
+      suggestBrokerage();
     }
   });
 
   document.addEventListener("change", function (event) {
     var target = event.target;
-    if (target.id === "instpick") { toggleNew(); instrumentChosen(); priceForDate(); }
+    if (target.id === "instpick") {
+      toggleNew(); instrumentChosen(); priceForDate(); suggestBrokerage();
+    }
     if (target.id === "tradedate") { priceForDate(); }
     if (target.id === "settime") { toggleTime(); }
     if (target.dataset && target.dataset.autofill && !switchToListed()) {
@@ -273,7 +309,7 @@
   window.resetTradeForm = function (form) {
     form.reset();
     notSaving(form);
-    ["quantity", "unit_price", "fx_rate"].forEach(function (id) {
+    ["quantity", "unit_price", "fx_rate", "brokerage"].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) { delete el.dataset.typed; }
     });

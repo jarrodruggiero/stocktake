@@ -38,6 +38,7 @@ Two consequences worth internalising:
 | `plans.py`, `calendarview.py` | The DCA rotation and the month calendar. |
 | `moves.py` | Handing a holding's rows to another portfolio: what has to travel with what. |
 | `money.py` | Rendering an amount so it says which currency it is, and reading one in: a figure that is finite and fits its column. |
+| `brokerage.py` | What a portfolio's broker charges, for the trade form to suggest. |
 
 ### Getting data in
 

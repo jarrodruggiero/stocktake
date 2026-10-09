@@ -142,9 +142,12 @@
     <label>Price per unit
       <input name="unit_price" inputmode="decimal" id="unit_price" min="0"
            value="{{ form.unit_price or (prefill.unit_price | qty if prefill and not form else '') }}" required></label>
-    <label>Brokerage <input name="brokerage" inputmode="decimal"
+    {# `data-fees` lets tradeform.js fill this in as units and price are typed;
+       not on an edit, or under a DCA buy, whose figures are already chosen. #}
+    <label>Brokerage <input name="brokerage" id="brokerage" inputmode="decimal"
+           {% if brokerage_fees and not edit and not prefill %}data-fees='{{ brokerage_fees | tojson }}'{% endif %}
            value="{{ form.brokerage or (prefill.brokerage | qty if prefill and not form
-                     else ('%.2f' | format(last_brokerage) if last_brokerage is not none else '')) }}"></label>
+                     else initial_brokerage) }}"></label>
   </div>
 
   {# Hidden entirely for an instrument already in the reporting currency —
