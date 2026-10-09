@@ -2188,7 +2188,7 @@ async def passkeys_register(request: Request):
                 name=str(form.get("name") or ""),
             )
         except passkeys.PasskeyError as exc:
-            return _redirect("/profile/passkeys?error=" + quote_plus(str(exc)))
+            return _redirect("/profile/passkeys?error=" + quote_plus(exc.message))
         log.info("passkey registered for user %s", ctx.user.id)
     return _redirect("/profile/passkeys?saved=added")
 
@@ -2234,7 +2234,7 @@ async def login_passkey(request: Request):
                 str(form.get("token") or ""), settings)
         except passkeys.PasskeyError as exc:
             auth.record_attempt(db, "", ip, success=False)
-            return JSONResponse({"error": str(exc)}, status_code=400)
+            return JSONResponse({"error": exc.message}, status_code=400)
         landing = _landing_portfolio(db, user, request)
         raw = auth.create_session(
             db, user, settings, active_portfolio_id=landing,

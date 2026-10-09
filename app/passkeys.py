@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import logging
 import secrets
 
 from sqlalchemy import delete, select
@@ -28,6 +29,8 @@ from appcore import ensure_utc
 
 from .models import User, WebauthnChallenge, WebauthnCredential
 from .settings import PortfolioSettings
+
+log = logging.getLogger(__name__)
 
 # How long a browser has to finish a ceremony. The prompt itself times out at
 # 60s; this is the outer bound on the row, not the user's patience.
@@ -46,7 +49,12 @@ def _webauthn():
 
 
 class PasskeyError(Exception):
-    """A ceremony that did not verify. The message is safe to show."""
+    """A ceremony that did not verify. `message` is the sentence to show: one
+    of this module's own, never an exception's text."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
 
 
 # --------------------------------------------------------------------------- #
@@ -204,7 +212,10 @@ def verify_registration(
             expected_origin=list(wa.origins),
         )
     except Exception as exc:  # noqa: BLE001 - the library raises many types
-        raise PasskeyError(f"That passkey could not be registered: {exc}") from exc
+        # Usually the origin or domain set in Admin → Settings, which only
+        # whoever runs the install can fix, so the reason goes to the log.
+        log.warning("a passkey could not be registered: %s", exc)
+        raise PasskeyError("That passkey could not be registered.") from exc
 
     row = WebauthnCredential(
         user_id=user.id,
