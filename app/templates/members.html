@@ -78,7 +78,7 @@ all of them.</p>
              confirmation, and into the delete offer when this is the last. #}
           <form method="post" action="/members/{{ m.id }}/remove" class="removeform">
             <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-            <button class="linkish" type="submit" data-remove="{{ m.name }}"
+            <button class="linkish danger" type="submit" data-remove="{{ m.name }}"
                     {% if rows | length == 1 %}data-last="1"{% endif %}>Remove</button>
           </form>
           {% endif %}

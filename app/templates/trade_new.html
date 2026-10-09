@@ -9,29 +9,27 @@
    class="secondary">&larr; {{ back_label }}</button></a>
 
 {% if edit %}
-{# Heading and the row's other two actions together, so Move and Delete are the
-   same size and in the same place as every other page's controls. The refusals
-   they can produce explain themselves when they happen; the form does not
-   describe them in advance — style.md. #}
+{# Move sits with the heading, the same size and place as every other page's
+   controls. Delete is in the form's own row, beside Save and Cancel. The
+   refusals either can produce explain themselves when they happen — style.md. #}
 <div class="pagehead">
   <div><h1>Edit {{ inst.ticker }} trade</h1></div>
-  {# `.headactions`, not `.menuactions`: the latter puts `flex: 1` on a form so
-     its rows fill a menu's width, which here would push Delete off the corner. #}
+  {% if move_targets %}
+  {# Only when there is somewhere to put it: with one portfolio the control
+     could only ever explain why it does nothing. #}
   <div class="headactions">
-    {% if move_targets %}
-    {# Only when there is somewhere to put it: with one portfolio the control
-       could only ever explain why it does nothing. #}
     <button type="button" class="secondary" id="openmove">Move</button>
-    {% endif %}
-    <form method="post" action="/trade/{{ edit.id }}/delete"
-          onsubmit="return confirm('Delete this {{ edit.type }} of {{ edit.quantity | qty }} {{ inst.ticker }} on {{ edit.date }}? The charts, reports and exports all change to match.');">
-      <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-      {# Back where you came from, carried explicitly — see `trade_delete`. #}
-      <input type="hidden" name="return_to" value="{{ return_to }}">
-      <button type="submit" class="danger">Delete</button>
-    </form>
   </div>
+  {% endif %}
 </div>
+{# Submitted by the Delete button inside the trade form, through `form=`: a
+   form cannot hold another form. #}
+<form id="deletetrade" method="post" action="/trade/{{ edit.id }}/delete" hidden
+      onsubmit="return confirm('Delete this {{ edit.type }} of {{ edit.quantity | qty }} {{ inst.ticker }} on {{ edit.date }}?');">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  {# Back where you came from, carried explicitly — see `trade_delete`. #}
+  <input type="hidden" name="return_to" value="{{ return_to }}">
+</form>
 {% else %}
 <h1>Record a trade</h1>
 <p class="note">For anything outside the plan. A buy that belongs to your rotation is better

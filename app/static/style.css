@@ -62,6 +62,9 @@
   --line: rgb(24 24 60 / 0.10);
   --up: #1a7f37;
   --down: #c62828;
+  /* Behind white text on a destructive button. Its own token because the dark
+     theme's --down is too light to carry white (3.8:1). */
+  --danger: #c62828;
   --shadow-sm: 0 1px 2px rgb(24 20 60 / 0.06);
   --shadow: 0 10px 30px rgb(24 20 60 / 0.10);
   --on-accent: #ffffff;
@@ -124,6 +127,7 @@
     --line: rgb(255 255 255 / 0.09);
     --up: #2ea043;
     --down: #ef4444;
+    --danger: #dc2626;
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
     --shadow: 0 16px 44px rgb(0 0 0 / 0.5);
     --accent: #8b83f0;
@@ -145,6 +149,7 @@ body[data-theme="dark"] {
   --line: rgb(255 255 255 / 0.09);
   --up: #2ea043;
   --down: #ef4444;
+  --danger: #dc2626;
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
   --shadow: 0 16px 44px rgb(0 0 0 / 0.5);
   --accent: #8b83f0;
@@ -1112,6 +1117,14 @@ button.small { padding: 0.2rem 0.55rem; font-size: var(--fs-small); }
 .spinner { display: inline-block; width: 0.9rem; height: 0.9rem; margin-right: 0.5rem;
   vertical-align: -0.1rem; border: 2px solid var(--line); border-top-color: var(--accent);
   border-radius: 50%; animation: spin 0.8s linear infinite; }
+/* Pressed and working: the label stays, a spinner joins it, and a second press
+   lands nowhere. `aria-busy` rather than `disabled`, which would drop the
+   button's own name and value from the submission. */
+button[aria-busy="true"] { pointer-events: none; cursor: progress; }
+button[aria-busy="true"]::before { content: ""; display: inline-block; width: 0.8em;
+  height: 0.8em; margin-right: 0.45em; vertical-align: -0.1em;
+  border: 2px solid currentColor; border-right-color: transparent;
+  border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 /* Respect a stated preference for less motion — an indefinite spinner is
    exactly the kind of thing the setting is for. */
@@ -1360,7 +1373,12 @@ dialog h2 { margin-top: 0; }
 .rowactions { display: flex; align-items: center; gap: 0.6rem; white-space: nowrap; }
 .rowactions form { margin: 0; }
 .rowactions button { margin: 0; }
-button.danger, .linkish.danger { color: var(--down); }
+/* Destroys something: solid red with white text in every theme. Only the label
+   was red once, on the purple default, and test users read that as primary. */
+button.danger { background: var(--danger); color: #ffffff; border-color: transparent; }
+button.linkish.danger { background: none; color: var(--down); }
+/* Pushes a destructive button away from Save and Cancel in the same row. */
+.commitbar .apart { margin-left: auto; }
 /* The blocked case. A real control, never a disabled button: `disabled`
    cannot be hovered or focused in most browsers, which puts the explanation
    out of reach exactly when it is needed. */
