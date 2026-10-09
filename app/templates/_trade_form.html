@@ -14,6 +14,7 @@
 <form class="panel narrow" method="post"
       action="{% if edit %}/trade/{{ edit.id }}/edit{% else %}/trade/new{% endif %}"
       data-instrument="{{ inst.id if edit else '' }}"
+      data-currency="{{ inst.currency if edit else '' }}"
       autocomplete="off">
   <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
   {% if not edit %}<input type="hidden" name="submission" value="{{ submission_id() }}">{% endif %}
