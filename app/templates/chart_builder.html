@@ -99,7 +99,7 @@
     <form class="panel" method="post" action="/charts/{{ existing.id }}/delete"
           onsubmit="return confirm('Remove “{{ existing.name }}” from your charts page? You can add it again from the templates list.')">
       <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-      <button class="secondary danger" type="submit">Remove this chart</button>
+      <button class="danger" type="submit">Remove this chart</button>
       <p class="sub">Only from your page — nobody else's, and no data is touched.</p>
     </form>
     {% endif %}

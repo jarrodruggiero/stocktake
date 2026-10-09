@@ -161,7 +161,10 @@
     {% if in_dialog %}
     <button type="button" class="secondary" data-close-dialog>Cancel</button>
     {% else %}
-    <a href="{% if edit %}{{ return_to or '/holding/' ~ inst.ticker }}{% else %}/{% endif %}">Cancel</a>
+    <a href="{% if edit %}{{ return_to or '/holding/' ~ inst.ticker }}{% else %}/{% endif %}"><button type="button" class="secondary">Cancel</button></a>
+    {% endif %}
+    {% if edit %}
+    <button type="submit" form="deletetrade" class="danger apart">Delete</button>
     {% endif %}
   </div>
 </form>

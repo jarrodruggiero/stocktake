@@ -276,7 +276,7 @@
           {% if k.active %}
           <form method="post" action="/keys/{{ k.id }}/revoke">
             <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-            <button class="linkish" type="submit">Revoke</button>
+            <button class="linkish danger" type="submit">Revoke</button>
           </form>
           {% else %}<span class="sub">revoked</span>{% endif %}
         </td>

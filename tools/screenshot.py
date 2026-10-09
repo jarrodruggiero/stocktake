@@ -221,11 +221,15 @@ def render_all() -> None:
     import re as _re
     page = client.get("/trade/new", headers=HTML)
     instrument_id = _re.search(r'<option value="(\d+)"', page.text).group(1)
-    client.post("/trade/new",
-                data={"_csrf": token("/trade/new"), "instrument_id": instrument_id,
-                      "trade_date": "2026-01-05", "type": "buy", "quantity": "100",
-                      "unit_price": "92.50", "brokerage": "9.50"},
-                headers=HTML, follow_redirects=True)
+    landed = client.post("/trade/new",
+                         data={"_csrf": token("/trade/new"), "instrument_id": instrument_id,
+                               "trade_date": "2026-01-05", "type": "buy", "quantity": "100",
+                               "unit_price": "92.50", "brokerage": "9.50"},
+                         headers=HTML, follow_redirects=True)
+    # Editing it: Delete shares the form's row with Save and Cancel, and only a
+    # render shows whether the three still fit at phone width.
+    edit_id = _re.search(r"/trade/(\d+)/edit", landed.text).group(1)
+    save("16a-trade-edit", client.get(f"/trade/{edit_id}/edit", headers=HTML).text)
     save("16-dashboard-holdings", client.get("/", headers=HTML).text)
     # Sorted, so the arrow and the active-header styling are visible.
     save("17-dashboard-sorted",
