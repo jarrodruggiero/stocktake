@@ -497,9 +497,13 @@ class LedgerEvent:
 def ledger(
     session: Session, ticker: str
 ) -> tuple[Instrument, Holding, list[LedgerEvent]] | None:
+    # This portfolio's, not the catalogue's: a ticker is unique per exchange,
+    # so the catalogue can hold another portfolio's under the same one.
     inst = session.scalars(
         select(Instrument)
-        .where(Instrument.ticker == ticker)
+        .where(Instrument.ticker == ticker,
+               Instrument.id.in_(portfolio_instrument_ids(session)))
+        .order_by(Instrument.id)
         .options(selectinload(Instrument.trades), selectinload(Instrument.dividends))
     ).first()
     if inst is None:
