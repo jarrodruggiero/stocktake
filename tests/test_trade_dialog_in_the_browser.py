@@ -272,3 +272,105 @@ def test_changing_the_exchange_looks_the_ticker_up_again(client, session_factory
     assert out["onTheAsx"] == "GOOG.AX"
     assert out["onNasdaq"] == {"symbol": "GOOG", "name": "Alphabet Inc.", "price": "250.10"}
     assert out["typedKept"] == "GOOGL"
+
+
+EXCHANGE_THAT_FINDS_NOTHING = """
+<script>
+window.addEventListener("load", async function () {
+  var pause = function () { return new Promise(function (r) { setTimeout(r, 60); }); };
+  var form = document.getElementById("tradedialog").querySelector("form");
+  var field = function (name) { return form.querySelector('[name="' + name + '"]'); };
+  var pick = form.querySelector("#instpick");
+  document.getElementById("opentrade").click(); await pause();
+  pick.value = "new"; pick.dispatchEvent(new Event("change", {bubbles: true}));
+  field("new_exchange").value = "NASDAQ";
+  field("new_ticker").value = "GOOG";
+  field("new_ticker").dispatchEvent(new Event("change", {bubbles: true})); await pause();
+  field("new_exchange").value = "ASX";
+  field("new_exchange").dispatchEvent(new Event("change", {bubbles: true})); await pause();
+  var out = {name: field("new_name").value, currency: field("new_currency").value,
+             symbol: field("new_yahoo").value,
+             price: document.getElementById("unit_price").value,
+             fx: document.getElementById("fx_rate").value,
+             cls: document.getElementById("new_class").value,
+             picker: !document.getElementById("new_class").hidden};
+  var pre = document.createElement("pre");
+  pre.id = "result";
+  pre.textContent = JSON.stringify(out);
+  document.body.appendChild(pre);
+});
+</script>
+"""
+
+
+def test_an_exchange_where_nothing_is_found_keeps_nothing_from_the_last_answer(
+        client, session_factory, tmp_path):
+    """GOOG on NASDAQ fills a name, USD, a price and a rate. Moved to the ASX,
+    where there is no GOOG, the form is as it was before the first answer: a
+    NASDAQ price left in the field records a trade at somebody else's price."""
+    out = _drive(client, session_factory, tmp_path, EXCHANGE_THAT_FINDS_NOTHING,
+                 head=BY_EXCHANGE)
+    assert out == {"name": "", "currency": "AUD", "symbol": "GOOG.AX", "price": "",
+                   "fx": "", "cls": "", "picker": True}
+
+
+FX_SHOWN = """
+<script>
+window.addEventListener("load", function () {
+  setTimeout(function () {
+    var field = document.getElementById("fxfield");
+    var pre = document.createElement("pre");
+    pre.id = "result";
+    pre.textContent = JSON.stringify({shown: !field.hidden,
+                                      rate: document.getElementById("fx_rate").value});
+    document.body.appendChild(pre);
+  }, 100);
+});
+</script>
+"""
+
+NO_PRICES = """
+<script>
+window.fetch = function () {
+  return Promise.resolve({ok: true, json: function () {
+    return Promise.resolve({price: null, fx: null});
+  }});
+};
+</script>
+"""
+
+
+def _fx_on(client, tmp_path, path: str) -> dict:
+    page = client.get(path, headers=HTML)
+    assert page.status_code == 200, page.text
+    target = tmp_path / "page.html"
+    target.write_text(_standalone(page.text, FX_SHOWN).replace("<head>", "<head>" + NO_PRICES, 1))
+    dom = subprocess.run(
+        [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
+         "--allow-file-access-from-files", "--window-size=1400,1000",
+         "--virtual-time-budget=8000", target.as_uri()],
+        capture_output=True, text=True, timeout=90).stdout
+    found = re.search(r'<pre id="result">(.*?)</pre>', dom, re.S)
+    assert found, "the driver did not finish"
+    return json.loads(found.group(1).replace("&quot;", '"'))
+
+
+def test_the_fx_rate_is_there_wherever_the_instrument_is_foreign(
+        client, session_factory, tmp_path):
+    """The field appeared only when an instrument was PICKED, so a US trade's
+    recorded rate could not be seen on its own edit page, nor on a trade
+    started from a US holding's page."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        nova = fac.make_instrument(s, "NOVA", exchange="NASDAQ", currency="USD",
+                                   asset_class="share")
+        acme = fac.make_instrument(s, "ACME")
+        usd = fac.add_trade(s, nova, "2026-07-01", "buy", 10, "10.00", fx_rate="1.5")
+        aud = fac.add_trade(s, acme, "2026-07-01", "buy", 10, "1.00")
+        s.commit()
+        usd_id, aud_id = usd.id, aud.id
+    assert _fx_on(client, tmp_path, f"/trade/{usd_id}/edit") == {"shown": True, "rate": "1.5"}
+    assert _fx_on(client, tmp_path, "/trade/new?ticker=NOVA")["shown"] is True
+    assert _fx_on(client, tmp_path, f"/trade/{aud_id}/edit")["shown"] is False
+    assert _fx_on(client, tmp_path, "/trade/new?ticker=ACME")["shown"] is False
