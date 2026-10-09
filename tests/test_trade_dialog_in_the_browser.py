@@ -90,7 +90,7 @@ window.addEventListener("load", async function () {
 """
 
 
-def _standalone(page: str) -> str:
+def _standalone(page: str, driver: str) -> str:
     """The page with its stylesheet and scripts inlined, for `file://`."""
     def script(match: re.Match) -> str:
         path = STATIC / match.group(1)
@@ -102,10 +102,11 @@ def _standalone(page: str) -> str:
     page = re.sub(r'<link rel="stylesheet" href="/static/style\.css[^"]*"[^>]*>',
                   lambda _m: "<style>" + (STATIC / "style.css").read_text() + "</style>",
                   page)
-    return page.replace("</body>", DRIVER + "</body>")
+    return page.replace("</body>", driver + "</body>")
 
 
-def test_the_trade_dialog(client, session_factory, tmp_path):
+def _drive(client, session_factory, tmp_path, driver: str, head: str = "") -> dict:
+    """The Portfolio page, one listed instrument, driven by `driver`."""
     make_login(client, session_factory)
     with session_factory() as s:
         bind_to_only_portfolio(s)
@@ -114,7 +115,7 @@ def test_the_trade_dialog(client, session_factory, tmp_path):
     page = client.get("/", headers=HTML)
     assert page.status_code == 200
     target = tmp_path / "dashboard.html"
-    target.write_text(_standalone(page.text))
+    target.write_text(_standalone(page.text, driver).replace("<head>", "<head>" + head, 1))
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", "--window-size=1400,1000",
@@ -122,7 +123,11 @@ def test_the_trade_dialog(client, session_factory, tmp_path):
         capture_output=True, text=True, timeout=90).stdout
     found = re.search(r'<pre id="result">(.*?)</pre>', dom, re.S)
     assert found, "the driver did not finish"
-    out = json.loads(found.group(1).replace("&quot;", '"'))
+    return json.loads(found.group(1).replace("&quot;", '"'))
+
+
+def test_the_trade_dialog(client, session_factory, tmp_path):
+    out = _drive(client, session_factory, tmp_path, DRIVER)
 
     # Cancel leaves nothing behind, including what the form protects as typed.
     assert out["afterCancel"] == {"instrument": "", "quantity": "", "note": "", "typed": ""}
@@ -135,3 +140,69 @@ def test_the_trade_dialog(client, session_factory, tmp_path):
     # while an instrument is being added beside the trade.
     assert out["width"] >= 800, out["width"]
     assert out["widthAdding"] > out["width"], out
+
+
+# The provider, as the lookup endpoint would answer for MSFT.
+LOOKUP = """
+<script>
+window.fetch = function (url) {
+  if (String(url).indexOf("/holdings/lookup") === 0) {
+    return Promise.resolve({ok: true, json: function () {
+      return Promise.resolve({found: true, name: "Microsoft Corporation",
+                              currency: "USD", symbol: "MSFT", asset_class: "share"});
+    }});
+  }
+  return Promise.reject(new Error("offline"));
+};
+</script>
+"""
+
+TYPING = """
+<script>
+window.addEventListener("load", async function () {
+  var pause = function () { return new Promise(function (r) { setTimeout(r, 60); }); };
+  var out = {};
+  var form = document.getElementById("tradedialog").querySelector("form");
+  var pick = form.querySelector("#instpick");
+  var ticker = form.querySelector('[name="new_ticker"]');
+  var exchange = form.querySelector('[name="new_exchange"]');
+  var cls = form.querySelector("#new_class");
+  var shown = form.querySelector("#new_class-shown");
+  document.getElementById("opentrade").click(); await pause();
+  pick.value = "new"; pick.dispatchEvent(new Event("change", {bubbles: true}));
+
+  out.askedFirst = {pickerShown: !cls.hidden, required: cls.required, value: cls.value};
+  exchange.value = "NASDAQ";
+  ticker.value = "MSFT";
+  ticker.dispatchEvent(new Event("change", {bubbles: true})); await pause();
+  out.found = {pickerShown: !cls.hidden, shown: shown.hidden ? "" : shown.textContent,
+               value: cls.value,
+               currency: form.querySelector('[name="new_currency"]').value};
+
+  exchange.value = "ASX";
+  ticker.value = "acme";
+  ticker.dispatchEvent(new Event("change", {bubbles: true})); await pause();
+  var listed = pick.querySelector('option[data-ticker="ACME"]');
+  out.switched = {picked: pick.value === listed.value,
+                  newHidden: document.getElementById("newinst").hidden};
+
+  var pre = document.createElement("pre");
+  pre.id = "result";
+  pre.textContent = JSON.stringify(out);
+  document.body.appendChild(pre);
+});
+</script>
+"""
+
+
+def test_typing_an_instrument(client, session_factory, tmp_path):
+    out = _drive(client, session_factory, tmp_path, TYPING, head=LOOKUP)
+
+    # Nothing is assumed before the provider answers: no class until asked.
+    assert out["askedFirst"] == {"pickerShown": True, "required": True, "value": ""}
+    # Once it does, the class is shown as the value alone, and the currency
+    # is the instrument's own rather than the field's starting AUD.
+    assert out["found"] == {"pickerShown": False, "shown": "Share", "value": "share",
+                            "currency": "USD"}
+    # A ticker that is already listed, typed as new, switches to it.
+    assert out["switched"] == {"picked": True, "newHidden": True}

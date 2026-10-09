@@ -28,6 +28,48 @@
     box.hidden = !picking;
     var ticker = box.querySelector('[name="new_ticker"]');
     if (ticker) { ticker.required = picking; }
+    var cls = document.getElementById("new_class");
+    if (cls) { cls.required = picking; }
+  }
+
+  /* The class the provider gave, shown as the value alone. The picker is for
+     when it has no answer, and starts on no choice rather than a guess. */
+  function showClass(cls) {
+    var select = document.getElementById("new_class");
+    var shown = document.getElementById("new_class-shown");
+    if (!select || !shown) { return; }
+    var known = cls ? select.querySelector('option[value="' + cls + '"]') : null;
+    if (known) {
+      select.value = cls;
+      shown.textContent = known.textContent;
+    } else if (shown.textContent) {
+      select.value = "";                   // the last lookup's answer, not this one's
+      shown.textContent = "";
+    }
+    select.hidden = !!known;
+    shown.hidden = !known;
+  }
+
+  /* A ticker already listed, typed as new, switches the form to it: the
+     instrument exists, and its own details are the ones that count. */
+  function switchToListed() {
+    var picker = document.getElementById("instpick");
+    var ticker = byName("new_ticker");
+    var exchange = byName("new_exchange");
+    if (!picker || !ticker || picker.value !== "new") { return false; }
+    var wanted = ticker.value.trim().toUpperCase();
+    var where = exchange ? exchange.value : "ASX";
+    for (var i = 0; i < picker.options.length; i++) {
+      var option = picker.options[i];
+      if (option.dataset.ticker === wanted && option.dataset.exchange === where) {
+        picker.value = option.value;
+        toggleNew();
+        instrumentChosen();
+        priceForDate();
+        return true;
+      }
+    }
+    return false;
   }
 
   function toggleTime() {
@@ -57,9 +99,13 @@
           if (el && !el.value.trim() && value) { el.value = value; }
         };
         fill("name", d.name);
-        fill("currency", d.currency);
+        /* Not `fill`: the field starts at AUD, so it was never empty and a USD
+           stock stayed AUD. Replaced unless somebody typed it. */
+        var currency = byName(prefix + "currency");
+        if (currency && d.currency && !currency.dataset.typed) { currency.value = d.currency; }
         fill("yahoo", d.symbol);
         fill("yahoo_symbol", d.symbol);
+        showClass(d.asset_class);
         if (status) {
           status.textContent = d.found
             ? "found: " + (d.name || d.symbol) + (d.currency ? " (" + d.currency + ")" : "")
@@ -163,7 +209,8 @@
      off their contract note should not watch it be replaced by a close. */
   document.addEventListener("input", function (event) {
     var id = event.target.id;
-    if (id === "quantity" || id === "unit_price" || id === "fx_rate") {
+    if (id === "quantity" || id === "unit_price" || id === "fx_rate" ||
+        event.target.name === "new_currency") {
       event.target.dataset.typed = "1";
     }
   });
@@ -173,12 +220,16 @@
     if (target.id === "instpick") { toggleNew(); instrumentChosen(); priceForDate(); }
     if (target.id === "tradedate") { priceForDate(); }
     if (target.id === "settime") { toggleTime(); }
-    if (target.dataset && target.dataset.autofill) { autofill(target.dataset.autofill); }
+    if (target.dataset && target.dataset.autofill && !switchToListed()) {
+      autofill(target.dataset.autofill);
+    }
   });
 
   document.addEventListener("blur", function (event) {
     var target = event.target;
-    if (target.dataset && target.dataset.autofill) { autofill(target.dataset.autofill); }
+    if (target.dataset && target.dataset.autofill && !switchToListed()) {
+      autofill(target.dataset.autofill);
+    }
   }, true);   // blur does not bubble; capture is how delegation sees it
 
   /* Cancel inside a dialog closes it rather than navigating away — the page
@@ -226,8 +277,14 @@
       var el = document.getElementById(id);
       if (el) { delete el.dataset.typed; }
     });
+    var currency = byName("new_currency", form);
+    if (currency) { delete currency.dataset.typed; }
     var status = document.getElementById("new_lookup-status");
     if (status) { status.textContent = ""; }
+    var cls = document.getElementById("new_class");
+    var shown = document.getElementById("new_class-shown");
+    if (cls) { cls.hidden = false; }
+    if (shown) { shown.hidden = true; shown.textContent = ""; }
   };
 
   /* The initial state, for a form already in the page. Re-run when a dialog

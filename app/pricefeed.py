@@ -129,16 +129,22 @@ def last_close_date(exchange: str, now: dt.datetime | None = None) -> dt.date | 
     return day
 
 
+# Yahoo's quoteType, as the classes this app knows. Anything else is no answer
+# rather than a guess: the form then asks.
+_QUOTE_CLASSES = {"EQUITY": "share", "ETF": "etf", "CRYPTOCURRENCY": "crypto"}
+
+
 def lookup(ticker: str, exchange: str) -> dict:
-    """Ask Yahoo what this instrument is: name, currency, and whether the
-    symbol resolves at all.
+    """Ask Yahoo what this instrument is: name, currency, class, and whether
+    the symbol resolves at all.
 
     Used to fill the add-instrument form and to backfill names nobody typed in.
     Only the ticker leaves the network — the same privacy line the price feed
     draws. Failure is not an error: the caller falls back to what was typed.
     """
     symbol = yahoo_symbol_for(ticker, exchange)
-    out = {"symbol": symbol, "name": None, "currency": None, "found": False}
+    out = {"symbol": symbol, "name": None, "currency": None, "asset_class": None,
+           "found": False}
     try:
         info = _yahoo().Ticker(symbol).get_info() or {}
     except Exception as exc:
@@ -152,7 +158,8 @@ def lookup(ticker: str, exchange: str) -> dict:
     currency = (info.get("currency") or "").upper() or None
     # A quote with neither a name nor a price is Yahoo echoing the symbol back.
     if name or info.get("regularMarketPrice") is not None:
-        out.update(name=name, currency=currency, found=True)
+        out.update(name=name, currency=currency, found=True,
+                   asset_class=_QUOTE_CLASSES.get(str(info.get("quoteType") or "").upper()))
     return out
 
 
