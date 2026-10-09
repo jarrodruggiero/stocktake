@@ -24,7 +24,9 @@
 # 534 MB. Nothing needs that toolchain — every dependency in uv.lock resolves
 # from a wheel, verified by running `uv sync --frozen` on bare slim with no
 # compiler present.
-FROM python@sha256:be8ccd085666c34273c9dc5607c9842f8b2e3116128aae45148ce164c07ce09d AS base
+# Through Google's mirror of Docker Hub, as CI pulls everything: the same image
+# by digest, without Docker Hub's rate limit on shared CI addresses.
+FROM mirror.gcr.io/library/python@sha256:be8ccd085666c34273c9dc5607c9842f8b2e3116128aae45148ce164c07ce09d AS base
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 # uv, also pinned by digest.
