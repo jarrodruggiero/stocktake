@@ -1284,9 +1284,18 @@ dialog h2 { margin-top: 0; }
   font: inherit;
 }
 .instruments .notecell::placeholder { color: var(--muted); }
+/* The shared details, where this person may change them: the note box's look,
+   each as wide as what it holds. */
+.instruments .cellfield { margin: 0; padding: 0.3rem 0.45rem; border-radius: 6px;
+  background: var(--sunken); color: var(--text); border: 1px solid var(--line);
+  font: inherit; }
+.instruments .namefield { width: 100%; min-width: 9rem; max-width: 18rem; }
+.instruments .codefield { width: 4.4rem; text-transform: uppercase; }
+.instruments .symbolfield { width: 8rem; }
 .instruments td { vertical-align: middle; }
 .instruments td .check { margin: 0; white-space: nowrap; }
-.instruments .savemark { font-size: 0.75rem; color: var(--muted); margin-left: 0.4rem; }
+.instruments .savemark { font-size: 0.75rem; color: var(--muted); margin-left: 0.4rem;
+  white-space: normal; max-width: 14rem; }
 
 /* "in AUD" beside a table's heading: said once, quietly, instead of repeated
    in every money column's header. Only appears when there IS one currency —
@@ -1435,11 +1444,16 @@ button.linkish.danger { background: none; color: var(--down); }
    cannot be hovered or focused in most browsers, which puts the explanation
    out of reach exactly when it is needed. */
 .blockedby { position: relative; }
-.blockedby > summary { list-style: none; cursor: pointer; color: var(--muted);
-  font-size: 0.8rem; text-decoration: underline dotted; }
+/* Looks like the Remove button it stands in for: `button.danger.small`. A
+   <summary> cannot hold a button, so it takes the button's look itself. */
+.blockedby > summary { list-style: none; cursor: pointer; display: inline-block;
+  background: var(--danger); color: #ffffff; border: 1px solid transparent;
+  border-radius: var(--radius-xs); padding: 0.2rem 0.55rem;
+  font-size: var(--fs-small); font-weight: 550; line-height: normal;
+  box-shadow: var(--shadow-sm); }
 .blockedby > summary::-webkit-details-marker { display: none; }
 .blockedby > summary::marker { content: ""; }
-.blockedby > summary:hover { color: var(--text); }
+.blockedby > summary:hover { filter: brightness(1.07); }
 .blockpanel { position: absolute; right: 0; top: calc(100% + 0.3rem); z-index: 40;
   width: 20rem; text-align: left; white-space: normal; }
 .blockpanel ul { margin: 0.3rem 0; padding-left: 1.1rem; font-size: 0.85rem; }

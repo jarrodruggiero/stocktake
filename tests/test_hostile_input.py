@@ -424,7 +424,7 @@ def _typed(world: World, route: APIRoute, n: int, made: dict) -> dict:
         "quantity": "10", "units": "10", "unit_price": "1.50", "cash_amount": "12.34",
         "net_amount": "12.34", "amount": "500", "brokerage": "0", "interval_days": "28",
         "note": "A careful note", "yahoo_symbol": "ACME.AX", "currency": "AUD",
-        "exchange": "ASX", "asset_class": "share",
+        "exchange": "ASX", "asset_class": "share", "catalogue": "1",
         "new_ticker": f"NEW{n}", "new_name": "New company", "new_yahoo": f"NEW{n}.AX",
         "new_asset_class": "share",
         "role": "member", "scopes": "read", "portfolios": [str(world.portfolio_id)],
