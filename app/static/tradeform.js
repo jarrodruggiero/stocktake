@@ -80,8 +80,10 @@
   }
 
   /* Ask the server what the ticker is as soon as there is something to look
-     up, and fill only the fields still empty — anything typed by hand is
-     kept, because overwriting someone's correction is worse than not helping. */
+     up. Anything typed by hand is kept, because overwriting someone's
+     correction is worse than not helping. What the lookup itself filled in is
+     replaced by its next answer: the exchange often changes after the ticker,
+     and the first answer, the ASX guess, is then wrong. */
   function autofill(prefix) {
     var ticker = byName(prefix + "ticker");
     var exchange = byName(prefix + "exchange");
@@ -97,7 +99,9 @@
         if (!d) { if (status) { status.textContent = ""; } return; }
         var fill = function (name, value) {
           var el = byName(prefix + name);
-          if (el && !el.value.trim() && value) { el.value = value; }
+          if (!el || (el.value.trim() && el.value !== el.dataset.filled)) { return; }
+          el.value = value || "";
+          el.dataset.filled = el.value;
         };
         fill("name", d.name);
         /* Not `fill`: the field starts at AUD, so it was never empty and a USD

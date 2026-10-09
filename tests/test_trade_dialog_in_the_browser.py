@@ -206,3 +206,69 @@ def test_typing_an_instrument(client, session_factory, tmp_path):
                             "currency": "USD"}
     # A ticker that is already listed, typed as new, switches to it.
     assert out["switched"] == {"picked": True, "newHidden": True}
+
+
+# Yahoo by exchange: GOOG on the ASX is nothing, on NASDAQ it is Alphabet. A
+# price comes back only for the symbol that exists.
+BY_EXCHANGE = """
+<script>
+window.fetch = function (url) {
+  url = String(url);
+  var answer = null;
+  if (url.indexOf("/holdings/lookup") === 0) {
+    answer = url.indexOf("exchange=NASDAQ") > 0
+      ? {found: true, name: "Alphabet Inc.", currency: "USD", symbol: "GOOG", asset_class: "share"}
+      : {found: false, name: "", currency: "", symbol: "GOOG.AX", asset_class: null};
+  } else if (url.indexOf("/holdings/price?symbol=GOOG&") === 0) {
+    answer = {price: "250.10", fx: "0.65"};
+  } else if (url.indexOf("/holdings/price") === 0) {
+    answer = {price: "", fx: ""};
+  }
+  if (!answer) { return Promise.reject(new Error("offline")); }
+  return Promise.resolve({ok: true, json: function () { return Promise.resolve(answer); }});
+};
+</script>
+"""
+
+EXCHANGE_AFTER_TICKER = """
+<script>
+window.addEventListener("load", async function () {
+  var pause = function () { return new Promise(function (r) { setTimeout(r, 60); }); };
+  var out = {};
+  var form = document.getElementById("tradedialog").querySelector("form");
+  var field = function (name) { return form.querySelector('[name="' + name + '"]'); };
+  var pick = form.querySelector("#instpick");
+  document.getElementById("opentrade").click(); await pause();
+  pick.value = "new"; pick.dispatchEvent(new Event("change", {bubbles: true}));
+
+  field("new_ticker").value = "GOOG";
+  field("new_ticker").dispatchEvent(new Event("change", {bubbles: true})); await pause();
+  out.onTheAsx = field("new_yahoo").value;
+  field("new_exchange").value = "NASDAQ";
+  field("new_exchange").dispatchEvent(new Event("change", {bubbles: true})); await pause();
+  out.onNasdaq = {symbol: field("new_yahoo").value, name: field("new_name").value,
+                  price: document.getElementById("unit_price").value};
+
+  field("new_yahoo").value = "GOOGL";
+  field("new_yahoo").dispatchEvent(new Event("input", {bubbles: true}));
+  field("new_exchange").value = "ASX";
+  field("new_exchange").dispatchEvent(new Event("change", {bubbles: true})); await pause();
+  out.typedKept = field("new_yahoo").value;
+
+  var pre = document.createElement("pre");
+  pre.id = "result";
+  pre.textContent = JSON.stringify(out);
+  document.body.appendChild(pre);
+});
+</script>
+"""
+
+
+def test_changing_the_exchange_looks_the_ticker_up_again(client, session_factory, tmp_path):
+    """Reported: a NASDAQ ticker typed before its exchange kept the ASX guess,
+    GOOG.AX, so the price never came. The lookup's own answers give way to
+    the next one; what was typed by hand still does not."""
+    out = _drive(client, session_factory, tmp_path, EXCHANGE_AFTER_TICKER, head=BY_EXCHANGE)
+    assert out["onTheAsx"] == "GOOG.AX"
+    assert out["onNasdaq"] == {"symbol": "GOOG", "name": "Alphabet Inc.", "price": "250.10"}
+    assert out["typedKept"] == "GOOGL"

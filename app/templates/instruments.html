@@ -135,7 +135,7 @@
         </select>
       </label>
       <label>Class
-        <select name="asset_class">
+        <select name="asset_class" onchange="this.dataset.picked = 1">
           <option value="etf">ETF</option>
           <option value="share">Share</option>
           <option value="crypto">Crypto</option>
@@ -170,8 +170,10 @@
 </noscript>
 
 <script>
-  /* Ask the server what the ticker is as soon as there's something to look up,
-     and fill only the fields still empty — anything typed by hand is kept. */
+  /* Ask the server what the ticker is as soon as there's something to look up.
+     Anything typed or picked by hand is kept; what the lookup filled in gives
+     way to its next answer, because the exchange often changes after the
+     ticker and the first answer, the ASX guess, is then wrong. */
   function autofill(prefix) {
     const q = (n) => document.querySelector(`[name="${prefix}${n}"]`);
     const ticker = q("ticker"), exchange = q("exchange");
@@ -182,11 +184,17 @@
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!d) { if (status) status.textContent = ""; return; }
-        const fill = (n, v) => { const el = q(n); if (el && !el.value.trim() && v) el.value = v; };
+        const fill = (n, v) => {
+          const el = q(n);
+          if (!el || (el.value.trim() && el.value !== el.dataset.filled)) return;
+          el.value = v || "";
+          el.dataset.filled = el.value;
+        };
         fill("name", d.name);
         fill("currency", d.currency);
-        fill("yahoo", d.symbol);
         fill("yahoo_symbol", d.symbol);
+        const cls = q("asset_class");
+        if (cls && d.asset_class && !cls.dataset.picked) cls.value = d.asset_class;
         if (status) status.textContent = d.found
           ? `found: ${d.name || d.symbol}${d.currency ? " (" + d.currency + ")" : ""}`
           : `no match for ${d.symbol} — check the ticker and exchange`;
