@@ -66,6 +66,9 @@ mean — worth reading before sending it on.
 Figures that cannot be converted to AUD honestly come out **blank** rather than
 converted at 1:1, so nothing wrong gets totalled by a spreadsheet.
 
+In a CSV, text that starts with `=`, `+`, `-` or `@` has a `'` in front, so a
+spreadsheet shows it rather than running it as a formula.
+
 ## Instruments and the ledger
 
 An instrument's page shows its full ledger: every buy, sell, DRP allocation and

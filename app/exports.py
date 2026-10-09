@@ -339,11 +339,25 @@ BUILDERS = {
 # Rendering
 # --------------------------------------------------------------------------- #
 
+# A spreadsheet runs a cell that starts with any of these as a formula. Notes,
+# names and symbols are typed by people, so neither renderer trusts them
+# (decisions.md #142).
+FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _inert(value):
+    """Text that starts like a formula, quoted so it is shown, not run. Only
+    text: a negative number is a number and keeps its sign."""
+    if isinstance(value, str) and value.startswith(FORMULA_START):
+        return "'" + value
+    return value
+
+
 def to_csv(headers: list[str], rows: list[list]) -> bytes:
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
-    writer.writerow(headers)
-    writer.writerows(rows)
+    writer.writerow([_inert(h) for h in headers])
+    writer.writerows([_inert(v) for v in row] for row in rows)
     # utf-8-sig: Excel on Windows opens a plain utf-8 CSV as mojibake.
     return buffer.getvalue().encode("utf-8-sig")
 
@@ -365,6 +379,13 @@ def to_xlsx(sheets: dict[str, Report], note: str | None = None) -> bytes:
             cell.alignment = Alignment(horizontal="left")
         for row in rows:
             ws.append(row)
+        # Every text cell is text. openpyxl makes a formula of a string that
+        # starts with "=", and XLSX, unlike CSV, has a type to say so, so
+        # nothing is added to what the cell shows.
+        for line in ws.iter_rows():
+            for cell in line:
+                if isinstance(cell.value, str):
+                    cell.data_type = "s"
         ws.freeze_panes = "A2"
         for i, header in enumerate(headers, start=1):
             longest = max(

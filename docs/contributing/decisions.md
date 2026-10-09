@@ -1320,3 +1320,14 @@ nothing of theirs, and a value that is not an id is ignored. Its name follows
 the session cookie's, so two apps on one host keep theirs apart. The profile
 offers the choice only to someone with more than one portfolio. An invite still
 opens the portfolio it invited to.
+
+**142. An export's text is shown by a spreadsheet, never run.** Notes, names and
+Yahoo symbols are typed by people, and the catalogue is shared, so a writer in
+one portfolio reaches another's export, where a cell starting with `=` is a
+formula: a `HYPERLINK` that sends the sheet's numbers elsewhere
+(GHSA-w8x6-x99c-773x, from freeb5d). Both renderers neutralise it, not each
+report, so a report added later is covered too. CSV has no cell types, so text
+starting with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading
+quote, OWASP's rule, and the quote shows. XLSX has them: every text cell is
+written as text, which is shown and never evaluated, with nothing added.
+Numbers are never touched, so a negative figure keeps its sign.
