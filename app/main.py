@@ -82,6 +82,7 @@ from . import (
     queries,
     setupwizard,
     sorting,
+    submissions,
     tenancy,
     textfield,
     theming,
@@ -518,6 +519,8 @@ templates.env.globals["reporting_ccy"] = money.REPORTING
 # Exposed to every template, so a link to the docs is `{{ docs_url }}` rather
 # than an address repeated in a dozen files.
 templates.env.globals["docs_url"] = DOCS_URL
+# A fresh id each time a creating form renders — see app/submissions.py.
+templates.env.globals["submission_id"] = submissions.mint
 templates.env.globals["role_labels"] = ROLE_LABELS
 templates.env.globals["role_blurbs"] = ROLE_BLURBS
 # Spreadsheet column letters: A..Z, AA, AB. Nobody counts to the 29th column.
@@ -4305,162 +4308,177 @@ async def trade_create(
     new_currency: str = Form("AUD"),
     new_yahoo: str = Form(""),
     new_drp: str = Form(""),
+    submission: str = Form(""),
 ):
-    with scoped(request) as (ctx, db):
-        await auth.verify_csrf(request, db)
-        _require_write(ctx)
-        instruments = db.scalars(
-            select(Instrument)
-            .where(Instrument.active.is_(True))
-            .order_by(Instrument.asset_class, Instrument.ticker)
-        ).all()
+    # One trade per form, however many times Save is pressed: a repeat gets
+    # the first one's answer. app/submissions.py.
+    owned = submission if submissions.valid(submission) else None
+    if owned:
+        answer = await submissions.claim(owned)
+        if answer is not None:
+            return _redirect(answer)
+    try:
+        with scoped(request) as (ctx, db):
+            await auth.verify_csrf(request, db)
+            _require_write(ctx)
+            instruments = db.scalars(
+                select(Instrument)
+                .where(Instrument.active.is_(True))
+                .order_by(Instrument.asset_class, Instrument.ticker)
+            ).all()
 
-        def _reject(message: str):
-            return _render(
-                request,
-                ctx,
-                "trade_new.html",
-                {
-                    "instruments": instruments,
-                    "ticker": "",
-                    "today": clock.today().isoformat(),
-                    "error": message,
-                    "edit": None,
-                    # A rejected submission has no ticker to go back to — the
-                    # instrument may be the thing that was wrong.
-                    "return_to": "/",
-                    "back_label": "Portfolio",
-                    "form": {
-                        "instrument_id": instrument_id,
-                        "type": type,
-                        "trade_date": trade_date,
-                        "set_time": set_time,
-                        "trade_time": trade_time,
-                        "quantity": quantity,
-                        "unit_price": unit_price,
-                        "brokerage": brokerage,
-                        "fx_rate": fx_rate,
-                        "note": note,
-                        "new_ticker": new_ticker,
-                        "new_name": new_name,
-                        "new_exchange": new_exchange,
-                        "new_asset_class": new_asset_class,
-                        "new_currency": new_currency,
-                        "new_yahoo": new_yahoo,
-                        "new_drp": new_drp,
+            def _reject(message: str):
+                return _render(
+                    request,
+                    ctx,
+                    "trade_new.html",
+                    {
+                        "instruments": instruments,
+                        "ticker": "",
+                        "today": clock.today().isoformat(),
+                        "error": message,
+                        "edit": None,
+                        # A rejected submission has no ticker to go back to — the
+                        # instrument may be the thing that was wrong.
+                        "return_to": "/",
+                        "back_label": "Portfolio",
+                        "form": {
+                            "instrument_id": instrument_id,
+                            "type": type,
+                            "trade_date": trade_date,
+                            "set_time": set_time,
+                            "trade_time": trade_time,
+                            "quantity": quantity,
+                            "unit_price": unit_price,
+                            "brokerage": brokerage,
+                            "fx_rate": fx_rate,
+                            "note": note,
+                            "new_ticker": new_ticker,
+                            "new_name": new_name,
+                            "new_exchange": new_exchange,
+                            "new_asset_class": new_asset_class,
+                            "new_currency": new_currency,
+                            "new_yahoo": new_yahoo,
+                            "new_drp": new_drp,
+                        },
                     },
-                },
-            )
-
-        if type not in ("buy", "sell"):
-            return _reject("Choose buy or sell.")
-        try:
-            date = dt.date.fromisoformat(trade_date)
-            qty = money.parse(quantity, Trade.quantity, "Units")
-            price = money.parse(unit_price, Trade.unit_price, "Price")
-            brk = money.parse(brokerage or "0", Trade.brokerage, "Brokerage")
-            fx = (money.parse(fx_rate, Trade.fx_rate, "FX rate")
-                  if fx_rate.strip() else None)
-        except money.FigureError as exc:
-            return _reject(f"{exc}.")
-        except ValueError:
-            return _reject("Date, units, price, brokerage and FX must be numbers (date as YYYY-MM-DD).")
-        if qty <= 0:
-            return _reject("Units must be greater than zero.")
-        # Zero is a real price: a bonus issue, a demerger allocation, an
-        # employer's reward-plan grant. Negative is not.
-        if price < 0:
-            return _reject("Price can't be negative.")
-        if brk < 0 or (fx is not None and fx <= 0):
-            return _reject("Brokerage can't be negative and FX must be positive.")
-        try:
-            note_text = textfield.fit(note, Trade.note, "Note")
-        except textfield.TextError as exc:
-            return _reject(f"{exc}.")
-        if date > clock.today():
-            return _reject("That date is in the future.")
-        when = _parse_time(set_time, trade_time)
-        if when is None:
-            return _reject("That time isn't a time — use HH:MM, like 14:30.")
-
-        # "new" means the fields below the picker were filled in: create the
-        # instrument and record the trade in one go, rather than sending someone
-        # to another page and losing what they typed.
-        if instrument_id == "new":
-            ticker = new_ticker.strip().upper()
-            typed_currency = new_currency.strip().upper()
-            problem = (ticker_problem(ticker) or exchange_problem(new_exchange or "ASX")
-                       or (typed_currency and currency_problem(typed_currency))
-                       or textfield.problem(new_name, Instrument.name, "Name")
-                       or textfield.problem(new_yahoo, Instrument.yahoo_symbol,
-                                            "Yahoo symbol"))
-            if problem:
-                return _reject(f"{problem}." if problem[-1] not in ".?" else problem)
-            if new_asset_class not in ("etf", "share", "crypto"):
-                return _reject("Pick an asset class for the new instrument.")
-            exchange = (new_exchange or "ASX").strip().upper()
-            inst = db.scalar(
-                select(Instrument).where(
-                    Instrument.exchange == exchange, Instrument.ticker == ticker
                 )
-            )
-            if inst is None:
-                found = pricefeed.lookup(ticker, exchange)
-                inst = Instrument(
-                    ticker=ticker,
-                    exchange=exchange,
-                    name=(new_name.strip() or found.get("name") or None),
-                    currency=typed_currency or _yahoo_currency(found) or "AUD",
-                    asset_class=new_asset_class,
-                    drp=bool(new_drp),
-                    active=True,
-                    yahoo_symbol=new_yahoo.strip()
-                    or found.get("symbol")
-                    or pricefeed.yahoo_symbol_for(ticker, exchange),
-                )
-                db.add(inst)
-                db.flush()
-            if queries.prefs_by_instrument(db).get(inst.id) is None:
-                db.add(
-                    tenancy.owned(
-                        db, HoldingPref(instrument_id=inst.id, drp=bool(new_drp))
+
+            if type not in ("buy", "sell"):
+                return _reject("Choose buy or sell.")
+            try:
+                date = dt.date.fromisoformat(trade_date)
+                qty = money.parse(quantity, Trade.quantity, "Units")
+                price = money.parse(unit_price, Trade.unit_price, "Price")
+                brk = money.parse(brokerage or "0", Trade.brokerage, "Brokerage")
+                fx = (money.parse(fx_rate, Trade.fx_rate, "FX rate")
+                      if fx_rate.strip() else None)
+            except money.FigureError as exc:
+                return _reject(f"{exc}.")
+            except ValueError:
+                return _reject("Date, units, price, brokerage and FX must be numbers (date as YYYY-MM-DD).")
+            if qty <= 0:
+                return _reject("Units must be greater than zero.")
+            # Zero is a real price: a bonus issue, a demerger allocation, an
+            # employer's reward-plan grant. Negative is not.
+            if price < 0:
+                return _reject("Price can't be negative.")
+            if brk < 0 or (fx is not None and fx <= 0):
+                return _reject("Brokerage can't be negative and FX must be positive.")
+            try:
+                note_text = textfield.fit(note, Trade.note, "Note")
+            except textfield.TextError as exc:
+                return _reject(f"{exc}.")
+            if date > clock.today():
+                return _reject("That date is in the future.")
+            when = _parse_time(set_time, trade_time)
+            if when is None:
+                return _reject("That time isn't a time — use HH:MM, like 14:30.")
+
+            # "new" means the fields below the picker were filled in: create the
+            # instrument and record the trade in one go, rather than sending someone
+            # to another page and losing what they typed.
+            if instrument_id == "new":
+                ticker = new_ticker.strip().upper()
+                typed_currency = new_currency.strip().upper()
+                problem = (ticker_problem(ticker) or exchange_problem(new_exchange or "ASX")
+                           or (typed_currency and currency_problem(typed_currency))
+                           or textfield.problem(new_name, Instrument.name, "Name")
+                           or textfield.problem(new_yahoo, Instrument.yahoo_symbol,
+                                                "Yahoo symbol"))
+                if problem:
+                    return _reject(f"{problem}." if problem[-1] not in ".?" else problem)
+                if new_asset_class not in ("etf", "share", "crypto"):
+                    return _reject("Pick an asset class for the new instrument.")
+                exchange = (new_exchange or "ASX").strip().upper()
+                inst = db.scalar(
+                    select(Instrument).where(
+                        Instrument.exchange == exchange, Instrument.ticker == ticker
                     )
                 )
-            db.flush()
-            _kick_feed()  # its price history arrives with the next run
-        else:
-            try:
-                wanted = int(instrument_id)
-            except ValueError:
-                wanted = 0
-            # Parsed here rather than typed as RowId because "new" is valid too,
-            # so the bounds RowId would apply are applied by hand.
-            inst = db.get(Instrument, wanted) if 1 <= wanted <= ROW_ID_MAX else None
-        if inst is None:
-            return _reject("Pick an instrument.")
+                if inst is None:
+                    found = pricefeed.lookup(ticker, exchange)
+                    inst = Instrument(
+                        ticker=ticker,
+                        exchange=exchange,
+                        name=(new_name.strip() or found.get("name") or None),
+                        currency=typed_currency or _yahoo_currency(found) or "AUD",
+                        asset_class=new_asset_class,
+                        drp=bool(new_drp),
+                        active=True,
+                        yahoo_symbol=new_yahoo.strip()
+                        or found.get("symbol")
+                        or pricefeed.yahoo_symbol_for(ticker, exchange),
+                    )
+                    db.add(inst)
+                    db.flush()
+                if queries.prefs_by_instrument(db).get(inst.id) is None:
+                    db.add(
+                        tenancy.owned(
+                            db, HoldingPref(instrument_id=inst.id, drp=bool(new_drp))
+                        )
+                    )
+                db.flush()
+                _kick_feed()  # its price history arrives with the next run
+            else:
+                try:
+                    wanted = int(instrument_id)
+                except ValueError:
+                    wanted = 0
+                # Parsed here rather than typed as RowId because "new" is valid too,
+                # so the bounds RowId would apply are applied by hand.
+                inst = db.get(Instrument, wanted) if 1 <= wanted <= ROW_ID_MAX else None
+            if inst is None:
+                return _reject("Pick an instrument.")
 
-        trade = tenancy.owned(
-            db,
-            Trade(
-                instrument_id=inst.id,
-                date=date,
-                time=when,
-                type=type,
-                quantity=qty,
-                unit_price=price,
-                brokerage=brk,
-                # AUD is 1:1; for anything else an unset rate is backfilled from
-                # the stored FX close for that date by the price feed.
-                fx_rate=Decimal(1) if inst.currency == "AUD" else fx,
-                note=note_text,
-            ),
-        )
-        problem = _breach(db, inst, trade)
-        if problem:
-            return _reject(problem)
-        db.add(trade)
-        db.flush()
-        return _redirect(f"/holding/{inst.ticker}")
+            trade = tenancy.owned(
+                db,
+                Trade(
+                    instrument_id=inst.id,
+                    date=date,
+                    time=when,
+                    type=type,
+                    quantity=qty,
+                    unit_price=price,
+                    brokerage=brk,
+                    # AUD is 1:1; for anything else an unset rate is backfilled from
+                    # the stored FX close for that date by the price feed.
+                    fx_rate=Decimal(1) if inst.currency == "AUD" else fx,
+                    note=note_text,
+                ),
+            )
+            problem = _breach(db, inst, trade)
+            if problem:
+                return _reject(problem)
+            db.add(trade)
+            db.flush()
+            target = f"/holding/{inst.ticker}"
+        if owned:
+            submissions.finish(owned, target)
+        return _redirect(target)
+    finally:
+        if owned:
+            submissions.release(owned)
 
 
 # --------------------------------------------------------------------------- #

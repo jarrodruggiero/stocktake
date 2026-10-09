@@ -1215,6 +1215,17 @@ dialog[open]::backdrop { animation: backdrop-in 0.18s ease; }
 }
 @keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
 dialog::backdrop { background: rgb(0 0 0 / 0.55); }
+/* Record trade on a desktop: the width of a form rather than of a phone. While
+   an instrument is being added, its details sit beside the trade's. */
+@media (min-width: 64rem) {
+  #tradedialog { max-width: min(52rem, 94vw); }
+  #tradedialog form.narrow { max-width: none; }
+  #tradedialog .tradepick select, #tradedialog .tradefields > label > input { max-width: none; }
+  #tradedialog:has(#newinst:not([hidden])) { max-width: min(62rem, 94vw); }
+  #tradedialog:has(#newinst:not([hidden])) form.narrow { display: grid; align-items: start;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); column-gap: var(--sp-5); }
+  #tradedialog form > .commitbar { grid-column: 1 / -1; }
+}
 /* A FORM inside a dialog is not a card in its own right — it is the dialog's
    content, so it loses the panel chrome and the dialog's padding is the only
    padding. Scoped to forms deliberately: `p.panel.error` and `p.panel.ok` ARE

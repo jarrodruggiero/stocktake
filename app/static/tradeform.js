@@ -190,6 +190,46 @@
     if (dialog) { dialog.close(); }
   });
 
+  /* Pressed once, Save says so and a second press goes nowhere: a save can
+     wait on the price provider, and every press used to record a trade. The
+     server ignores a repeat too (app/submissions.py); this is the visible half. */
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    if (!form.matches || !form.matches("form[data-instrument]")) { return; }
+    if (form.dataset.saving) { event.preventDefault(); return; }
+    form.dataset.saving = "1";
+    var save = event.submitter || form.querySelector('.commitbar button[type="submit"]');
+    if (save) { save.setAttribute("aria-busy", "true"); }
+  });
+
+  function notSaving(form) {
+    delete form.dataset.saving;
+    form.querySelectorAll('[aria-busy="true"]').forEach(function (button) {
+      button.removeAttribute("aria-busy");
+    });
+  }
+
+  /* Back from the next page, a browser may restore this one as it was left. */
+  window.addEventListener("pageshow", function () {
+    document.querySelectorAll("form[data-instrument]").forEach(notSaving);
+  });
+
+  /* Every Record trade starts clean, however the dialog was left last time —
+     Cancel, Escape, a click outside. Done as it opens rather than as it
+     closes: `close` is queued, and opening is the moment that matters.
+     `reset()` puts the markup's values back; the marks this script left
+     (what was typed, what the lookup said) go by hand. */
+  window.resetTradeForm = function (form) {
+    form.reset();
+    notSaving(form);
+    ["quantity", "unit_price", "fx_rate"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) { delete el.dataset.typed; }
+    });
+    var status = document.getElementById("new_lookup-status");
+    if (status) { status.textContent = ""; }
+  };
+
   /* The initial state, for a form already in the page. Re-run when a dialog
      opens, because the form inside it starts from the server's markup. */
   window.syncTradeForm = function () {

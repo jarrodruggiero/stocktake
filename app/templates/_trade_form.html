@@ -16,6 +16,7 @@
       data-instrument="{{ inst.id if edit else '' }}"
       autocomplete="off">
   <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  {% if not edit %}<input type="hidden" name="submission" value="{{ submission_id() }}">{% endif %}
   {# Today's scheduled buy, filled in — and SHOWING ITS WORKING.
 
      A form that silently supplies a quantity is asking to be signed off
@@ -36,6 +37,9 @@
     {{ prefill.spend | cash(prefill.currency) }} total
   </p>
   {% endif %}
+  {# Two groups, side by side in the dialog on a wide screen: what is being
+     traded, then the trade. #}
+  <div class="tradepick">
   {% if edit %}
   <p class="meta">{{ inst.ticker }} — {{ inst.name or inst.asset_class }}{% if inst.currency != 'AUD' %} ({{ inst.currency }}){% endif %}</p>
   {% else %}
@@ -93,7 +97,9 @@
     <p class="sub" id="new_lookup-status"></p>
   </fieldset>
   {% endif %}
+  </div>
 
+  <div class="tradefields">
   <div class="row">
     <label>Type
       <select name="type" required>
@@ -155,6 +161,7 @@
   <label>Note
     <input name="note" value="{{ form.note or '' }}" maxlength="400">
   </label>
+  </div>
 
   <div class="commitbar">
     <button type="submit">{% if edit %}Save changes{% else %}Save trade{% endif %}</button>
