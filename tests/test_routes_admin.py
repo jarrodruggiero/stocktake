@@ -485,6 +485,7 @@ def test_the_drp_preference_saves_immediately(client, session_factory):
     make_login(client, session_factory)
     with session_factory() as s:
         inst = fac.make_instrument(s, "ACME", name="Acme")
+        fac.hold(s, inst)
         s.commit()
         inst_id = inst.id
 
@@ -502,6 +503,7 @@ def test_clearing_the_drp_preference_persists_too(client, session_factory):
     make_login(client, session_factory)
     with session_factory() as s:
         inst = fac.make_instrument(s, "ACME", name="Acme")
+        fac.hold(s, inst)
         s.commit()
         inst_id = inst.id
     client.post(f"/holdings/{inst_id}/pref", data={"drp": "on",
@@ -517,18 +519,21 @@ def test_clearing_the_drp_preference_persists_too(client, session_factory):
 
 def test_the_yahoo_symbol_is_only_changed_when_supplied(client, session_factory):
     """It is catalogue data, shared with everyone else holding the instrument,
-    so a form that does not mention it must not blank it."""
+    so a form that does not offer it must not change it."""
     make_login(client, session_factory)
     with session_factory() as s:
-        inst = fac.make_instrument(s, "ACME", name="Acme")
+        inst = fac.make_instrument(s, "ACME", name="Acme", yahoo_symbol="ACME.XA")
+        fac.hold(s, inst)
         s.commit()
         inst_id = inst.id
 
-    client.post(f"/holdings/{inst_id}/pref", data={"_csrf": csrf(session_factory)},
-                headers=HTML)
+    resp = client.post(f"/holdings/{inst_id}/pref", data={"_csrf": csrf(session_factory)},
+                       headers=HTML, follow_redirects=False)
 
+    assert resp.status_code == 303
     with session_factory() as s:
-        assert s.get(Instrument, inst_id).yahoo_symbol == "ACME.AX"
+        inst = s.get(Instrument, inst_id)
+        assert (inst.yahoo_symbol, inst.name) == ("ACME.XA", "Acme")
 
 
 def test_a_preference_on_an_unknown_instrument_is_a_404(client, session_factory):
@@ -648,6 +653,7 @@ def test_a_hostile_referer_cannot_turn_a_redirect_into_an_open_redirect(
     with session_factory() as s:
         mine = s.scalars(select(Portfolio).order_by(Portfolio.id)).first().id
         inst = fac.make_instrument(s, "ACME", name="Acme")
+        fac.hold(s, inst)
         s.commit()
         inst_id = inst.id
 

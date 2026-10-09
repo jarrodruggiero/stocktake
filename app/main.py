@@ -5256,6 +5256,7 @@ def instruments_page(request: Request, error: str = "", added: str = "",
                 "added": added,
                 "removed": removed,
                 "unplanned": unplanned,
+                "editable": _catalogue_editable(ctx, [i.id for i in instruments]),
             },
         )
 
@@ -5312,6 +5313,38 @@ def _anyone_has(instrument_id: int) -> bool:
                     model.instrument_id == instrument_id).limit(1)) is not None:
                 return True
     return False
+
+
+def _shared_elsewhere(instrument_ids, portfolio_id: int) -> set[int]:
+    """Which of these instruments another portfolio has too. Asked across all
+    portfolios, like `_anyone_has`, and answered with ids alone."""
+    ids = list(instrument_ids)
+    if not ids:
+        return set()
+    with tenancy.unscoped_session(SessionLocal) as everyone:
+        found: set[int] = set()
+        for model in (HoldingPref, Trade, Dividend):
+            found |= set(everyone.scalars(select(model.instrument_id).where(
+                model.instrument_id.in_(ids), model.portfolio_id != portfolio_id)))
+        found |= set(everyone.scalars(
+            select(InvestmentPlanEntry.instrument_id)
+            .join(InvestmentPlan, InvestmentPlanEntry.plan_id == InvestmentPlan.id)
+            .where(InvestmentPlanEntry.instrument_id.in_(ids),
+                   InvestmentPlan.portfolio_id != portfolio_id)))
+    return found
+
+
+def _catalogue_editable(ctx, instrument_ids) -> set[int]:
+    """Which instruments' shared details this person may change: the name,
+    class, currency and price symbol every portfolio holding it sees. Those this
+    portfolio alone has, so the edit reaches nobody else's; an instance admin's,
+    all of them (decisions.md #143)."""
+    ids = set(instrument_ids)
+    if not ctx.can_write:
+        return set()
+    if ctx.user.is_admin:
+        return ids
+    return ids - _shared_elsewhere(ids, ctx.active_portfolio_id)
 
 
 @app.post("/holdings/{instrument_id}/delete-trades")
@@ -5521,29 +5554,56 @@ async def instrument_pref(
     instrument_id: RowId,
     drp: str = Form(""),
     note: str = Form(""),
-    yahoo_symbol: str = Form(None),
+    catalogue: str = Form(""),
+    name: str = Form(""),
+    asset_class: str = Form(""),
+    currency: str = Form(""),
+    yahoo_symbol: str = Form(""),
 ):
+    """A row of Manage holdings: this portfolio's DRP and note, and, from a row
+    that offers them (`catalogue`), the shared details."""
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
         _require_write(ctx)
         inst = db.get(Instrument, instrument_id)
-        if inst is None:
+        # Only this portfolio's: a setting on any other would add it to the list.
+        if inst is None or inst.id not in queries.portfolio_instrument_ids(db):
             raise HTTPException(404, "no such instrument")
         try:
             note_text = textfield.fit(note, HoldingPref.note, "Note")
-            symbol = textfield.fit(yahoo_symbol, Instrument.yahoo_symbol, "Yahoo symbol")
         except textfield.TextError as exc:
             raise HTTPException(400, str(exc))
+        fetch = False
+        if catalogue:
+            if instrument_id not in _catalogue_editable(ctx, [instrument_id]):
+                raise HTTPException(403, "another portfolio has this instrument too")
+            code = currency.strip().upper()
+            problem = (currency_problem(code)
+                       or textfield.problem(name, Instrument.name, "Name")
+                       or textfield.problem(yahoo_symbol, Instrument.yahoo_symbol,
+                                            "Yahoo symbol"))
+            if problem:
+                raise HTTPException(400, problem)
+            if asset_class not in ("etf", "share", "crypto"):
+                raise HTTPException(400, "Unknown asset class")
+            # Blank is the guess, as when adding. A new symbol keeps the prices
+            # already stored and fetches its own from the next run.
+            symbol = yahoo_symbol.strip() or pricefeed.yahoo_symbol_for(inst.ticker,
+                                                                         inst.exchange)
+            fetch = symbol != inst.yahoo_symbol
+            inst.name = textfield.fit(name, Instrument.name)
+            inst.asset_class = asset_class
+            inst.currency = code
+            inst.yahoo_symbol = symbol
         pref = queries.prefs_by_instrument(db).get(instrument_id)
         if pref is None:
             pref = tenancy.owned(db, HoldingPref(instrument_id=instrument_id))
             db.add(pref)
         pref.drp = bool(drp)
         pref.note = note_text
-        # The Yahoo symbol is catalogue data (shared) — only set when supplied.
-        if symbol is not None:
-            inst.yahoo_symbol = symbol
-        return _redirect(_back_to_referer(request, "/holdings"))
+    if fetch:
+        _kick_feed()
+    return _redirect(_back_to_referer(request, "/holdings"))
 
 
 @app.get("/holding/{ticker}", response_class=HTMLResponse)

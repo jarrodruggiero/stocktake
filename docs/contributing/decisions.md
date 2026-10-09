@@ -1331,3 +1331,15 @@ starting with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading
 quote, OWASP's rule, and the quote shows. XLSX has them: every text cell is
 written as text, which is shown and never evaluated, with nothing added.
 Numbers are never touched, so a negative figure keeps its sign.
+
+**143. A holding's shared details can be corrected where that reaches nobody
+else.** Name, class, currency and price symbol are the shared catalogue's, so
+changing one changes every portfolio that holds the instrument. They are
+fields on Manage holdings only for an instrument this portfolio alone has, or
+for an instance admin; elsewhere they are plain text. "Has" counts a holding
+setting, a trade, a distribution or a place in a plan, asked across all
+portfolios and answered as ids alone, as `_anyone_has` is. A new price symbol
+keeps the prices already stored and fetches its own from the next run, and a
+blank one is the guess, as when adding. This replaces the "no way to edit a
+class" of 2026-10-09: test users needed to fix a NASDAQ stock saved as
+MSFT.AX. A row only saves for an instrument this portfolio has.

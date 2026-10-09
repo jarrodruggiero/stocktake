@@ -199,7 +199,8 @@ def test_a_note_too_long_on_a_dividend_is_refused_and_the_dividend_is_unchanged(
 
 @pytest.mark.parametrize("data, message", [
     ({"note": "n" * 401}, "Note: that is 401 characters"),
-    ({"yahoo_symbol": "y" * 21}, "Yahoo symbol: that is 21 characters"),
+    ({"catalogue": "1", "currency": "AUD", "asset_class": "share", "yahoo_symbol": "y" * 21},
+     "Yahoo symbol: that is 21 characters"),
 ], ids=["note", "yahoo-symbol"])
 def test_the_holding_preferences_are_checked_and_nothing_moves(
         client, session_factory, acme, data, message):

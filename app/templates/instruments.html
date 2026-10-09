@@ -8,8 +8,6 @@
 <div class="pagehead">
   <div>
     <h1>Manage holdings</h1>
-    <p class="note">Ticker, exchange and price symbol are shared by everyone
-    using this tracker; DRP and notes are yours alone.</p>
   </div>
   <div class="headactions">
     {# Above the table, not below it: under a list that needs scrolling,
@@ -37,6 +35,7 @@
 <form id="pref-{{ i.id }}" method="post" action="/holdings/{{ i.id }}/pref"
       hidden onsubmit="return savePref(this, event)">
   <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  {% if i.id in editable %}<input type="hidden" name="catalogue" value="1">{% endif %}
 </form>
 {% endfor %}
 
@@ -56,13 +55,35 @@
          is what lets the holding page's back button come back to THIS page. #}
       <td class="tick"><a href="/holding/{{ i.ticker }}?return=/holdings">{{ i.ticker }}</a>
           <span class="sub">{{ i.exchange }}</span></td>
+      {# Fields only where an edit reaches nobody else's portfolio, or for an
+         instance admin: these are the shared catalogue's (decisions.md #143). #}
+      {% if i.id in editable %}
+      <td><input class="cellfield namefield" name="name" form="pref-{{ i.id }}"
+                 value="{{ i.name or '' }}" aria-label="Name" onchange="savePref(this.form)"></td>
+      <td><select class="cellfield" name="asset_class" form="pref-{{ i.id }}" aria-label="Class"
+                  onchange="savePref(this.form)">
+            {% for value, label in [("etf", "ETF"), ("share", "Share"), ("crypto", "Crypto")] %}
+            <option value="{{ value }}" {% if i.asset_class == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select></td>
+      <td><input class="cellfield codefield" name="currency" form="pref-{{ i.id }}"
+                 value="{{ i.currency }}" maxlength="3" aria-label="Currency"
+                 onchange="savePref(this.form)"></td>
+      {% else %}
       <td>{{ i.name or '' }}</td>
       <td>{{ i.asset_class }}</td>
       <td>{{ i.currency }}</td>
+      {% endif %}
       {# Shown for everything, held or not: a position you exited is still one
          you may be watching, and the dashboard deliberately hides it. #}
       <td class="num">{{ prices.get(i.id) | money }}</td>
+      {% if i.id in editable %}
+      <td><input class="cellfield symbolfield" name="yahoo_symbol" form="pref-{{ i.id }}"
+                 value="{{ i.yahoo_symbol or '' }}" aria-label="Price symbol"
+                 onchange="savePref(this.form)"></td>
+      {% else %}
       <td class="sub">{{ i.yahoo_symbol or '—' }}</td>
+      {% endif %}
       {# Saves on change — a checkbox that needs a second click to take effect
          reads as broken, and did. The button is the no-JavaScript path. #}
       <td><label class="check"><input type="checkbox" name="drp" value="1"
@@ -73,17 +94,15 @@
                  value="{{ pref.note if pref and pref.note else '' }}"
                  placeholder="private note" onchange="savePref(this.form)"></td>
       <td class="rowactions">
-        <button class="linkish" type="submit" form="pref-{{ i.id }}">Save</button>
+        <button class="secondary small" type="submit" form="pref-{{ i.id }}">Save</button>
         <span class="savemark" data-for="pref-{{ i.id }}" aria-live="polite"></span>
         {% set block = blocking.get(i.id) %}
         {% if block and block.total %}
-        {# NOT a disabled button. A `disabled` button cannot be hovered or
-           focused in most browsers, so its explanation is unreachable exactly
-           when it is wanted. This one always opens, names what is in the way,
-           and links straight to each trade so the fix is one click rather than
-           a hunt. #}
+        {# Still Remove, never a disabled button: `disabled` cannot be hovered
+           or focused in most browsers. This one opens what is in the way, each
+           trade a link, and Delete all trades. #}
         <details class="menu blockedby">
-          <summary title="Why this can't be removed">{{ block.total }} recorded</summary>
+          <summary>Remove</summary>
           <div class="panel blockpanel">
             <p class="sub">Remove is unavailable while anything is recorded
             against {{ i.ticker }}. Delete these first:</p>
@@ -107,7 +126,7 @@
         {% else %}
         <form class="inline" method="post" action="/holdings/{{ i.id }}/remove">
           <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-          <button class="linkish danger" type="submit">Remove</button>
+          <button class="danger small" type="submit">Remove</button>
         </form>
         {% endif %}
       </td>
@@ -219,9 +238,15 @@
       headers: { "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]').content },
       redirect: "follow",
     })
-      .then((r) => { if (mark) mark.textContent = r.ok ? "saved" : "not saved"; })
-      .catch(() => { if (mark) mark.textContent = "not saved"; })
-      .finally(() => setTimeout(() => { if (mark) mark.textContent = ""; }, 2000));
+      .then((r) => (r.ok ? "saved"
+        : r.json().then((d) => d.detail || "not saved", () => "not saved")))
+      .catch(() => "not saved")
+      .then((text) => {
+        if (!mark) return;
+        mark.textContent = text;
+        /* "saved" goes; a refusal says why, and stays until the next save. */
+        if (text === "saved") setTimeout(() => { mark.textContent = ""; }, 2000);
+      });
     return false;
   }
 </script>
