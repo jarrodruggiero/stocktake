@@ -18,13 +18,14 @@ import io
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal
+from itertools import accumulate
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import money, queries
 from .markettime import to_market
-from .models import MARKET_OPEN, Instrument, Trade, exchange_problem, ticker_problem
+from .models import Instrument, Trade, exchange_problem, ticker_problem, trade_order
 from .pricefeed import MARKETS
 from .settings import BrokerFormat, ImportSettings
 from .tenancy import owned
@@ -386,13 +387,76 @@ def _refuse_shortfalls(session: Session, candidates: list[CandidateTrade]) -> No
         ).first()
         held = (list(session.scalars(select(Trade).where(Trade.instrument_id == inst.id)))
                 if inst is not None else [])
-        for c in sorted(rows, key=lambda r: (r.date, r.time or MARKET_OPEN)):
-            row = Trade(date=c.date, time=c.time, type=c.type, quantity=c.quantity)
-            breach = queries.balance_breach(held, row)
-            if breach is None:
-                held.append(row)
-            else:
-                c.status, c.detail = "refused", queries.breach_message(ticker, breach)
+        for c, breach in _shortfalls(held, rows):
+            c.status, c.detail = "refused", queries.breach_message(ticker, breach)
+
+
+def _shortfalls(held: list[Trade], rows: list[CandidateTrade]) -> list[tuple[CandidateTrade, queries.Breach]]:
+    """Each row the trade form would refuse, with the breach it would name.
+
+    The form walks the whole timeline for its one row; done for each row of a
+    file, that took minutes over a 40,000-row export. So the timeline is
+    walked once: a row is checked against the units held at its place, and
+    against what the recorded trades after it need. Only recorded trades come
+    after it: the rows accepted so far all sort before it, and the rest are
+    judged later.
+    """
+    timeline = sorted(
+        [(t, None) for t in held]
+        + [(Trade(date=c.date, time=c.time, type=c.type, quantity=c.quantity), c) for c in rows],
+        key=lambda pair: trade_order(pair[0]))
+    change = [t.quantity if t.type in ("buy", "drp") else -t.quantity for t, _ in timeline]
+    # The recorded trades alone: their running total at each place, and
+    # `need`, the most those from a place on take from what is held there.
+    recorded = list(accumulate(Decimal(0) if c else step for (_t, c), step in zip(timeline, change)))
+    need = [Decimal(0)] * (len(timeline) + 1)
+    for i in reversed(range(len(timeline))):
+        need[i] = need[i + 1] if timeline[i][1] else max(Decimal(0), need[i + 1] - change[i])
+    first_below = _first_below(recorded)
+
+    refused, units, broken = [], Decimal(0), None
+    for i, (t, c) in enumerate(timeline):
+        after = units + change[i]
+        if c is None:
+            # Recorded trades the file never touched can already be short;
+            # the form names the first, before any row of its own.
+            if after < 0 and broken is None:
+                broken = queries.Breach(trade=t, balance=after, held_before=units,
+                                        is_candidate=False)
+            units = after
+        elif broken is not None:
+            refused.append((c, broken))
+        elif after < 0:
+            refused.append((c, queries.Breach(trade=t, balance=after, held_before=units,
+                                              is_candidate=True)))
+        elif after < need[i + 1]:
+            k = first_below(i + 1, recorded[i] - after)
+            left = after + recorded[k] - recorded[i]
+            refused.append((c, queries.Breach(trade=timeline[k][0], balance=left,
+                                              held_before=left - change[k], is_candidate=False)))
+        else:
+            units = after
+    return refused
+
+
+def _first_below(values: list[Decimal]):
+    """`find(start, limit)`: the first index from `start` whose value is below
+    `limit`, in a handful of steps rather than a scan. `levels[k][i]` is the
+    least of `values[i : i + 2**k]`, so whole runs that stay at or above the
+    limit are stepped over, longest first."""
+    levels = [values]
+    while 2 ** len(levels) <= len(values):
+        last, run = levels[-1], 2 ** (len(levels) - 1)
+        levels.append([min(a, b) for a, b in zip(last, last[run:])])
+
+    def find(start: int, limit: Decimal) -> int:
+        i = start
+        for k in reversed(range(len(levels))):
+            if i < len(levels[k]) and levels[k][i] >= limit:
+                i += 2 ** k
+        return i
+
+    return find
 
 
 def commit(session: Session, candidates: list[CandidateTrade], imports: ImportSettings, source: str) -> dict[str, int]:

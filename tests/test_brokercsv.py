@@ -7,14 +7,17 @@ something wrong into someone's tax records.
 
 from __future__ import annotations
 
+import datetime as dt
 from decimal import Decimal
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from sqlalchemy import select
 
 import factories as fac
-from app import brokercsv
-from app.models import Instrument, Trade
+from app import brokercsv, queries
+from app.models import MARKET_OPEN, Instrument, Trade
 from app.settings import BrokerFormat, ImportSettings
 
 MAPPED = BrokerFormat(
@@ -667,6 +670,22 @@ def test_a_sale_that_would_strand_one_already_recorded_is_refused(pf):
     assert "2025-06-02" in candidates[0].detail
 
 
+def test_the_recorded_sale_named_is_the_first_left_short(pf):
+    """After a file sale of 50 in March, June's recorded sale leaves exactly
+    nothing, which is allowed; July's is the one left short."""
+    acme = fac.make_instrument(pf, "ACME")
+    fac.add_trade(pf, acme, "2025-01-02", "buy", 100, "4.00")
+    fac.add_trade(pf, acme, "2025-06-02", "sell", 50, "6.00")
+    fac.add_trade(pf, acme, "2025-07-02", "sell", 1, "6.00")
+    pf.commit()
+    candidates = [_candidate(type="sell", date="2025-03-02", quantity="50")]
+
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    assert candidates[0].status == "refused"
+    assert "leave ACME at -1 units from 2025-07-02" in candidates[0].detail
+
+
 def test_a_refused_row_is_never_committed(pf):
     fac.make_instrument(pf, "ACME")
     pf.commit()
@@ -676,6 +695,67 @@ def test_a_refused_row_is_never_committed(pf):
     with pytest.raises(ValueError, match="more than"):
         brokercsv.commit(pf, candidates, STRICT, "testbroker")
     assert pf.scalars(select(Trade)).all() == []
+
+
+def _one_row_at_a_time(held, rows):
+    """The form's walk for each row in turn, which is what the importer first
+    did: too slow for a big file, but plainly what is meant."""
+    held, refused = list(held), []
+    for c in sorted(rows, key=lambda r: (r.date, r.time or MARKET_OPEN)):
+        row = Trade(date=c.date, time=c.time, type=c.type, quantity=c.quantity)
+        breach = queries.balance_breach(held, row)
+        if breach is None:
+            held.append(row)
+        else:
+            refused.append((c, breach))
+    return refused
+
+
+_moments = st.tuples(st.integers(0, 12), st.sampled_from([None, dt.time(9, 30), dt.time(14)]))
+_steps = st.tuples(_moments, st.sampled_from(["buy", "sell", "sell", "drp"]),
+                   st.integers(1, 60))
+
+
+@given(recorded=st.lists(_steps, max_size=12), file=st.lists(_steps, max_size=12))
+def test_one_walk_refuses_what_the_form_would_row_by_row(recorded, file):
+    """Recorded trades that may already be short, file rows on the same days
+    and at the same times as them and each other: the single walk refuses the
+    same rows, naming the same breach."""
+    start = dt.date(2025, 3, 3)
+    held = [Trade(id=n, date=start + dt.timedelta(days=day), time=at, type=kind,
+                  quantity=Decimal(units))
+            for n, ((day, at), kind, units) in enumerate(recorded, start=1)]
+    rows = [brokercsv.CandidateTrade(
+        date=start + dt.timedelta(days=day), time=at, ticker="ACME", type=kind,
+        quantity=Decimal(units), unit_price=Decimal(5), brokerage=Decimal(0), currency="AUD",
+        exchange="ASX") for (day, at), kind, units in file]
+
+    def seen(refused):
+        return [(id(c), b.is_candidate, b.balance, b.held_before,
+                 queries.breach_message("ACME", b), None if b.is_candidate else id(b.trade))
+                for c, b in refused]
+
+    assert seen(brokercsv._shortfalls(held, rows)) == seen(_one_row_at_a_time(held, rows))
+
+
+def test_a_big_file_is_judged_in_one_walk():
+    """Walking the whole timeline again for each row took 27 seconds over
+    4,000 rows, and most of an hour over the 40,000 of the upload cap's own
+    test. One walk takes a fraction of a second, so the budget is generous."""
+    import time
+
+    held = [Trade(id=n, date=dt.date(2024, 1 + n % 12, 1 + n % 28), type="buy",
+                  quantity=Decimal(5)) for n in range(1, 2001)]
+    rows = [_candidate(date=f"2025-{1 + n % 12:02d}-{1 + n % 28:02d}",
+                       type="sell" if n % 3 == 2 else "buy",
+                       quantity="1" if n % 3 == 2 else "10")
+            for n in range(4000)]
+
+    began = time.perf_counter()
+    refused = brokercsv._shortfalls(held, rows)
+
+    assert time.perf_counter() - began < 5
+    assert refused == []
 
 
 def test_importing_into_a_removed_instrument_brings_it_back(pf):
