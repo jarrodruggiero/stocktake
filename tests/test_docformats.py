@@ -929,3 +929,37 @@ def test_a_mapping_the_designer_never_sends_is_refused(client, session_factory, 
                              "_csrf": session_csrf(session_factory)})
 
     assert resp.status_code == 400
+
+
+def test_a_template_that_is_not_a_mapping_is_refused_and_one_with_no_fields_loads():
+    with pytest.raises(fmt.TemplateError, match="expected a mapping"):
+        fmt.parse_statement_template("listy", "- one\n- two\n")
+
+    template = fmt.parse_statement_template("bare", "name: Bare\nmatch:\n  any_of: [ACME]\n")
+    assert template.fields == {} and template.match_any == ["ACME"]
+
+
+def test_a_typed_label_is_trimmed_and_matched_without_case():
+    text = "Net Amount Paid $104.70\n"
+
+    assert fmt.read_with(text, "  NET AMOUNT PAID  ", "money").value == Decimal("104.70")
+    assert fmt.read_with(text, "   ", "money").problem == \
+        "type the words that come before this value"
+
+
+def test_a_written_date_at_the_very_start_of_a_document_is_one_date():
+    """Clicking the month of "15 March 2026" when it opens the document: the
+    day is token zero, which a look-back stopping before zero never reached."""
+    tokens = fmt.tokenize("15 March 2026 net 104.70")
+
+    assert fmt._value_start(tokens, 1) == (0, "date", 3)
+
+
+@pytest.mark.parametrize(("expect", "article"), [("integer", "an integer"), ("money", "a money")])
+def test_a_mismatch_names_what_the_field_expects(expect, article):
+    text = "Paid on 15/03/2026\n"
+    index = next(t.index for t in fmt.tokenize(text) if t.text == "15/03/2026")
+
+    inference = fmt.infer_field(text, index, expect=expect)
+
+    assert inference.mismatch == f"that reads as a date and this field expects {article}"

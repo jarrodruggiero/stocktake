@@ -609,14 +609,14 @@ def template_yaml(name: str, fields: dict[str, dict], match: list[str],
     return "\n".join(lines) + "\n"
 
 
-def load_broker_formats(overrides: dict | None = None,
-                        extra_dir: Path | None = None) -> dict[str, dict]:
-    """Shipped broker CSV formats, with the operator's config layered on top.
+def load_broker_formats(extra_dir: Path | None = None) -> dict[str, dict]:
+    """Shipped broker CSV formats, then any installed through the interface.
 
     Brokers are files so they can be contributed: a format in one person's
     `config.yaml` is a pull request against an example block CI never runs. As
-    files they ship with the app and are tested like any other template, and a
-    config entry still overrides one by name.
+    files they ship with the app and are tested like any other template. A
+    config entry still overrides one by name, layered on in
+    `ImportSettings.brokers_available`, the only reader.
 
     Returns plain dicts rather than `BrokerFormat` models — the settings layer
     validates them, and duplicating that here would be two places to keep in
@@ -637,10 +637,6 @@ def load_broker_formats(overrides: dict | None = None,
             # `name:` is documentation for the file, not part of the format.
             data.pop("name", None)
             formats[path.stem] = data
-    # Config wins, per broker, so a local tweak to one shipped format does not
-    # mean re-declaring the others.
-    for key, value in (overrides or {}).items():
-        formats[key] = value.model_dump() if hasattr(value, "model_dump") else dict(value)
     return formats
 
 
