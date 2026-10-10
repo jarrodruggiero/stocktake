@@ -326,7 +326,7 @@ def tls_note(url: ExternalUrl | None) -> str:
     if url is None or not url.secure:
         return ""
     return (
-        "This app does not terminate TLS itself — a reverse proxy (Caddy, "
+        "This app does not terminate TLS itself — a reverse proxy (Traefik, "
         "Caddy, nginx, or your ingress) does, and forwards to this container "
         "over plain HTTP. Setting an https:// URL here marks the session cookie "
         "secure, which means the browser will only send it over HTTPS: reach "

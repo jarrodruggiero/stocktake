@@ -1915,3 +1915,88 @@ def test_a_read_only_config_asks_only_for_what_is_missing(
     assert "price_feed" in page
     # The one it already has is not repeated back at them.
     assert "Australia/Melbourne" not in page.split("<pre")[1]
+
+
+# --------------------------------------------------------------------------- #
+# The forms' edges, found unchecked by a mutation run
+# --------------------------------------------------------------------------- #
+# The test above raised for a missing name or user, but any ValueError passed —
+# and DatabaseSettings raises its own for an empty field, so dropping the
+# wizard's sentence left a pydantic dump on the page and nothing failed.
+
+@pytest.mark.parametrize(("missing", "message"), [
+    ({"host": "  "}, "Enter the database server's hostname or address."),
+    ({"name": "  "}, "Enter the name of the database to use."),
+    ({"user": "  "}, "Enter the username to connect as."),
+])
+def test_each_missing_postgres_field_is_named(missing, message):
+    fields = {"host": "pg", "port": "5432", "name": "portfolio", "user": "portfolio",
+              "password": "x", **missing}
+    with pytest.raises(ValueError) as caught:
+        setupwizard.postgres_settings(**fields)
+
+    assert str(caught.value) == message
+
+
+@pytest.mark.parametrize(("port", "ok"), [("1", True), ("65535", True), (" 5433 ", True),
+                                          ("0", False), ("65536", False)])
+def test_the_postgres_port_is_held_to_the_ports_there_are(port, ok):
+    def build():
+        return setupwizard.postgres_settings(host="pg", port=port, name="portfolio",
+                                             user="portfolio", password="x")
+
+    if ok:
+        assert build().port == int(port)
+    else:
+        with pytest.raises(ValueError, match="between 1 and 65535"):
+            build()
+
+
+def test_a_port_of_only_spaces_is_the_default():
+    assert setupwizard.postgres_settings(host="pg", port="   ", name="portfolio",
+                                         user="portfolio", password="x").port == 5432
+
+
+def test_the_postgres_fields_lose_the_spaces_around_them():
+    chosen = setupwizard.postgres_settings(host=" pg.local ", port="5432", name=" portfolio ",
+                                           user=" app ", password=" kept as typed ")
+
+    assert (chosen.host, chosen.name, chosen.user, chosen.password) == (
+        "pg.local", "portfolio", "app", " kept as typed ")
+
+
+def test_an_sqlite_path_loses_its_spaces_and_a_blank_one_is_the_default():
+    assert setupwizard.sqlite_settings("  /data/mine.db  ").path == "/data/mine.db"
+    assert setupwizard.sqlite_settings("   ").path == "/data/portfolio.db"
+
+
+def test_a_proxy_range_written_with_its_host_bits_is_accepted():
+    """10.1.2.3/16 is how a lot of people write the network a proxy is on."""
+    assert setupwizard.parse_proxies("10.1.2.3/16,\n172.18.0.5") == ["10.1.2.3/16",
+                                                                    "172.18.0.5"]
+
+
+def test_an_external_url_loses_its_trailing_slash_and_needs_a_host():
+    assert setupwizard.parse_external_url(" https://portfolio.example.com/ ").url == \
+        "https://portfolio.example.com"
+    with pytest.raises(ValueError, match="no hostname"):
+        setupwizard.parse_external_url("https://:8443")
+
+
+def test_what_is_written_is_only_what_was_chosen_proxies_and_all():
+    draft = setupwizard.Draft(trusted_proxies=["10.0.0.0/8"], external_url="",
+                              price_feed=False)
+
+    assert setupwizard.config_values(draft) == {
+        "price_feed": {"enabled": False}, "auth": {"trusted_proxies": ["10.0.0.0/8"]}}
+
+
+def test_the_restart_list_names_the_database_and_the_feed_turned_off():
+    draft = setupwizard.Draft(database=DatabaseSettings(type="sqlite", path="/data/p.db"),
+                              price_feed=False, external_url="")
+
+    pending = setupwizard.needs_restart(draft)
+
+    assert len(pending) == 2
+    assert pending[0].startswith("the database connection")
+    assert pending[1] == "turning the market-data feed off"
