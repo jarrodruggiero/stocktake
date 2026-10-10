@@ -31,12 +31,12 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
+from test_trade_dialog_in_the_browser import _standalone
 
 import factories as fac
 from app import clock, pricefeed, providers
 from app.models import Portfolio
 from test_routes import bind_to_only_portfolio, make_login
-from test_trade_dialog_in_the_browser import _standalone
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
