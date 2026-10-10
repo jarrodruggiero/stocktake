@@ -829,3 +829,12 @@ def test_a_field_past_the_csv_modules_limit_is_a_sentence_on_the_page(client, se
 
     assert page.status_code == 200
     assert "This file could not be read as a CSV." in page.text
+
+
+def test_a_short_row_reads_as_blanks_not_none():
+    """A footer line one field long: its other columns are blank, not None,
+    which the page would print as "None" and the preview's parser choked on."""
+    read = brokerdesign.read_csv(SELFWEALTH + "End of report\n")
+
+    assert read.rows[-1] == {"Trade Date": "End of report", "Buy/Sell": "", "Code": "",
+                             "Units": "", "Price": "", "Brokerage": ""}

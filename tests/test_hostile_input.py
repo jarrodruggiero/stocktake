@@ -871,3 +871,37 @@ def test_every_route_that_takes_input_is_walked():
     assert not undeclared, (
         f"these read their body by hand, so FastAPI cannot list their fields: "
         f"{undeclared}. Add them to BY_HAND.")
+
+
+# --------------------------------------------------------------------------- #
+# Hostile files
+# --------------------------------------------------------------------------- #
+# The walk above varies every form field but always uploads the careful file,
+# so nothing sent an upload route a file its parser could not take: a field
+# past the csv module's 128 KiB limit was a server error on both CSV routes.
+
+HOSTILE_FILES = {
+    "a field past the csv limit": b"a" * 200_000,
+    "nothing at all": b"",
+    "not text": bytes(range(256)) * 8,
+    "a NUL in a row": BROKER_CSV.encode().replace(b",", b",\x00", 1),
+    "half a UTF-8 character": BROKER_CSV.encode() + b"\xe2\x82",
+}
+
+
+@pytest.mark.hostile
+@pytest.mark.parametrize("path", sorted(FILES))
+def test_no_file_sent_to_an_upload_breaks_it(path, client, session_factory, sandbox,
+                                             monkeypatch):
+    route = next(r for r in ROUTES if r.path == path)
+    world = _world(route, client, session_factory)
+    fields = _fields(route)
+    probe = Probe(session_factory)
+    name, _careful, kind = FILES[path]
+    for label, body in HOSTILE_FILES.items():
+        monkeypatch.setitem(FILES, path, (name, body, kind))
+        made = {f.name: _fresh(world, f.name) for f in fields if f.where == "path"}
+        values = _typed(world, route, world.tick(), made)
+        probe(f"file={label}", lambda: _send(world, route, fields, values))
+
+    assert probe.problems == []

@@ -805,3 +805,15 @@ def test_a_field_past_the_csv_modules_limit_is_an_error_not_a_crash():
     assert result.candidates == []
     assert result.errors and "could not be read as a CSV" in result.errors[0]
     assert "could not be read" in brokercsv.parse_csv("a" * 200_000, "b", MAPPED).errors[0]
+
+
+def test_a_row_shorter_than_the_header_is_skipped_by_line_not_a_crash():
+    """Broker exports end with a footer — "End of report" — one field long.
+    The reader filled the missing columns with None, and the first `.strip()`
+    took the import page down."""
+    result = brokercsv.parse_csv("Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+                                 "06/01/2025,Buy,ACME,100,5.00,9.50\n"
+                                 "End of report\n", "b", MAPPED)
+
+    assert [c.ticker for c in result.candidates] == ["ACME"]
+    assert result.skipped == ["line 3: action ''"]
