@@ -675,6 +675,11 @@ def test_an_admin_can_clear_someone_elses_2fa(client, session_factory):
         s.commit()
         other_id = other.id
     token = session_csrf(session_factory)
+    with session_factory() as s:
+        # A session to end: without one, "their sessions went" was true anyway.
+        from app.settings import PortfolioSettings
+        auth_mod.create_session(s, s.get(User, other_id), PortfolioSettings())
+        s.commit()
 
     resp = client.post(f"/users/{other_id}/2fa/clear", data={"_csrf": token},
                        headers=HTML, follow_redirects=False)
