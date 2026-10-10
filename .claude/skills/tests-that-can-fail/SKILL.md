@@ -25,7 +25,7 @@ Before finishing any test, answer it concretely — not "does this pass" but:
 > **If the code were wrong in the way this test is about, what exactly would
 > this assertion see?**
 
-If the answer is "the same thing", the test is decoration. Eight ways that
+If the answer is "the same thing", the test is decoration. Twelve ways that
 happens, all of them observed here.
 
 ---
@@ -157,6 +157,53 @@ The check is only evidence if the edit landed on the code under test.
 when it is not, target by line number. Read the result properly: `N failed` is
 caught, `collection error` is a broken mutation, `N passed` is a survivor.
 
+## 9. The test posts one field; a browser posts the form
+
+Every settings test posted the field it was about. The page shows each field
+filled from the running settings, and a browser posts all of them: the feed
+timezone's box showed the zone it was only *following*, so the first save of
+anything wrote that zone into the file and it never followed again.
+
+**The tell:** a POST built by hand for a form that is rendered. Read the form
+off the rendered page and send all of it, as `_as_sent()` in
+`test_admin_settings.py` does.
+
+## 10. The oracle checks that the old value is gone
+
+```python
+# WRONG — passes once the cents move, with every dollar digit published
+assert "1042.75" not in out.text
+
+# RIGHT — the property: each part changed, the shape kept
+assert dollars != original_dollars and cents != original_cents
+```
+
+**The tell:** `not in`, `!=` against the input, or "is not the old one".
+Absence of the old value is not presence of the right one.
+
+## 11. One copy of a fix
+
+The statement designer quoted every value it wrote into YAML; the broker
+designer beside it did not, and "Trade #" read back as "Trade". Scoping lookups
+to the portfolio's own instruments missed the one route in another module.
+
+**The tell:** a fix to a pattern, not a line. Before calling it done, grep for
+the pattern — the same call, the same hand-built output, the same lookup — and
+fix or test every copy.
+
+## 12. One example of a rule that holds for a range
+
+Every price the provider tests used was over one, so keeping only prices over
+one passed (yen rates are about 0.0098). The settings round trip tried "off";
+YAML 1.1 also reads `12:30` as a number. One example per rule is a sample of
+one.
+
+**The tell:** a rule stated over a set — every value, any text, all sizes — and
+a test with one member of it. Generate the set (Hypothesis is in the dev
+group; `HYPOTHESIS_PROFILE=explore` runs 1,500 cases), put the awkward members
+first with `@example`, and check against a working-out rather than a copy of the
+code.
+
 ---
 
 ## Running a mutation check
@@ -164,13 +211,21 @@ caught, `collection error` is a broken mutation, `N passed` is a survivor.
 ```python
 import pathlib, subprocess
 p = pathlib.Path("app/thing.py"); orig = p.read_text()
-assert orig.count(OLD) == 1          # the harness's own guard
-p.write_text(orig.replace(OLD, NEW, 1))
-r = subprocess.run(["uv", "run", "pytest", "tests/test_thing.py",
-                    "-q", "--no-header", "-p", "no:warnings"],
-                   capture_output=True, text=True)
-p.write_text(orig)                   # ALWAYS restore
+for old, _new in MUTATIONS:
+    assert orig.count(old) == 1      # every anchor, before any is applied
+try:
+    for old, new in MUTATIONS:
+        p.write_text(orig.replace(old, new, 1))
+        r = subprocess.run(["uv", "run", "pytest", "tests/test_thing.py",
+                            "-q", "--no-header", "-p", "no:warnings"],
+                           capture_output=True, text=True)
+finally:
+    p.write_text(orig)               # ALWAYS restore, even when the loop dies
 ```
+
+Checking each anchor inside the loop is the trap: the one that fails leaves the
+previous mutant in the file, and the next test run reads a broken tree as a
+real failure.
 
 Mutate the **decision**, not the syntax: invert a comparison, drop a `where`
 clause, remove a guard, return the wrong branch. `if False:` on a guard is the
