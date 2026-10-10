@@ -743,3 +743,76 @@ def test_a_format_with_no_date_format_chosen_reads_day_first():
                                     date_format=None, columns={})
 
     assert YAML(typ="safe").load(body)["date_format"] == "%d/%m/%Y"
+
+
+# --------------------------------------------------------------------------- #
+# The page's second pass: what a mutation run found unchecked
+# --------------------------------------------------------------------------- #
+
+COLUMNS = {"col_date": "Trade Date", "col_action": "Buy/Sell", "col_ticker": "Code",
+           "col_units": "Units", "col_price": "Price", "col_brokerage": "Brokerage"}
+
+
+def _second_pass(client, session_factory, body=SELFWEALTH, **fields):
+    from ruamel.yaml import YAML
+
+    make_login(client, session_factory)
+    page = upload(client, session_factory, body=body, **{**COLUMNS, **fields})
+    assert page.status_code == 200
+    return page, YAML(typ="safe").load(rendered_yaml(page.text))
+
+
+def test_a_currency_is_taken_however_it_is_typed(client, session_factory):
+    _page, fmt = _second_pass(client, session_factory, exchange="NASDAQ", currency=" usd ")
+
+    assert fmt["currency"] == "USD"
+
+
+def test_the_action_words_mapped_on_the_page_reach_the_format(client, session_factory):
+    _page, fmt = _second_pass(client, session_factory, act_Buy="buy", act_Sell="sell",
+                              act_Adj="transfer")
+
+    assert fmt["actions"] == {"Buy": "buy", "Sell": "sell"}     # not a kind: left out
+
+
+def test_columns_chosen_with_spaces_around_them_are_found(client, session_factory):
+    _page, fmt = _second_pass(client, session_factory, col_date=" Trade Date ",
+                              col_ticker="  Code")
+
+    assert fmt["columns"]["date"] == "Trade Date" and fmt["columns"]["ticker"] == "Code"
+
+
+@pytest.mark.parametrize(("fields", "expected"), [
+    ({"custom_date": "on", "date_format_custom": " %d/%m/%y "}, "%d/%m/%y"),
+    ({"custom_date": "on", "date_format_custom": "  ", "date_format": "%Y-%m-%d"},
+     "%Y-%m-%d"),
+    ({}, "%d/%m/%Y"),                                   # guessed from the dates
+])
+def test_a_typed_date_format_wins_only_when_one_was_typed(client, session_factory, fields,
+                                                          expected):
+    _page, fmt = _second_pass(client, session_factory, **fields)
+
+    assert fmt["date_format"] == expected
+
+
+def test_dates_nothing_reads_fall_back_to_day_first(client, session_factory):
+    body = ("Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+            "sometime,Buy,ALPHA,100,89.50,9.50\n")
+
+    _page, fmt = _second_pass(client, session_factory, body=body)
+
+    assert fmt["date_format"] == "%d/%m/%Y"
+
+
+def test_a_blank_name_is_my_broker(client, session_factory):
+    _page, fmt = _second_pass(client, session_factory, name="")
+
+    assert fmt["name"] == "My broker"
+
+
+def test_the_page_says_how_many_drp_rows_were_left_out(client, session_factory):
+    body = SELFWEALTH + "20/02/2026,DRP,ALPHA,3,,0\n"
+
+    page, _fmt = _second_pass(client, session_factory, body=body, act_DRP="drp")
+
+    assert "1 DRP allotment(s) left out." in page.text

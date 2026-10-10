@@ -273,7 +273,7 @@ def broker_yaml(*, name: str, exchange: str, currency: str,
 
 
 def preview(text: str, *, exchange: str, currency: str, date_format: str,
-            columns: dict[str, str | None]):
+            columns: dict[str, str | None], actions: dict[str, str] | None = None):
     """Run the proposed mapping over the uploaded file.
 
     The point of doing this here rather than at import time: a wrong date format
@@ -290,6 +290,8 @@ def preview(text: str, *, exchange: str, currency: str, date_format: str,
             "Choose a column for: " + ", ".join(missing))
         return result
 
+    # The action words mapped on the page too: without them the preview
+    # skipped every row the mapping was there to read.
     fmt = BrokerFormat(kind="mapped", exchange=exchange, currency=currency,
-                       date_format=date_format, columns=chosen)
+                       date_format=date_format, columns=chosen, actions=actions or {})
     return brokercsv.parse_csv(text, "preview", fmt)
