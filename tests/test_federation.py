@@ -284,3 +284,81 @@ def test_a_provisioned_account_can_get_back_in_without_the_provider(
         assert user.password_hash is None
         assert twofactor.remaining_recovery_codes(db, user) > 0
         assert user.recovery_codes_seen_at is None
+
+
+# --------------------------------------------------------------------------- #
+# With more than one on file
+# --------------------------------------------------------------------------- #
+# The tests above each put ONE identity in the database, and a lookup that
+# ignored its `where` returned that one anyway: a mutation run removed the
+# (issuer, subject) match from sign-in, linking and unlinking, and nothing
+# failed. These put a second one beside it.
+
+def test_each_identity_signs_in_as_its_own_account(session_factory, settings):
+    settings.auth.oidc.provisioning = "off"
+    with session_factory() as db:
+        first = fac.make_user(db, "first@example.test")
+        second = fac.make_user(db, "second@example.test")
+        db.flush()
+        federation.link(db, first, an_identity("subject-1", "first@example.test"))
+        federation.link(db, second, an_identity("subject-2", "second@example.test"))
+
+        assert federation.resolve(db, settings, an_identity("subject-2"), None).id == second.id
+        assert federation.resolve(db, settings, an_identity("subject-1"), None).id == first.id
+        # The same subject from another issuer is somebody else entirely.
+        elsewhere = oidc.Identity(subject="subject-1", issuer="https://other.example.test",
+                                  email="first@example.test", email_verified=True, name="x")
+        with pytest.raises(federation.FederationError):
+            federation.resolve(db, settings, elsewhere, None)
+
+
+def test_linking_a_new_identity_beside_someone_elses_is_allowed(session_factory):
+    with session_factory() as db:
+        first = fac.make_user(db, "first@example.test")
+        second = fac.make_user(db, "second@example.test")
+        db.flush()
+        federation.link(db, first, an_identity("subject-1"))
+
+        row = federation.link(db, second, an_identity("subject-2"))
+
+        assert (row.user_id, row.subject) == (second.id, "subject-2")
+
+
+def test_unlinking_one_of_two_leaves_the_other(session_factory):
+    """With two, either may go even with no password: the other is still a way
+    in. The one named goes, not whichever was linked first."""
+    with session_factory() as db:
+        user = fac.make_user(db, "them@example.test", password_hash=None)
+        db.flush()
+        federation.link(db, user, an_identity("subject-1"))
+        second = federation.link(db, user, an_identity("subject-2"))
+
+        assert federation.unlink(db, user, second.id) is True
+
+        assert [i.subject for i in federation.identities_for(db, user)] == ["subject-1"]
+
+
+def test_two_attempts_in_flight_each_finish_with_their_own(session_factory):
+    """Two tabs, or two people, signing in at once: each callback is matched to
+    the attempt its own token started."""
+    with session_factory() as db:
+        for token, state in (("first-token", "first-state"), ("second-token", "second-state")):
+            db.add(OidcState(token_hash=federation._hash(token), state=state, nonce=token,
+                             verifier="v",
+                             expires_at=federation._utcnow() + dt.timedelta(minutes=5)))
+        db.flush()
+
+        assert federation.take_state(db, "second-token", "second-state").nonce == "second-token"
+        assert federation.take_state(db, "first-token", "first-state").nonce == "first-token"
+
+
+def test_a_deactivated_account_does_not_sign_in_through_its_provider(session_factory, settings):
+    with session_factory() as db:
+        user = fac.make_user(db, "them@example.test")
+        db.flush()
+        federation.link(db, user, an_identity())
+        user.is_active = False
+        db.flush()
+
+        with pytest.raises(federation.FederationError, match="no longer active"):
+            federation.resolve(db, settings, an_identity(), None)
