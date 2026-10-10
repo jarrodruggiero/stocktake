@@ -17,6 +17,7 @@ from app.models import (
     HoldingPref,
     Instrument,
     Portfolio,
+    PortfolioInvite,
     PortfolioMember,
     User,
     UserSession,
@@ -770,3 +771,132 @@ def test_a_new_account_has_recovery_codes_waiting(client, session_factory):
     with session_factory() as s:
         new = s.scalar(select(User).where(User.email == "new@example.test"))
         assert twofactor.has_recovery_codes(s, new)
+
+
+# --------------------------------------------------------------------------- #
+# What only an owner may do in a portfolio, and what each page reaches
+# --------------------------------------------------------------------------- #
+# Removing the owner check from adding members, changing a role and
+# withdrawing an invitation failed nothing, nor did removing the admin check
+# from the server log and from portfolio settings: no test signed in as a
+# plain member. Nor did dropping the portfolio filter from the members list,
+# from the last-owner count, or from a new API key's portfolios: no test had a
+# second portfolio for them to reach.
+
+def _as_plain_member(client, session_factory) -> dict:
+    """Signed in as a member (not an owner, not an admin) of a portfolio owned
+    by someone else, with another member and a live invitation in it."""
+    from app import invites
+
+    make_login(client, session_factory, admin=False)
+    with session_factory() as s:
+        me = s.scalar(select(User).where(User.email == "user@example.test"))
+        boss = fac.make_user(s, "boss@example.test")
+        shared = fac.make_portfolio(s, "Shared", owner=boss)
+        mine = fac.add_member(s, shared, me, role="member")
+        other = fac.add_member(s, shared, fac.make_user(s, "other@example.test"), role="viewer")
+        outsider = fac.make_user(s, "outsider@example.test")
+        invite_raw = invites.create(s, portfolio_id=shared.id, role="member",
+                                    created_by=boss.id)
+        invite_id = s.scalar(select(PortfolioInvite.id))
+        s.commit()
+        ids = {"shared": shared.id, "mine": mine.id, "other": other.id,
+               "outsider": outsider.id, "invite": invite_id, "raw": invite_raw}
+    client.post("/portfolio/switch", data={"portfolio_id": str(ids["shared"]),
+                                           "_csrf": csrf(session_factory)}, headers=HTML)
+    return ids
+
+
+def _memberships(session_factory) -> list:
+    with session_factory() as s:
+        return sorted((m.portfolio_id, m.user_id, m.role) for m in s.scalars(select(PortfolioMember)))
+
+
+@pytest.mark.parametrize("path, data", [
+    ("/members/add", {"user_id": "{outsider}", "role": "owner"}),
+    ("/members/{mine}/role", {"role": "owner"}),
+    ("/members/{other}/role", {"role": "owner"}),
+    ("/members/{other}/remove", {}),
+    ("/members/invite/{invite}/revoke", {}),
+])
+def test_a_plain_member_cannot_manage_the_members(client, session_factory, path, data):
+    ids = _as_plain_member(client, session_factory)
+    before = _memberships(session_factory)
+
+    resp = client.post(path.format(**ids), headers=HTML, follow_redirects=False,
+                       data={"_csrf": csrf(session_factory),
+                             **{k: v.format(**ids) for k, v in data.items()}})
+
+    assert resp.status_code == 403
+    assert _memberships(session_factory) == before
+    with session_factory() as s:
+        assert s.get(PortfolioInvite, ids["invite"]).revoked_at is None
+
+
+def test_the_server_log_and_portfolio_settings_are_for_admins(client, session_factory):
+    ids = _as_plain_member(client, session_factory)
+
+    assert client.get("/admin/logs.json").status_code == 403
+    resp = client.post("/portfolio/settings", headers=HTML, follow_redirects=False,
+                       data={"name": "Renamed", "_csrf": csrf(session_factory)})
+    assert resp.status_code == 403
+    with session_factory() as s:
+        assert s.get(Portfolio, ids["shared"]).name == "Shared"
+
+
+def test_the_members_page_lists_this_portfolios_people(client, session_factory):
+    make_login(client, session_factory)
+    with session_factory() as s:
+        stranger = fac.make_user(s, "stranger@example.test", name="Stranger Danger")
+        fac.make_portfolio(s, "Theirs", owner=stranger)
+        s.commit()
+
+    page = client.get("/members", headers=HTML).text
+    # The People table, not the first table on the page (the brokerage fees),
+    # nor the add-someone picker, which lists every account on purpose.
+    people = page.split("<h2>People</h2>", 1)[1].split("</table>", 1)[0]
+
+    assert "user@example.test" in people, "the premise: this is the members table"
+    assert "stranger@example.test" not in people
+
+
+def test_the_last_owner_is_counted_in_this_portfolio_only(client, session_factory):
+    """My portfolio has one owner, me, and a second member; another portfolio
+    has its own owner. I cannot leave mine ownerless."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        mine = s.scalar(select(PortfolioMember).where(PortfolioMember.role == "owner"))
+        friend = fac.make_user(s, "friend@example.test")
+        fac.add_member(s, s.get(Portfolio, mine.portfolio_id), friend, role="member")
+        fac.make_portfolio(s, "Theirs", owner=fac.make_user(s, "stranger@example.test"))
+        s.commit()
+        my_membership = mine.id
+
+    resp = client.post(f"/members/{my_membership}/remove", headers=HTML,
+                       follow_redirects=False, data={"_csrf": csrf(session_factory)})
+
+    assert "error=A+portfolio+needs+an+owner" in resp.headers["location"]
+    with session_factory() as s:
+        assert s.get(PortfolioMember, my_membership) is not None
+
+
+def test_a_new_key_reaches_only_the_portfolios_chosen(client, session_factory):
+    from app.models import ApiKey
+
+    make_login(client, session_factory)
+    with session_factory() as s:
+        me = s.scalar(select(User))
+        mine = s.scalar(select(Portfolio))
+        second = fac.make_portfolio(s, "Second", owner=me)
+        fac.make_portfolio(s, "Theirs", owner=fac.make_user(s, "stranger@example.test"))
+        s.commit()
+        chosen = mine.id
+
+    client.post("/keys/new", headers=HTML, data={
+        "name": "one portfolio", "scopes": "read", "portfolios": [str(chosen)],
+        "_csrf": csrf(session_factory)})
+
+    with session_factory() as s:
+        key = s.scalar(select(ApiKey))
+        assert [p.id for p in key.portfolios] == [chosen]
+        assert second.id != chosen
