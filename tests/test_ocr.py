@@ -150,22 +150,22 @@ def test_ocr_that_finds_nothing_says_so(monkeypatch):
 # What the reader is told
 # --------------------------------------------------------------------------- #
 
-def test_the_parsed_statement_carries_the_ocr_flag(monkeypatch, db):
+def test_the_parsed_statement_carries_the_ocr_flag(monkeypatch, pf):
     monkeypatch.setattr(statements, "_pdf_text", lambda data: "")
     monkeypatch.setattr(ocr, "available", lambda: True)
     monkeypatch.setattr(ocr, "read_pdf", lambda data: "ALPHA paid 104.70 on 15 July 2026")
 
-    parsed = statements.parse_statement(b"x", db)
+    parsed = statements.parse_statement(b"x", pf)
 
     assert parsed.used_ocr is True
 
 
-def test_a_normal_statement_does_not_carry_the_flag(monkeypatch, db):
+def test_a_normal_statement_does_not_carry_the_flag(monkeypatch, pf):
     monkeypatch.setattr(statements, "_pdf_text",
                         lambda data: "ALPHA distribution advice, paid 15 July 2026, "
                                      "net 104.70, franking credits 44.87")
 
-    parsed = statements.parse_statement(b"x", db)
+    parsed = statements.parse_statement(b"x", pf)
 
     assert parsed.used_ocr is False
 
