@@ -25,7 +25,7 @@ import json
 import re
 import subprocess
 import sys
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -34,7 +34,7 @@ from sqlalchemy import select
 from test_trade_dialog_in_the_browser import _standalone
 
 import factories as fac
-from app import clock, pricefeed, providers
+from app import brokerage, clock, pricefeed, providers
 from app.models import Portfolio
 from test_routes import bind_to_only_portfolio, make_login
 
@@ -270,11 +270,11 @@ CLASS_LABELS = {"etf": "ETF", "share": "Share", "crypto": "Crypto"}
 
 
 def _fee(fees: dict, currency: str, quantity: str, price: str) -> str:
-    """What brokerage.py charges, as the form should suggest it."""
-    foreign = bool(currency) and currency != "AUD"
-    prefix = "foreign_" if foreign else ""
-    flat, percent, minimum = (Decimal(fees[f"{prefix}brokerage_{p}"])
-                              for p in ("flat", "percent", "minimum"))
+    """What brokerage.py charges, as the form should suggest it: `Fee.on`
+    itself, so the form's sum has to agree with the server's."""
+    prefix = "foreign_" if brokerage.is_foreign(currency) else ""
+    fee = brokerage.Fee(*(Decimal(fees[f"{prefix}brokerage_{p}"])
+                          for p in ("flat", "percent", "minimum")))
 
     def number(text):
         try:
@@ -282,9 +282,7 @@ def _fee(fees: dict, currency: str, quantity: str, price: str) -> str:
         except ArithmeticError:
             return Decimal(0)
 
-    value = number(quantity) * number(price)
-    due = max(minimum, flat + percent * value / 100)
-    return str(due.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    return str(fee.on(number(quantity) * number(price)))
 
 
 def _typed_after(log: list, upto: int, listed: dict) -> tuple[dict, set]:
