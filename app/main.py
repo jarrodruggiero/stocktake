@@ -4359,6 +4359,44 @@ def _parse_time(set_time: str, trade_time: str) -> dt.time | None:
         return None
 
 
+def _trade_figures(type: str, trade_date: str, quantity: str, unit_price: str, brokerage: str,
+                   fx_rate: str, note: str, set_time: str, trade_time: str) -> tuple:
+    """The trade form's fields, checked: (date, units, price, brokerage, rate,
+    note, time), or the problem to show instead. The add and the edit form
+    both use it, so neither accepts what the other refuses."""
+    if type not in ("buy", "sell"):
+        return None, "Choose buy or sell."
+    try:
+        date = dt.date.fromisoformat(trade_date)
+        qty = money.parse(quantity, Trade.quantity, "Units")
+        price = money.parse(unit_price, Trade.unit_price, "Price")
+        brk = money.parse(brokerage or "0", Trade.brokerage, "Brokerage")
+        fx = (money.parse(fx_rate, Trade.fx_rate, "FX rate")
+              if fx_rate.strip() else None)
+    except money.FigureError as exc:
+        return None, f"{exc}."
+    except ValueError:
+        return None, "Date, units, price, brokerage and FX must be numbers (date as YYYY-MM-DD)."
+    if qty <= 0:
+        return None, "Units must be greater than zero."
+    # Zero is a real price: a bonus issue, a demerger allocation, an
+    # employer's reward-plan grant. Negative is not.
+    if price < 0:
+        return None, "Price can't be negative."
+    if brk < 0 or (fx is not None and fx <= 0):
+        return None, "Brokerage can't be negative and FX must be positive."
+    try:
+        note_text = textfield.fit(note, Trade.note, "Note")
+    except textfield.TextError as exc:
+        return None, f"{exc}."
+    if date > clock.today():
+        return None, "That date is in the future."
+    when = _parse_time(set_time, trade_time)
+    if when is None:
+        return None, "That time isn't a time — use HH:MM, like 14:30."
+    return (date, qty, price, brk, fx, note_text, when), None
+
+
 def _held_trades(db: DbSession, instrument_id: int) -> list[Trade]:
     return list(db.scalars(select(Trade).where(Trade.instrument_id == instrument_id)).all())
 
@@ -4483,36 +4521,11 @@ async def trade_create(
                     },
                 )
 
-            if type not in ("buy", "sell"):
-                return _reject("Choose buy or sell.")
-            try:
-                date = dt.date.fromisoformat(trade_date)
-                qty = money.parse(quantity, Trade.quantity, "Units")
-                price = money.parse(unit_price, Trade.unit_price, "Price")
-                brk = money.parse(brokerage or "0", Trade.brokerage, "Brokerage")
-                fx = (money.parse(fx_rate, Trade.fx_rate, "FX rate")
-                      if fx_rate.strip() else None)
-            except money.FigureError as exc:
-                return _reject(f"{exc}.")
-            except ValueError:
-                return _reject("Date, units, price, brokerage and FX must be numbers (date as YYYY-MM-DD).")
-            if qty <= 0:
-                return _reject("Units must be greater than zero.")
-            # Zero is a real price: a bonus issue, a demerger allocation, an
-            # employer's reward-plan grant. Negative is not.
-            if price < 0:
-                return _reject("Price can't be negative.")
-            if brk < 0 or (fx is not None and fx <= 0):
-                return _reject("Brokerage can't be negative and FX must be positive.")
-            try:
-                note_text = textfield.fit(note, Trade.note, "Note")
-            except textfield.TextError as exc:
-                return _reject(f"{exc}.")
-            if date > clock.today():
-                return _reject("That date is in the future.")
-            when = _parse_time(set_time, trade_time)
-            if when is None:
-                return _reject("That time isn't a time — use HH:MM, like 14:30.")
+            figures, problem = _trade_figures(type, trade_date, quantity, unit_price, brokerage,
+                                              fx_rate, note, set_time, trade_time)
+            if problem:
+                return _reject(problem)
+            date, qty, price, brk, fx, note_text, when = figures
 
             # "new" means the fields below the picker were filled in: create the
             # instrument and record the trade in one go, rather than sending someone
@@ -4620,6 +4633,16 @@ async def trade_create(
 
 def _owning_dividend(db: DbSession, trade_id: int) -> Dividend | None:
     return db.scalar(select(Dividend).where(Dividend.reinvest_trade_id == trade_id))
+
+
+def _own_instrument(db: DbSession, instrument_id: int) -> Instrument:
+    """An instrument this portfolio has, or a 404. One only another portfolio
+    has is not this one's to change or price, and a setting saved on it would
+    put it on this portfolio's list."""
+    inst = db.get(Instrument, instrument_id)
+    if inst is None or inst.id not in queries.portfolio_instrument_ids(db):
+        raise HTTPException(404, "no such instrument")
+    return inst
 
 
 def _back_to_holding(db: DbSession, inst: Instrument, path: str | None = None) -> str:
@@ -4765,36 +4788,11 @@ async def trade_edit(
                 f"/trade/{trade_id}/edit?error={quote_plus(message)}"
             )
 
-        if type not in ("buy", "sell"):
-            return _reject("Choose buy or sell.")
-        try:
-            date = dt.date.fromisoformat(trade_date)
-            qty = money.parse(quantity, Trade.quantity, "Units")
-            price = money.parse(unit_price, Trade.unit_price, "Price")
-            brk = money.parse(brokerage or "0", Trade.brokerage, "Brokerage")
-            fx = (money.parse(fx_rate, Trade.fx_rate, "FX rate")
-                  if fx_rate.strip() else None)
-        except money.FigureError as exc:
-            return _reject(f"{exc}.")
-        except ValueError:
-            return _reject("Date, units, price, brokerage and FX must be numbers (date as YYYY-MM-DD).")
-        if qty <= 0:
-            return _reject("Units must be greater than zero.")
-        # Zero is a real price: a bonus issue, a demerger allocation, an
-        # employer's reward-plan grant. Negative is not.
-        if price < 0:
-            return _reject("Price can't be negative.")
-        if brk < 0 or (fx is not None and fx <= 0):
-            return _reject("Brokerage can't be negative and FX must be positive.")
-        try:
-            note_text = textfield.fit(note, Trade.note, "Note")
-        except textfield.TextError as exc:
-            return _reject(f"{exc}.")
-        if date > clock.today():
-            return _reject("That date is in the future.")
-        when = _parse_time(set_time, trade_time)
-        if when is None:
-            return _reject("That time isn't a time — use HH:MM, like 14:30.")
+        figures, problem = _trade_figures(type, trade_date, quantity, unit_price, brokerage,
+                                          fx_rate, note, set_time, trade_time)
+        if problem:
+            return _reject(problem)
+        date, qty, price, brk, fx, note_text, when = figures
 
         # Check the edit against the timeline WITHOUT the original row: the
         # candidate replaces it. Validating the new values alone would miss a
@@ -5292,9 +5290,7 @@ async def instrument_remove(request: Request, instrument_id: RowId):
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
         _require_write(ctx)
-        inst = db.get(Instrument, instrument_id)
-        if inst is None or inst.id not in queries.portfolio_instrument_ids(db):
-            raise HTTPException(404, "no such instrument")
+        inst = _own_instrument(db, instrument_id)
 
         blocking = _blocking_trades(db, [inst]).get(instrument_id, {})
         if blocking.get("total"):
@@ -5376,9 +5372,7 @@ async def instrument_delete_trades(request: Request, instrument_id: RowId):
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
         _require_write(ctx)
-        inst = db.get(Instrument, instrument_id)
-        if inst is None or inst.id not in queries.portfolio_instrument_ids(db):
-            raise HTTPException(404, "no such instrument")
+        inst = _own_instrument(db, instrument_id)
         dividends = db.scalars(
             select(Dividend).where(Dividend.instrument_id == instrument_id)).all()
         for dividend in dividends:
@@ -5471,9 +5465,7 @@ def instruments_price_on(request: Request, date: str = "",
         if not instrument and not symbol.strip():
             raise HTTPException(400, "instrument or symbol is required")
         if instrument:
-            inst = db.get(Instrument, instrument)
-            if inst is None or inst.id not in queries.portfolio_instrument_ids(db):
-                raise HTTPException(404, "no such instrument")
+            inst = _own_instrument(db, instrument)
             close = queries.close_on_or_before(db, inst.id, on)
             rate = queries.fx_on_or_before(db, inst.currency, on)
         else:
@@ -5581,10 +5573,7 @@ async def instrument_pref(
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
         _require_write(ctx)
-        inst = db.get(Instrument, instrument_id)
-        # Only this portfolio's: a setting on any other would add it to the list.
-        if inst is None or inst.id not in queries.portfolio_instrument_ids(db):
-            raise HTTPException(404, "no such instrument")
+        inst = _own_instrument(db, instrument_id)
         try:
             note_text = textfield.fit(note, HoldingPref.note, "Note")
         except textfield.TextError as exc:
