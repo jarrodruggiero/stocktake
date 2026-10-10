@@ -18,6 +18,7 @@ from this suite, because conftest builds a configured database before
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -68,7 +69,7 @@ def test_an_environment_variable_is_reported_as_the_source(monkeypatch, app_modu
 
 def test_a_config_file_entry_is_reported_as_the_source(monkeypatch, tmp_path, app_module):
     settings = app_module.settings
-    for name in [k for k in __import__("os").environ if k.startswith("APP_DATABASE__")]:
+    for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
         monkeypatch.delenv(name, raising=False)
     path = tmp_path / "config.yaml"
     path.write_text("app_name: portfolio\ndatabase:\n  type: sqlite\n  path: /data/x.db\n")
@@ -85,7 +86,7 @@ def test_nothing_anywhere_reads_as_not_configured(monkeypatch, tmp_path, app_mod
     the settings object alone cannot tell you this — only the two places a
     human could have written it down can."""
     settings = app_module.settings
-    for name in [k for k in __import__("os").environ if k.startswith("APP_DATABASE__")]:
+    for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(tmp_path / "absent.yaml"))
 
@@ -100,7 +101,7 @@ def test_a_config_file_without_a_database_block_is_not_configured(
     """A file can exist and still not choose a database — the shipped default
     is exactly that, with every line commented out."""
     settings = app_module.settings
-    for name in [k for k in __import__("os").environ if k.startswith("APP_DATABASE__")]:
+    for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
         monkeypatch.delenv(name, raising=False)
     path = tmp_path / "config.yaml"
     path.write_text("app_name: portfolio\ntimezone: Australia/Perth\n")
@@ -288,7 +289,7 @@ def test_a_malformed_config_file_does_not_stop_the_wizard_starting(
         monkeypatch, tmp_path, app_module):
     """A broken config is the admin page's problem to report. Here it must not
     prevent the one page that could fix it from rendering."""
-    for name in [k for k in __import__("os").environ if k.startswith("APP_DATABASE__")]:
+    for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
         monkeypatch.delenv(name, raising=False)
     path = tmp_path / "config.yaml"
     path.write_text("auth: [this is not\n  valid: yaml\n")
@@ -2038,3 +2039,32 @@ def test_a_plain_http_address_has_no_https_cookies_waiting_on_a_restart():
     pending = setupwizard.needs_restart(setupwizard.Draft(external_url="http://192.168.1.5:8000"))
 
     assert not any("HTTPS" in item for item in pending)
+
+
+def test_the_wizard_writes_auth_into_the_shipped_files_commented_block(tmp_path, monkeypatch):
+    """The shipped default's `auth:` has every line under it commented out,
+    so YAML reads it as nothing: the merge has to make it a block before it
+    can write into it, and a proxy written out in full has to stay text. The
+    file must then load as the app loads it."""
+    import yaml as pyyaml
+    from pydantic_settings import SettingsConfigDict
+
+    from app.settings import PortfolioSettings
+
+    target = tmp_path / "config.yaml"
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(target))
+    for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
+        monkeypatch.delenv(name, raising=False)
+
+    configfile.write_tree({"auth": {"cookie_secure": True,
+                                    "trusted_proxies": ["10.0.0.0/8", "2001:0:0:0:0:0:0:1"]}})
+
+    read = pyyaml.safe_load(target.read_text())
+    assert read["auth"]["cookie_secure"] is True
+    assert read["auth"]["trusted_proxies"] == ["10.0.0.0/8", "2001:0:0:0:0:0:0:1"]
+
+    class Written(PortfolioSettings):
+        model_config = SettingsConfigDict(yaml_file=str(target))
+
+    loaded = Written()
+    assert loaded.auth.trusted_proxies == ["10.0.0.0/8", "2001:0:0:0:0:0:0:1"]

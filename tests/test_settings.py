@@ -20,6 +20,8 @@ observable.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from pydantic import ValidationError
 from pydantic_settings import SettingsConfigDict
@@ -36,7 +38,7 @@ def _isolate_database_env(monkeypatch) -> None:
     file or default layers has to remove them all, not just the one it happens
     to remember.
     """
-    for name in [k for k in __import__("os").environ if k.startswith("APP_DATABASE__")]:
+    for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
         monkeypatch.delenv(name, raising=False)
 
 
