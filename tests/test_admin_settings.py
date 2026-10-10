@@ -9,9 +9,12 @@ editable by hand, and stripping them on the first save would be a poor trade.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import os
 import stat
+from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -605,6 +608,121 @@ def test_a_feed_timezone_from_the_environment_shows_as_set(live_settings, monkey
     assert configfile.shown(live, configfile.BY_NAME["price_feed.timezone"]) == "Asia/Tokyo"
     monkeypatch.delenv("APP_PRICE_FEED__TIMEZONE")
     assert configfile.shown(live, configfile.BY_NAME["price_feed.timezone"]) is None
+
+
+# --------------------------------------------------------------------------- #
+# When a save reaches the background jobs
+# --------------------------------------------------------------------------- #
+
+# 13:00 in Melbourne, 22:00 the evening before in New York.
+NOW = dt.datetime(2026, 10, 12, 2, 0, tzinfo=dt.timezone.utc)
+
+
+class _Stop(Exception):
+    """Ends a background loop at its second wait."""
+
+
+def _waits(monkeypatch, job, during_first_wait) -> list[float]:
+    """Run one of main's background loops to its second wait, with the work
+    stubbed and the clock stopped at NOW. `during_first_wait` runs where a
+    save made while the loop sleeps would land. Returns each wait, in seconds."""
+    from app import main as main_mod
+
+    waits: list[float] = []
+
+    async def wait(seconds):
+        waits.append(seconds)
+        if len(waits) > 1:
+            raise _Stop
+        during_first_wait()
+
+    async def ready(what):
+        return None
+
+    class Stopped(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz)
+
+    monkeypatch.setattr(main_mod, "asyncio", SimpleNamespace(
+        sleep=wait, get_running_loop=asyncio.get_running_loop))
+    monkeypatch.setattr(main_mod, "dt", SimpleNamespace(datetime=Stopped, timedelta=dt.timedelta))
+    monkeypatch.setattr(main_mod, "_await_database", ready)
+    monkeypatch.setattr(main_mod, "_run_feed", lambda: True)
+    monkeypatch.setattr(main_mod, "_should_poll_quotes", lambda: False)
+    monkeypatch.setattr(main_mod.maintenance, "run", lambda *args: None)
+    with pytest.raises(_Stop):
+        asyncio.run(getattr(main_mod, job)())
+    return waits
+
+
+@pytest.mark.parametrize("job, schedule", [("_feed_loop", "price_feed"),
+                                           ("_maintenance_loop", "maintenance")])
+def test_a_feed_timezone_saved_from_the_page_moves_the_next_run(job, schedule, live_settings,
+                                                                monkeypatch):
+    """The page applies the feed timezone without a restart, and both daily
+    jobs run in it. Each loop read the zone once, before its first run, so a
+    save moved neither until the app restarted."""
+    live, _ = live_settings
+    live.price_feed.timezone = "Australia/Melbourne"
+    getattr(live, schedule).hour, getattr(live, schedule).minute = 18, 0
+
+    waits = _waits(monkeypatch, job, lambda: configfile.apply_live(
+        live, {"price_feed.timezone": "America/New_York"}))
+
+    first, second = (NOW + dt.timedelta(seconds=w) for w in waits)
+    assert first.astimezone(ZoneInfo("Australia/Melbourne")).time() == dt.time(18, 0)
+    assert second.astimezone(ZoneInfo("America/New_York")).time() == dt.time(18, 0)
+
+
+def test_live_quotes_wait_the_interval_saved_from_the_page(live_settings, monkeypatch):
+    """The page applies the interval without a restart, but the loop read it
+    once, before its first poll, and kept waiting the old one."""
+    live, _ = live_settings
+    live.price_feed.quote_interval_minutes = 15
+
+    waits = _waits(monkeypatch, "_quote_loop", lambda: configfile.apply_live(
+        live, {"price_feed.quote_interval_minutes": 5}))
+
+    assert waits == [15 * 60, 5 * 60]
+
+
+def test_what_startup_reads_is_said_to_wait_for_a_restart(live_settings, monkeypatch):
+    """Which background jobs run is decided once, as the app starts. A
+    setting read there and applied live would let the page switch a job on
+    that nothing ever starts."""
+    from pydantic import BaseModel
+
+    from app import main as main_mod
+
+    live, _ = live_settings
+    live.price_feed.enabled = live.price_feed.quotes_enabled = live.maintenance.enabled = True
+    read: set[str] = set()
+
+    class Reads:
+        def __init__(self, target, prefix=""):
+            self.target, self.prefix = target, prefix
+
+        def __getattr__(self, name):
+            value = getattr(self.target, name)
+            read.add(self.prefix + name)
+            return Reads(value, f"{self.prefix}{name}.") if isinstance(value, BaseModel) else value
+
+    async def idle():
+        return None
+
+    async def start_and_stop():
+        async with main_mod.lifespan(None):
+            pass
+
+    monkeypatch.setattr(main_mod, "settings", Reads(live))
+    for job in ("_feed_loop", "_quote_loop", "_maintenance_loop"):
+        monkeypatch.setattr(main_mod, job, idle)
+    asyncio.run(start_and_stop())
+
+    startup = read & set(configfile.BY_NAME)
+    assert {"price_feed.enabled", "maintenance.enabled"} <= startup
+    assert [name for name in sorted(startup) if not configfile.BY_NAME[name].restart] == []
 
 
 # --------------------------------------------------------------------------- #
