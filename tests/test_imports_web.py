@@ -55,6 +55,18 @@ def _holding_acme(client, session_factory):
         s.commit()
 
 
+@pytest.fixture
+def staging_dir(monkeypatch, tmp_path):
+    """A staging directory of this test's own. The real one is shared by every
+    process on the machine, so a test that looks at all of it can see another
+    run's uploads."""
+    from app import imports_web
+
+    path = tmp_path / "staged"
+    monkeypatch.setattr(imports_web, "STAGING", path)
+    return path
+
+
 def upload_csv(client, session_factory, payload=GOOD_CSV, broker="testbroker"):
     return client.post("/imports-exports/csv",
                        files={"file": ("trades.csv", payload, "text/csv")},
@@ -196,17 +208,17 @@ def test_the_staged_file_is_cleared_after_committing(client, session_factory, wi
     assert not (STAGING / f"{uid}.json").exists()
 
 
-def test_a_file_with_a_bad_row_stages_nothing_to_commit(client, session_factory, with_acme):
+def test_a_file_with_a_bad_row_stages_nothing_to_commit(client, session_factory, with_acme,
+                                                       staging_dir):
     """The preview shows the error and offers no commit. Nothing may be staged
     behind it either, or a commit posted by hand would import the good rows
     and quietly drop the bad one."""
     make_login(client, session_factory)
-    before = set(STAGING.glob("*.json"))
 
     resp = upload_csv(client, session_factory, GOOD_CSV + b"08/03/2025,Buy,ACME,NaN,6.00,9.50\n")
 
     assert "NaN" in resp.text and "/commit" not in resp.text
-    assert set(STAGING.glob("*.json")) == before
+    assert list(staging_dir.glob("*.json")) == []
 
 
 def test_committing_twice_is_refused_rather_than_duplicating(client, session_factory,
@@ -272,7 +284,8 @@ def test_another_accounts_staged_upload_cannot_be_committed(client, session_fact
     assert "another account" in resp.text
 
 
-def test_committing_refuses_unknown_instruments_by_default(client, session_factory):
+def test_committing_refuses_unknown_instruments_by_default(client, session_factory,
+                                                           staging_dir):
     """`allow_new_instruments` is off, so an unrecognised ticker stops the
     import instead of quietly inventing a holding: no commit form is offered,
     and a commit posted anyway is refused.
@@ -284,7 +297,7 @@ def test_committing_refuses_unknown_instruments_by_default(client, session_facto
     assert "unknown-instrument" in resp.text
     assert "/commit" not in resp.text
 
-    committed = client.post(f"/imports-exports/csv/{_newest_staged()}/commit",
+    committed = client.post(f"/imports-exports/csv/{_newest_staged(staging_dir)}/commit",
                             data={"_csrf": session_csrf(session_factory)},
                             headers=HTML, follow_redirects=False)
     assert committed.status_code == 409
@@ -292,14 +305,14 @@ def test_committing_refuses_unknown_instruments_by_default(client, session_facto
         assert s.scalars(select(Trade)).all() == []
 
 
-def _newest_staged() -> str:
+def _newest_staged(staging_dir) -> str:
     """The preview's staging id, for a page that offers no form carrying it."""
-    newest = max(STAGING.glob("*.json"), key=lambda p: p.stat().st_mtime)
+    newest = max(staging_dir.glob("*.json"), key=lambda p: p.stat().st_mtime)
     return newest.stem
 
 
 def test_a_file_selling_more_than_is_held_cannot_be_committed(client, session_factory,
-                                                              with_acme):
+                                                              with_acme, staging_dir):
     """A broker export covering the last year carries sales of shares bought
     before it starts. Committed, one left a negative holding and the FY page
     raised; now the row is refused in the preview, and at commit."""
@@ -313,7 +326,7 @@ def test_a_file_selling_more_than_is_held_cannot_be_committed(client, session_fa
     assert 'badge-refused' in resp.text
     assert "more than the 100 units of ACME held on 2025-03-02" in resp.text
     assert "/commit" not in resp.text
-    committed = client.post(f"/imports-exports/csv/{_newest_staged()}/commit",
+    committed = client.post(f"/imports-exports/csv/{_newest_staged(staging_dir)}/commit",
                             data={"_csrf": session_csrf(session_factory)},
                             headers=HTML, follow_redirects=False)
     assert committed.status_code == 409
