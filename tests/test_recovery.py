@@ -601,3 +601,27 @@ def test_a_deactivated_account_cannot_be_recovered(client, session_factory):
     with session_factory() as s:
         user = s.scalars(select(User).where(User.email == email)).one()
         assert twofactor.remaining_recovery_codes(s, user) == len(raw)
+
+
+def test_guessing_recovery_codes_is_covered_by_the_lockout(client, session_factory):
+    """`auth.is_locked` has its own tests; nothing sent this form while
+    locked, so the route's check could go and an account's codes be guessed
+    without limit. The allowance arrives from a different address each, and
+    the right code is refused and left unspent."""
+    import datetime as dt
+
+    from app.models import LoginAttempt
+
+    email = make_login(client, session_factory)
+    raw = _issue(session_factory, email)
+    client.cookies.clear()
+    with session_factory() as s:
+        for n in range(8):  # the configured max_attempts
+            s.add(LoginAttempt(email=email, ip=f"192.0.2.{n + 1}", success=False,
+                               created_at=dt.datetime.now(dt.timezone.utc)))
+        s.commit()
+
+    resp = _recover(client, email, raw[0])
+
+    assert "Too many attempts" in resp.text
+    assert all(c.used_at is None for c in _codes_for(session_factory, email))

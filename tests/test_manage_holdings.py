@@ -377,3 +377,15 @@ def test_a_trade_and_a_distribution_both_stand_in_the_way(client, session_factor
 
     assert resp.status_code == 409
     assert "2 trade(s) or dividend(s)" in resp.text
+
+
+def test_a_removal_mentions_the_plan_only_when_the_plan_lost_it(client, session_factory):
+    make_login(client, session_factory)
+
+    plain = client.get("/holdings?removed=ACME", headers={"accept": "text/html"}).text
+    planned = client.get("/holdings?removed=ACME&unplanned=1",
+                         headers={"accept": "text/html"}).text
+
+    assert '<p class="panel ok"><strong>ACME</strong> removed.</p>' in plain
+    assert ('<p class="panel warn"><strong>ACME</strong> removed, and taken out of the '
+            'DCA plan.</p>') in planned
