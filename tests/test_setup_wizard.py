@@ -2000,3 +2000,41 @@ def test_the_restart_list_names_the_database_and_the_feed_turned_off():
     assert len(pending) == 2
     assert pending[0].startswith("the database connection")
     assert pending[1] == "turning the market-data feed off"
+
+
+def test_with_every_step_done_the_next_step_is_finish():
+    setupwizard.discard()
+    try:
+        current = setupwizard.draft()
+        for key in setupwizard.STEP_KEYS:
+            current.completed(key)
+
+        assert setupwizard.next_step(database_configured=True, account_exists=True) == "finish"
+    finally:
+        setupwizard.discard()
+
+
+def test_a_postgres_choice_is_written_as_postgres():
+    chosen = setupwizard.postgres_settings(host="pg.local", port="5433", name="stocktake",
+                                           user="app", password="secret")
+
+    assert setupwizard.database_config(chosen) == {
+        "type": "postgres", "host": "pg.local", "port": 5433, "name": "stocktake",
+        "user": "app", "password": "secret"}
+
+
+def test_a_timezone_is_trimmed_and_a_blank_one_asked_for():
+    assert setupwizard.timezone_problem("  ") == "Choose a timezone."
+    assert setupwizard.timezone_problem(" Europe/Dublin ") is None
+
+
+def test_nothing_typed_is_nothing_rather_than_an_error():
+    assert setupwizard.parse_proxies(None) == []
+    assert setupwizard.parse_external_url(None) is None
+    assert setupwizard.tls_note(None) == ""
+
+
+def test_a_plain_http_address_has_no_https_cookies_waiting_on_a_restart():
+    pending = setupwizard.needs_restart(setupwizard.Draft(external_url="http://192.168.1.5:8000"))
+
+    assert not any("HTTPS" in item for item in pending)
