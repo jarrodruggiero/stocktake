@@ -11,7 +11,11 @@ installed, reused, or sent as a pull request unchanged.
 
 from __future__ import annotations
 
+import html
+
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 
 from app import brokerdesign
 
@@ -228,6 +232,39 @@ def test_the_yaml_round_trips_into_a_working_format():
     assert str(result.candidates[0].unit_price) == "89.50"
 
 
+# The round trip above uses one broker's headers. The file is written by
+# hand, line by line, so a header or a name YAML gives a meaning to came back
+# as something else: "Trade #" lost everything after the "#", and a name or a
+# header with ": " in it made a file that would not load at all.
+AWKWARD = ["Trade #", "Price: AUD", "Units #2", "- Units", "#", ":", "? Code", "Qty, units",
+           "'Price'", '"Price"', "[Code]", "{Code}", "&Code", "*Code", "!Code", "|", ">",
+           "%Fee", "@Code", "`Code", "Yes", "off", "null", "~", "12:30", "1e3", "0x1F",
+           "Code ", "Price (A$)", "Brokerage (incl GST)", "Trade Date/Time"]
+written = st.one_of(st.sampled_from(AWKWARD), st.text(
+    st.characters(blacklist_categories=("Cs", "Cc", "Zl", "Zp")), min_size=1, max_size=12)
+    .map(str.strip).filter(bool))
+
+
+@example(name="Broker: Home", headers=["Trade #", "Price: AUD", "[Code]", "null", "1e3", "#"],
+         words=["Buy #", "- Sell"])
+@given(name=written, headers=st.lists(written, min_size=6, max_size=6, unique=True),
+       words=st.lists(written, min_size=1, max_size=3, unique=True))
+def test_any_mapping_reads_back_as_it_was_made(name, headers, words):
+    from ruamel.yaml import YAML
+
+    columns = dict(zip(brokerdesign.FIELDS, headers))
+    actions = dict(zip(words, ["buy", "sell", "drp"]))
+    body = brokerdesign.broker_yaml(name=name, exchange="ASX", currency="AUD",
+                                    date_format="%d/%m/%Y", columns=columns, actions=actions)
+
+    loaded = YAML(typ="safe").load(body)
+
+    assert loaded["name"] == name
+    assert loaded["columns"] == columns
+    assert loaded["actions"] == actions
+    assert loaded["date_format"] == "%d/%m/%Y"
+
+
 def test_the_yaml_explains_itself():
     """It is meant to arrive as a pull request. A file that turns up with no
     comment about where it came from gets reviewed worse."""
@@ -374,7 +411,7 @@ def test_the_generated_format_appears_on_the_page(client, session_factory):
         headers=HTML)
 
     assert "kind: mapped" in page.text
-    assert "ticker: Code" in page.text
+    assert 'ticker: "Code"' in html.unescape(page.text)
 
 
 def test_a_column_that_is_not_in_the_file_is_refused(client, session_factory):

@@ -15,6 +15,7 @@ mostly about the format being *safe* and *expressive enough*:
 from __future__ import annotations
 
 import datetime as dt
+import itertools
 from decimal import Decimal
 from pathlib import Path
 
@@ -244,6 +245,38 @@ def test_the_catch_all_is_used_when_nothing_specific_claims_it():
     specific = template(key="vanguard", match_any=["Vanguard"])
 
     assert fmt.pick([generic, specific], SAMPLE).key == "generic"
+
+
+# The two tests above try a marker against the catch-all. The rest of the
+# order was unchecked: a row shape against a marker, and an installed
+# template breaking a tie. Its weights could change, so that an installed
+# template with a marker beat a shipped one with a row shape, and nothing
+# failed. Every pair of the eight kinds, all claiming the same document,
+# each way round in the list.
+TABLE = "Acme Registry\nALPHA 100 $12.50\n"
+KINDS = [(rows, marker, installed) for rows in (True, False) for marker in (True, False)
+         for installed in (True, False)]
+
+
+def _kind(rows: bool, marker: bool, installed: bool) -> fmt.StatementTemplate:
+    return template(
+        key=f"{'rows' if rows else 'no-rows'}-{'marker' if marker else 'no-marker'}-"
+            f"{'installed' if installed else 'shipped'}",
+        match_any=["Acme Registry"] if marker else [],
+        rows=fmt.RowSpec(shape="TICKER INT MONEY", columns=["ticker", "units", "amount"])
+        if rows else None,
+        source="installed" if installed else "builtin")
+
+
+@pytest.mark.parametrize(("first", "second"), list(itertools.combinations(KINDS, 2)))
+def test_more_evidence_wins_and_an_installed_template_breaks_a_tie(first, second):
+    """A row shape before a marker before nothing; at equal evidence, the
+    installed one."""
+    a, b = _kind(*first), _kind(*second)
+    best = a if first > second else b       # (rows, marker, installed), most first
+
+    assert fmt.pick([a, b], TABLE).key == best.key
+    assert fmt.pick([b, a], TABLE).key == best.key
 
 
 def test_no_templates_means_no_match_rather_than_a_crash():
