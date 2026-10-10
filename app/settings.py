@@ -109,10 +109,7 @@ class AuthSettings(BaseModel):
     webauthn: WebauthnSettings = WebauthnSettings()
     oidc: OidcSettings = OidcSettings()
 
-    _empty_means_defaults = field_validator("rate_limit", mode="before")(
-        lambda v: {} if v is None else v
-    )
-    _empty_webauthn = field_validator("webauthn", mode="before")(
+    _empty_means_defaults = field_validator("rate_limit", "webauthn", "oidc", mode="before")(
         lambda v: {} if v is None else v
     )
 
@@ -247,6 +244,10 @@ class ImportSettings(BaseModel):
     brokers: dict[str, BrokerFormat] = {}
     ocr: OcrSettings = OcrSettings()
 
+    _empty_means_defaults = field_validator("brokers", "ocr", mode="before")(
+        lambda v: {} if v is None else v
+    )
+
     def user_dir(self, kind: str):
         """`<templates_dir>/statements` or `.../brokers`, as a Path."""
         from pathlib import Path
@@ -308,7 +309,7 @@ class PortfolioSettings(BaseAppSettings):
     # refusing to start, because the alternative is a config file that breaks
     # by being tidied.
     _empty_means_defaults = field_validator(
-        "price_feed", "imports", "auth", "maintenance", "metrics", "features",
+        "database", "price_feed", "imports", "auth", "maintenance", "metrics", "features",
         mode="before",
     )(lambda v: {} if v is None else v)
 
