@@ -813,11 +813,12 @@ def grouped_series(session: Session, by: str, filters: dict | None = None) -> di
 
     out = {label: blank() for label in labels}
 
+    # Per instrument, as in `portfolio_series`: a holding that cannot be valued
+    # on a day leaves that day's line whole, cost and proceeds and income,
+    # rather than charting as a loss of everything it cost.
     units: dict[int, Decimal] = {}
-    invested = {label: ZERO for label in labels}
-    proceeds = {label: ZERO for label in labels}
-    divs = {label: ZERO for label in labels}
-    prev_invested = {label: ZERO for label in labels}
+    spent: dict[int, Decimal] = {}
+    returned: dict[int, Decimal] = {}     # sale proceeds and cash income
     ei = 0
 
     for d in dates:
@@ -832,28 +833,34 @@ def grouped_series(session: Session, by: str, filters: dict | None = None) -> di
                     units[inst.id] = units.get(inst.id, ZERO) + obj.quantity
                     if obj.type == "buy":
                         spend = (obj.quantity * obj.unit_price + obj.brokerage) * fxr
-                        invested[label] += spend
+                        spent[inst.id] = spent.get(inst.id, ZERO) + spend
                         day_flow[label] += spend
                 else:
                     units[inst.id] = units.get(inst.id, ZERO) - obj.quantity
-                    proceeds[label] += (obj.quantity * obj.unit_price - obj.brokerage) * fxr
+                    returned[inst.id] = returned.get(inst.id, ZERO) + (
+                        obj.quantity * obj.unit_price - obj.brokerage) * fxr
             else:
-                divs[label] += obj.cash_amount * fxr
-                day_div[label] += obj.cash_amount * fxr
+                cash = obj.cash_amount * fxr
+                returned[inst.id] = returned.get(inst.id, ZERO) + cash
+                day_div[label] += cash
             ei += 1
 
         value = {label: ZERO for label in labels}
+        invested = {label: ZERO for label in labels}
+        back = {label: ZERO for label in labels}
         for inst in instruments:
             u = units.get(inst.id, ZERO)
-            if not u or inst.id not in steppers:
+            close = steppers[inst.id].at(d) if inst.id in steppers else None
+            if u and close is None:
                 continue
-            close = steppers[inst.id].at(d)
-            if close is None:
-                continue
-            value[_instrument_group(inst, by)] += u * close * fxbook.rate(inst.currency, d)
+            label = _instrument_group(inst, by)
+            invested[label] += spent.get(inst.id, ZERO)
+            back[label] += returned.get(inst.id, ZERO)
+            if u:
+                value[label] += u * close * fxbook.rate(inst.currency, d)
 
         for label in labels:
-            gain = value[label] + proceeds[label] + divs[label] - invested[label]
+            gain = value[label] + back[label] - invested[label]
             g = out[label]
             g["value"].append(round(float(value[label]), 2))
             g["invested"].append(round(float(invested[label]), 2))
@@ -863,9 +870,10 @@ def grouped_series(session: Session, by: str, filters: dict | None = None) -> di
             )
             g["flow_in"].append(round(float(day_flow[label]), 2))
             g["cash_div"].append(round(float(day_div[label]), 2))
-            prev_invested[label] = invested[label]
 
-    live = {k: v for k, v in out.items() if any(v["invested"]) or any(v["value"])}
+    # Income alone is history too: dropping its line left the split short of
+    # the total by exactly that income.
+    live = {k: v for k, v in out.items() if any(any(series) for series in v.values())}
     return {"dates": [d.isoformat() for d in dates], "groups": live, "excluded": excluded}
 
 
