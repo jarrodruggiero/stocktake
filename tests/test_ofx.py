@@ -354,3 +354,73 @@ def test_an_unreadable_figure_is_an_error_naming_the_field(tag, was, value, mess
 def test_a_negative_units_figure_is_still_the_sign_of_a_sell_not_an_error():
     """The shared check runs after the sign is taken off, so this stays valid."""
     assert ofx.parse_ofx(SGML).errors == []
+
+
+# --------------------------------------------------------------------------- #
+# What a mutation run found unchecked
+# --------------------------------------------------------------------------- #
+
+def test_a_trade_with_no_commission_tag_is_free_not_a_crash():
+    """COMMISSION is optional in the specification, and every transaction in
+    the fixtures had one."""
+    text = SGML.replace("<COMMISSION>9.50\n<TOTAL>-1059.50", "<TOTAL>-1050.00", 1)
+
+    buy = next(c for c in ofx.parse_ofx(text).candidates if c.type == "buy")
+
+    assert buy.brokerage == Decimal(0)
+
+
+@pytest.mark.parametrize(("tag", "was", "missing"), [
+    ("DTTRADE", "20260302120000.000[+11:AEDT]", "date"),
+    ("UNITS", "100", "units"),
+    ("UNITPRICE", "10.50", "price"),
+])
+def test_each_figure_missing_alone_is_named(tag, was, missing):
+    text = SGML.replace(f"<{tag}>{was}", f"<{tag}>", 1)
+
+    result = ofx.parse_ofx(text)
+
+    assert any(f"missing its {missing}" in s for s in result.skipped), result.skipped
+    assert [c.type for c in result.candidates] == ["sell"]
+
+
+def test_the_files_own_currency_is_the_default_and_a_trades_own_wins():
+    usd = SGML.replace("<CURDEF>AUD", "<CURDEF>USD", 1)
+    assert {c.currency for c in ofx.parse_ofx(usd).candidates} == {"USD"}
+
+    own = SGML.replace("<UNITS>-40", "<CURRENCY>\n<CURSYM>nzd\n<CURRATE>1.1\n</CURRENCY>\n"
+                                     "<UNITS>-40", 1)
+    by_type = {c.type: c.currency for c in ofx.parse_ofx(own).candidates}
+    assert by_type == {"buy": "AUD", "sell": "NZD"}
+
+
+def test_trades_come_back_in_date_order_whatever_the_file_order():
+    """Buys are read before sells, so a sale dated before a purchase came
+    back after it."""
+    text = SGML.replace("<DTTRADE>20260610000000", "<DTTRADE>20260110000000", 1)
+
+    assert [(c.date, c.type) for c in ofx.parse_ofx(text).candidates] == [
+        (dt.date(2026, 1, 10), "sell"), (dt.date(2026, 3, 2), "buy")]
+
+
+def test_a_trade_dated_only_by_settlement_takes_that_date():
+    text = SGML.replace("<DTTRADE>20260610000000", "<DTSETTLE>20260612", 1)
+
+    sell = next(c for c in ofx.parse_ofx(text).candidates if c.type == "sell")
+
+    assert sell.date == dt.date(2026, 6, 12)
+
+
+def test_a_date_with_a_zone_and_no_time_is_read():
+    assert ofx._date("20260302[-5:EST]") == dt.date(2026, 3, 2)
+
+
+def test_a_lower_case_ticker_is_stored_upper_case():
+    assert ofx.security_tickers(SGML.replace("ALPHA.AX", "alpha.ax")) == {
+        "AU000000ALP1": "ALPHA"}
+
+
+def test_an_unreadable_figure_names_the_holding_it_belongs_to():
+    result = ofx.parse_ofx(SGML.replace("<UNITS>100", "<UNITS>NaN", 1))
+
+    assert result.errors and result.errors[0].startswith("ALPHA: ")
