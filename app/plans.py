@@ -224,32 +224,32 @@ def next_buy(session: Session) -> UpcomingBuy | None:
 def set_entries(session: Session, plan: InvestmentPlan, instrument_ids: list[int]) -> None:
     """Replace the rotation with this exact ordered list.
 
-    A slot keeps its row (and therefore its id) when the instrument at that
-    position is unchanged, so history recorded against it still resolves. The
-    rest are created/deleted.
+    A slot keeps its row (and therefore its id) while its instrument stays in
+    the rotation, wherever it moves to, so history recorded against it still
+    resolves and the next buy is still the one after the last. An instrument in
+    the rotation twice keeps its rows in order. The rest are created/deleted.
     """
-    before = {e.position: e for e in plan.entries}
     # (plan_id, position) is unique and checked per-statement, so park every row
     # beyond the new range before renumbering into it.
     offset = 1000 + max((e.position for e in plan.entries), default=0)
-    for entry in plan.entries:
+    unused: dict[int, list[InvestmentPlanEntry]] = {}
+    for entry in sorted(plan.entries, key=lambda e: e.position):
         entry.position += offset
+        unused.setdefault(entry.instrument_id, []).append(entry)
     session.flush()
 
-    keep: set[int] = set()
     for position, instrument_id in enumerate(instrument_ids):
-        reusable = before.get(position)
-        if reusable is not None and reusable.instrument_id == instrument_id:
-            reusable.position = position
-            keep.add(id(reusable))
+        rows = unused.get(instrument_id)
+        if rows:
+            rows.pop(0).position = position
         else:
             session.add(
                 InvestmentPlanEntry(
                     plan_id=plan.id, position=position, instrument_id=instrument_id
                 )
             )
-    for entry in list(before.values()):
-        if id(entry) not in keep:
+    for rows in unused.values():
+        for entry in rows:
             session.delete(entry)
     session.flush()
     session.expire(plan, ["entries"])
