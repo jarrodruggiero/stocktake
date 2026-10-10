@@ -196,6 +196,19 @@ def test_the_staged_file_is_cleared_after_committing(client, session_factory, wi
     assert not (STAGING / f"{uid}.json").exists()
 
 
+def test_a_file_with_a_bad_row_stages_nothing_to_commit(client, session_factory, with_acme):
+    """The preview shows the error and offers no commit. Nothing may be staged
+    behind it either, or a commit posted by hand would import the good rows
+    and quietly drop the bad one."""
+    make_login(client, session_factory)
+    before = set(STAGING.glob("*.json"))
+
+    resp = upload_csv(client, session_factory, GOOD_CSV + b"08/03/2025,Buy,ACME,NaN,6.00,9.50\n")
+
+    assert "NaN" in resp.text and "/commit" not in resp.text
+    assert set(STAGING.glob("*.json")) == before
+
+
 def test_committing_twice_is_refused_rather_than_duplicating(client, session_factory,
                                                              with_acme):
     make_login(client, session_factory)
@@ -406,7 +419,10 @@ def test_a_duplicate_statement_is_refused(client, session_factory, with_acme):
 ])
 def test_bad_statement_input_is_refused(client, session_factory, with_acme,
                                         field, value, status):
-    make_login(client, session_factory)
+    """ACME is held, so the field under test is the only thing wrong: without
+    it every case was also refused for naming an instrument this portfolio
+    does not have, and a date check removed outright still passed."""
+    _holding_acme(client, session_factory)
     payload = {"ticker": "ACME", "payment_date": "2026-03-15", "net_amount": "123.45",
                "_csrf": session_csrf(session_factory)}
     payload[field] = value
@@ -565,8 +581,9 @@ def test_the_way_back_follows_where_you_came_from(client, session_factory, with_
 def test_a_statement_that_the_dividend_form_would_refuse_is_not_saved(
         client, session_factory, with_acme, overrides):
     """Zero or negative cash and franking, and negative DRP units, used to be saved
-    as they came (the units failing later at the `quantity > 0` CHECK as a 500)."""
-    make_login(client, session_factory)
+    as they came (the units failing later at the `quantity > 0` CHECK as a 500).
+    ACME is held so the figure is the only thing wrong."""
+    _holding_acme(client, session_factory)
     payload = {"ticker": "ACME", "payment_date": "2026-03-15", "net_amount": "100.00",
                "drp_units": "10", "drp_price": "10.00",
                "_csrf": session_csrf(session_factory)}
