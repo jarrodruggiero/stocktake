@@ -610,6 +610,15 @@ def test_a_feed_timezone_from_the_environment_shows_as_set(live_settings, monkey
     assert configfile.shown(live, configfile.BY_NAME["price_feed.timezone"]) is None
 
 
+def test_a_feed_section_left_empty_shows_its_timezone_following(live_settings):
+    """Every line under `price_feed:` commented out reads as nothing at all,
+    not as a block: the zone is not written there, so it follows."""
+    live, path = live_settings
+    path.write_text("timezone: Australia/Melbourne\nprice_feed:\n  # hour: 18\n")
+
+    assert configfile.shown(live, configfile.BY_NAME["price_feed.timezone"]) is None
+
+
 # --------------------------------------------------------------------------- #
 # When a save reaches the background jobs
 # --------------------------------------------------------------------------- #
