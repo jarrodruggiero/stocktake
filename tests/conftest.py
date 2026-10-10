@@ -288,6 +288,19 @@ def owner(db):
 
 
 @pytest.fixture
+def portfolio(session_factory):
+    """An owner and a portfolio, committed, as (portfolio_id, user_id): for the
+    generated cases, each of which rolls back only the rows it wrote."""
+    from factories import make_portfolio, make_user
+
+    with session_factory() as s:
+        user = make_user(s, "owner@example.test")
+        p = make_portfolio(s, "Generated", owner=user)
+        s.commit()
+        return p.id, user.id
+
+
+@pytest.fixture
 def pf(db, owner):
     """A session bound to one portfolio — what a logged-in request gets.
 
