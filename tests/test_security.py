@@ -36,6 +36,46 @@ def test_every_response_carries_the_hardening_headers(client, session_factory,
     assert client.get("/", headers={"accept": "text/html"}).headers[header] == expected
 
 
+def _cookie(response, name: str) -> dict:
+    """One Set-Cookie header, as {attribute (lower case): value}."""
+    for header in response.headers.get_list("set-cookie"):
+        first, *attrs = [part.strip() for part in header.split(";")]
+        if first.startswith(name + "="):
+            return {a.split("=", 1)[0].lower(): (a.split("=", 1)[1] if "=" in a else True)
+                    for a in attrs}
+    raise AssertionError(f"no {name} cookie set")
+
+
+@pytest.mark.parametrize("secure", [False, True])
+def test_the_session_cookie_cannot_be_read_by_a_script(client, session_factory, app_module,
+                                                       monkeypatch, secure):
+    """HttpOnly is what keeps a script that slips past the escaping from
+    reading the session; nothing checked it. Secure follows the setting."""
+    from test_routes import PASSWORD, pre_auth_csrf
+
+    from fastapi.testclient import TestClient
+
+    from app.auth import hash_password
+
+    monkeypatch.setattr(app_module.settings.auth, "cookie_secure", secure)
+    with session_factory() as s:
+        fac.make_user(s, "user@example.test", password_hash=hash_password(PASSWORD))
+        s.commit()
+    # A secure cookie is set only over HTTPS (decisions.md #55); `client` has
+    # already pointed the app at this test's database.
+    browser = TestClient(app_module.app, base_url="https://testserver") if secure else client
+    resp = browser.post("/login", follow_redirects=False, headers={"accept": "text/html"},
+                        data={"email": "user@example.test", "password": PASSWORD,
+                              "_csrf": pre_auth_csrf(browser)})
+
+    cookie = _cookie(resp, app_module.settings.auth.cookie_name)
+    assert cookie.get("httponly") is True
+    assert cookie.get("samesite", "").lower() == "lax"
+    assert cookie.get("path") == "/"
+    assert int(cookie["max-age"]) == app_module.settings.auth.session_ttl_days * 86400
+    assert (cookie.get("secure") is True) is secure
+
+
 def test_the_headers_are_on_unauthenticated_responses_too(client):
     """The login page is the one an attacker reaches first."""
     assert client.get("/login", headers={"accept": "text/html"}
