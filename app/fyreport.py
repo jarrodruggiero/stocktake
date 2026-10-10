@@ -423,7 +423,7 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
                     activity.sells += 1
                     activity.proceeds += (t.quantity * t.unit_price - t.brokerage) * fx
                     activity.brokerage += t.brokerage * fx
-        if units <= 0 and invested == ZERO:
+        if units <= 0:
             continue
         price_row = _price_at(session, inst.id, asof)
         price, price_date = (price_row.close, price_row.date) if price_row else (None, None)
@@ -431,21 +431,20 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
         # with none: never 1:1 (decisions.md #5).
         rate = fx_book.rate(inst.currency, asof)
         value = gain = None
-        if price is not None and units > 0 and rate is not None:
+        if price is not None and rate is not None:
             value = units * price * rate
             gain = value - invested
-        if units > 0:
-            snapshot.append(
-                SnapshotRow(
-                    instrument=inst,
-                    units=units,
-                    invested_cum=invested,
-                    price=price,
-                    price_date=price_date,
-                    value_aud=value,
-                    gain_aud=gain,
-                )
+        snapshot.append(
+            SnapshotRow(
+                instrument=inst,
+                units=units,
+                invested_cum=invested,
+                price=price,
+                price_date=price_date,
+                value_aud=value,
+                gain_aud=gain,
             )
+        )
 
     income = fy_income(session, fy_end_year)
     cgt = fy_cgt(session, fy_end_year)
@@ -472,10 +471,7 @@ def available_fys(session: Session) -> list[int]:
     first = session.execute(select(Trade.date).order_by(Trade.date.asc()).limit(1)).scalar()
     if first is None:
         return []
-    first_fy = first.year + (0 if first.month <= 6 else 1)
-    today = clock.today()
-    current_fy = today.year + (0 if today.month <= 6 else 1)
-    return list(range(current_fy, first_fy - 1, -1))
+    return list(range(current_fy(clock.today()), current_fy(first) - 1, -1))
 
 
 # --------------------------------------------------------------------------- #
