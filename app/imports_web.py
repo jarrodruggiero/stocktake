@@ -191,10 +191,19 @@ async def csv_preview(request: Request, file: UploadFile, broker: str = Form(...
             "skipped": result.skipped,
             "errors": result.errors,
             "uid": uid,
-            "insertable": sum(1 for c in result.candidates if c.status != "duplicate"),
+            **_counts(result.candidates, settings.imports),
             "unresolved": brokercsv.unresolved(result.candidates),
         },
     )
+
+
+def _counts(candidates: list, imports) -> dict:
+    """What the commit button would write, and how many rows hold it back: the
+    ones committing would refuse."""
+    held_back = sum(1 for c in candidates if c.status == "refused" or (
+        c.status == "unknown-instrument" and not imports.allow_new_instruments))
+    return {"insertable": sum(1 for c in candidates if c.status != "duplicate"),
+            "held_back": held_back}
 
 
 @router.post("/imports-exports/csv/{uid}/resolve", response_class=HTMLResponse)
@@ -251,7 +260,7 @@ async def csv_resolve(request: Request, uid: str):
                 "skipped": [],
                 "errors": [],
                 "uid": uid,
-                "insertable": sum(1 for c in candidates if c.status != "duplicate"),
+                **_counts(candidates, settings.imports),
                 "unresolved": brokercsv.unresolved(candidates),
                 "rechecked": True,
             },
@@ -278,6 +287,9 @@ async def csv_commit(request: Request, uid: str):
         blocked = [c for c in candidates if c.status == "unknown-instrument"]
         if blocked and not settings.imports.allow_new_instruments:
             raise HTTPException(409, f"unknown instruments: {sorted({c.ticker for c in blocked})}")
+        refused = [c for c in candidates if c.status == "refused"]
+        if refused:
+            raise HTTPException(409, refused[0].detail)
         counts = brokercsv.commit(s, candidates, settings.imports, staged["broker"])
     staged_path.unlink(missing_ok=True)
     return RedirectResponse(

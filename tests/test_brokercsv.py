@@ -609,3 +609,83 @@ def test_one_bad_row_does_not_hide_the_good_ones_but_is_still_reported():
 
     assert len(result.candidates) == 1
     assert len(result.errors) == 1
+
+
+# --------------------------------------------------------------------------- #
+# What a file would leave each holding at
+# --------------------------------------------------------------------------- #
+# The trade form, an edit, a delete, a move and the API each refuse a sale of
+# more than is held. An import did not: a broker export covering the last year
+# carries sales of shares bought before it starts, and committing one left a
+# negative holding that made the FY page raise. Each row is now walked as the
+# form would walk it, in date order.
+
+def test_a_sale_of_more_than_is_held_is_refused_with_the_forms_words(pf):
+    fac.make_instrument(pf, "ACME")
+    pf.commit()
+    candidates = [_candidate(type="sell", date="2025-03-02")]
+
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    assert candidates[0].status == "refused"
+    assert "more than the 0 units of ACME held on 2025-03-02" in candidates[0].detail
+
+
+def test_a_sale_covered_by_an_earlier_row_of_the_file_is_new_whatever_its_order(pf):
+    fac.make_instrument(pf, "ACME")
+    pf.commit()
+    candidates = [_candidate(type="sell", date="2025-03-02"), _candidate(date="2025-01-06")]
+
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    assert [c.status for c in candidates] == ["new", "new"]
+
+
+def test_a_sale_covered_by_what_is_already_held_is_new(pf):
+    acme = fac.make_instrument(pf, "ACME")
+    fac.add_trade(pf, acme, "2025-01-02", "buy", 100, "4.00")
+    pf.commit()
+    candidates = [_candidate(type="sell", date="2025-03-02")]
+
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    assert candidates[0].status == "new"
+
+
+def test_a_sale_that_would_strand_one_already_recorded_is_refused(pf):
+    """Held 100 and sold 100 in June; a file selling 50 in March leaves the
+    June sale 50 short."""
+    acme = fac.make_instrument(pf, "ACME")
+    fac.add_trade(pf, acme, "2025-01-02", "buy", 100, "4.00")
+    fac.add_trade(pf, acme, "2025-06-02", "sell", 100, "6.00")
+    pf.commit()
+    candidates = [_candidate(type="sell", date="2025-03-02", quantity="50")]
+
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    assert candidates[0].status == "refused"
+    assert "2025-06-02" in candidates[0].detail
+
+
+def test_a_refused_row_is_never_committed(pf):
+    fac.make_instrument(pf, "ACME")
+    pf.commit()
+    candidates = [_candidate(type="sell")]
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    with pytest.raises(ValueError, match="more than"):
+        brokercsv.commit(pf, candidates, STRICT, "testbroker")
+    assert pf.scalars(select(Trade)).all() == []
+
+
+def test_importing_into_a_removed_instrument_brings_it_back(pf):
+    """Removed from every portfolio, an instrument is deactivated; trades
+    imported for it make it a holding again, as recording one by hand does."""
+    fac.make_instrument(pf, "ACME", active=False)
+    pf.commit()
+    candidates = [_candidate()]
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    brokercsv.commit(pf, candidates, STRICT, "testbroker")
+
+    assert pf.scalars(select(Instrument)).one().active is True
