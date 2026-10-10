@@ -310,7 +310,7 @@ async def statement_preview(request: Request, file: UploadFile,
             data, s, settings.imports.user_dir("statement"),
             ocr_enabled=settings.imports.ocr.enabled,
             wanted_template=template or None)
-        tickers = s.scalars(select(Instrument.ticker).order_by(Instrument.ticker)).all()
+        tickers = sorted({i.ticker for i in statements.own_instruments(s)})
         template = "statement_rows_preview.html" if parsed.rows else "statement_preview.html"
         return templates.TemplateResponse(
             request,
@@ -375,7 +375,7 @@ async def statement_commit(
     with auth.scoped_session(request) as (ctx, s):
         await auth.verify_csrf(request, s)
         _require_write(ctx)
-        inst = s.scalars(select(Instrument).where(Instrument.ticker == ticker.upper())).first()
+        inst = statements.instrument_for(s, ticker)
         if inst is None:
             raise HTTPException(400, f"unknown instrument {ticker!r}")
         if statements.duplicate_of(s, inst, date, amount):

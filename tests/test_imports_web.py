@@ -44,6 +44,17 @@ def with_acme(session_factory):
         s.commit()
 
 
+def _holding_acme(client, session_factory):
+    """Signed in, with ACME on the portfolio's list: a statement is recorded
+    against a holding this portfolio has (decisions.md #139), not the first
+    instrument in the catalogue with its ticker."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        fac.hold(s, s.scalar(select(Instrument).where(Instrument.ticker == "ACME")))
+        s.commit()
+
+
 def upload_csv(client, session_factory, payload=GOOD_CSV, broker="testbroker"):
     return client.post("/imports-exports/csv",
                        files={"file": ("trades.csv", payload, "text/csv")},
@@ -340,7 +351,7 @@ def test_a_statement_preview_offers_the_parsed_fields_for_correction(
 
 
 def test_committing_a_statement_records_the_dividend(client, session_factory, with_acme):
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
 
     resp = client.post("/imports-exports/statement/commit",
                        data={"ticker": "ACME", "payment_date": "2026-03-15",
@@ -359,7 +370,7 @@ def test_a_reinvested_statement_creates_the_drp_trade_too(client, session_factor
                                                           with_acme):
     """A reinvestment is two records: the cash that was distributed, and the
     units it bought. They have to arrive together or the ledger is wrong."""
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
 
     client.post("/imports-exports/statement/commit",
                 data={"ticker": "ACME", "payment_date": "2026-03-15",
@@ -376,7 +387,7 @@ def test_a_reinvested_statement_creates_the_drp_trade_too(client, session_factor
 
 
 def test_a_duplicate_statement_is_refused(client, session_factory, with_acme):
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
     payload = {"ticker": "ACME", "payment_date": "2026-03-15", "net_amount": "123.45",
                "_csrf": session_csrf(session_factory)}
     client.post("/imports-exports/statement/commit", data=payload, headers=HTML)
@@ -408,7 +419,7 @@ def test_amounts_with_symbols_and_separators_are_accepted(client, session_factor
                                                           with_acme):
     """The values are copied off a statement by hand, so they arrive looking
     like a statement rather than like a number."""
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
 
     client.post("/imports-exports/statement/commit",
                 data={"ticker": "ACME", "payment_date": "2026-03-15",
@@ -420,7 +431,7 @@ def test_amounts_with_symbols_and_separators_are_accepted(client, session_factor
 
 
 def test_the_franked_amount_is_kept_on_the_note(client, session_factory, with_acme):
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
 
     client.post("/imports-exports/statement/commit",
                 data={"ticker": "ACME", "payment_date": "2026-03-15",
