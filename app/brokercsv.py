@@ -207,7 +207,7 @@ def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
                     continue
                 when, clock = parse_when(row[col["date"]], fmt.date_format)
                 if clock and fmt.times_zone:
-                    clock = to_market(clock, when, fmt.times_zone, fmt.exchange)
+                    when, clock = to_market(clock, when, fmt.times_zone, fmt.exchange)
                 clock, moved = in_trading_hours(clock, fmt.exchange)
                 result.adjusted += moved
                 units = _num(row[col["units"]], Trade.quantity, "Units")

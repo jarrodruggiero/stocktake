@@ -440,6 +440,30 @@ def test_an_export_stamped_in_another_zone_is_read_on_the_exchanges_clock():
     assert result.candidates[0].time == dt.time(10, 30)
 
 
+@pytest.mark.parametrize(("stamped", "exchange", "zone", "on_the_market"), [
+    # US hours are the small hours of the next day in Sydney: a NASDAQ buy at
+    # 09:45 New York on Wednesday 14 January is 01:45 on Thursday there.
+    ("15/01/2026 01:45:00", "NASDAQ", "Australia/Sydney",
+     (dt.date(2026, 1, 14), dt.time(9, 45))),
+    # And the ASX opens in the New York evening of the day before.
+    ("14/01/2026 18:30:00", "ASX", "America/New_York",
+     (dt.date(2026, 1, 15), dt.time(10, 30))),
+])
+def test_a_conversion_across_midnight_moves_the_date_too(stamped, exchange, zone,
+                                                        on_the_market):
+    """The test above converts Perth to Sydney, two hours on the same day.
+    The conversion this setting exists for crosses midnight, and converting
+    the time alone dated every such trade a day out: its rate, its close and
+    its place among that day's trades all from the wrong day."""
+    fmt = MAPPED.model_copy(update={"times_zone": zone, "exchange": exchange,
+                                    "currency": "AUD"})
+    result = _one("Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+                  f"{stamped},Buy,ACME,10,5.00,0\n", fmt)
+
+    candidate = result.candidates[0]
+    assert (candidate.date, candidate.time) == on_the_market
+
+
 def test_times_are_left_alone_when_no_zone_is_declared():
     """The default, and it must stay the default: a conversion applied to times
     that never needed one moves every trade by hours."""
