@@ -355,14 +355,14 @@ async def _quote_loop() -> None:
     """
     loop = asyncio.get_running_loop()
     await _await_database("live quotes")
-    interval = max(1, settings.price_feed.quote_interval_minutes) * 60
     while True:
         try:
             if await loop.run_in_executor(None, _should_poll_quotes):
                 await loop.run_in_executor(None, _run_quotes)
         except Exception:
             log.exception("quote loop iteration failed")
-        await asyncio.sleep(interval)
+        # Read each time round: the settings page applies it without a restart.
+        await asyncio.sleep(max(1, settings.price_feed.quote_interval_minutes) * 60)
 
 
 def refresh_quotes_soon() -> None:
@@ -405,9 +405,10 @@ async def _feed_loop() -> None:
     await _await_database("price feed")
     # Catch-up on boot (first deploy backfills to 2020), then daily at hh:mm.
     ok = await loop.run_in_executor(None, _run_feed)
-    tz = ZoneInfo(settings.price_feed.timezone)
+    # The schedule is read on every pass: the settings page applies it
+    # without a restart.
     while True:
-        now = dt.datetime.now(tz)
+        now = dt.datetime.now(ZoneInfo(settings.price_feed.timezone))
         target = now.replace(
             hour=settings.price_feed.hour, minute=settings.price_feed.minute,
             second=0, microsecond=0,
@@ -437,14 +438,14 @@ async def _maintenance_loop() -> None:
     """
     loop = asyncio.get_running_loop()
     await _await_database("maintenance")
-    tz = ZoneInfo(settings.price_feed.timezone or settings.timezone)
+    # The zone is read on every pass, like the feed's.
     while True:
         try:
             await loop.run_in_executor(
                 None, maintenance.run, SessionLocal, settings)
         except Exception:
             log.exception("maintenance run failed")
-        now = dt.datetime.now(tz)
+        now = dt.datetime.now(ZoneInfo(settings.price_feed.timezone or settings.timezone))
         target = _next_run(now, settings.maintenance.hour, settings.maintenance.minute)
         await asyncio.sleep((target - now).total_seconds())
 
