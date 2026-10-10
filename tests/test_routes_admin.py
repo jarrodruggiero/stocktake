@@ -668,3 +668,105 @@ def test_a_hostile_referer_cannot_turn_a_redirect_into_an_open_redirect(
 
         assert resp.status_code == 303, (path, referer)
         assert resp.headers["location"] == expected, (path, referer)
+
+
+# --------------------------------------------------------------------------- #
+# What only an instance admin may do, and that what they do takes effect
+# --------------------------------------------------------------------------- #
+# A mutation run removed `_require_admin` from adding, deactivating and
+# resetting accounts and from saving settings, and nothing failed: every test
+# of those routes signed in as an admin. It also removed the line that stores
+# a new password, from both the change and the reset: the tests checked the
+# redirect and the sign-outs, never that the new password works.
+
+def _accounts(session_factory) -> list:
+    with session_factory() as s:
+        return sorted((u.email, u.is_active, u.is_admin, u.password_hash, u.must_change_password)
+                      for u in s.scalars(select(User)))
+
+
+@pytest.mark.parametrize("method, path, data", [
+    ("get", "/users", None),
+    ("get", "/admin/accounts", None),
+    ("post", "/users/add", {"name": "New", "email": "new@example.test",
+                            "password": "a-long-enough-one"}),
+    ("post", "/users/{other}/active", {}),
+    ("post", "/users/{other}/reset", {"password": "a-long-enough-one"}),
+    ("post", "/admin/settings", {"timezone": "UTC"}),
+])
+def test_a_non_admin_cannot_manage_accounts_or_settings(client, session_factory, tmp_path,
+                                                        monkeypatch, method, path, data):
+    from app import configfile
+
+    conf = tmp_path / "config.yaml"
+    conf.write_text("timezone: Australia/Melbourne\n")
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(conf))
+    make_login(client, session_factory, admin=False)
+    token = csrf(session_factory)
+    with session_factory() as s:
+        other_id = fac.make_user(s, "other@example.test").id
+        s.commit()
+    before = _accounts(session_factory)
+    url = path.format(other=other_id)
+
+    resp = (client.get(url, headers=HTML) if method == "get" else
+            client.post(url, data={"_csrf": token, **data}, headers=HTML,
+                        follow_redirects=False))
+
+    assert resp.status_code == 403
+    assert _accounts(session_factory) == before
+    assert conf.read_text() == "timezone: Australia/Melbourne\n"
+
+
+def _signs_in(client, email: str, password: str) -> bool:
+    from test_routes import pre_auth_csrf
+
+    resp = client.post("/login", data={"email": email, "password": password,
+                                       "_csrf": pre_auth_csrf(client)},
+                       headers=HTML, follow_redirects=False)
+    return resp.status_code == 303 and "error" not in resp.headers.get("location", "")
+
+
+def test_a_changed_password_is_the_one_that_works(client, session_factory):
+    from fastapi.testclient import TestClient
+
+    make_login(client, session_factory)
+    client.post("/profile/password",
+                data={"current_password": PASSWORD, "password": "a-longer-new-one",
+                      "confirm": "a-longer-new-one", "_csrf": csrf(session_factory)},
+                headers=HTML, follow_redirects=False)
+
+    fresh = TestClient(client.app)
+    assert not _signs_in(fresh, "user@example.test", PASSWORD)
+    assert _signs_in(fresh, "user@example.test", "a-longer-new-one")
+
+
+def test_a_reset_password_is_the_one_that_works(client, session_factory):
+    from fastapi.testclient import TestClient
+
+    make_login(client, session_factory, admin=True)
+    token = csrf(session_factory)
+    with session_factory() as s:
+        other_id = fac.make_user(s, "other@example.test",
+                                 password_hash=auth_mod.hash_password(PASSWORD)).id
+        s.commit()
+
+    client.post(f"/users/{other_id}/reset",
+                data={"password": "a-fresh-temporary-one", "_csrf": token}, headers=HTML)
+
+    fresh = TestClient(client.app)
+    assert not _signs_in(fresh, "other@example.test", PASSWORD)
+    assert _signs_in(fresh, "other@example.test", "a-fresh-temporary-one")
+
+
+def test_a_new_account_has_recovery_codes_waiting(client, session_factory):
+    from app import twofactor
+
+    make_login(client, session_factory, admin=True)
+    client.post("/users/add", data={"name": "New", "email": "new@example.test",
+                                    "password": "a-long-enough-one",
+                                    "_csrf": csrf(session_factory)}, headers=HTML)
+
+    with session_factory() as s:
+        new = s.scalar(select(User).where(User.email == "new@example.test"))
+        assert twofactor.has_recovery_codes(s, new)
