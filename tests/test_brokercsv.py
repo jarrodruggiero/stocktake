@@ -793,3 +793,15 @@ def test_importing_into_a_removed_instrument_brings_it_back(pf):
     brokercsv.commit(pf, candidates, STRICT, "testbroker")
 
     assert pf.scalars(select(Instrument)).one().active is True
+
+
+def test_a_field_past_the_csv_modules_limit_is_an_error_not_a_crash():
+    """A file that is not a CSV at all, or one runaway quote: the csv module
+    refuses a field past 128 KiB from inside the reader, and the upload page
+    answered with a server error."""
+    result = brokercsv.parse_csv("Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+                                 + "x" * 200_000 + ",Buy,ACME,1,1.00,0\n", "b", MAPPED)
+
+    assert result.candidates == []
+    assert result.errors and "could not be read as a CSV" in result.errors[0]
+    assert "could not be read" in brokercsv.parse_csv("a" * 200_000, "b", MAPPED).errors[0]

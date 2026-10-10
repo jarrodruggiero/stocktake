@@ -816,3 +816,16 @@ def test_the_page_says_how_many_drp_rows_were_left_out(client, session_factory):
     page, _fmt = _second_pass(client, session_factory, body=body, act_DRP="drp")
 
     assert "1 DRP allotment(s) left out." in page.text
+
+
+def test_a_field_past_the_csv_modules_limit_is_a_sentence_on_the_page(client, session_factory):
+    """`read_csv` says it never raises; a 200 KiB field made it, and the
+    designer page with it."""
+    assert brokerdesign.read_csv("Date,Code\n" + "x" * 200_000 + ",A\n").problem == \
+        "This file could not be read as a CSV."
+
+    make_login(client, session_factory)
+    page = upload(client, session_factory, body="a" * 200_000)
+
+    assert page.status_code == 200
+    assert "This file could not be read as a CSV." in page.text

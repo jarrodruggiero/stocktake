@@ -174,6 +174,18 @@ def _check_trade_figures(units: Decimal, price: Decimal, brokerage: Decimal) -> 
 
 
 def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
+    """Every trade in an export, with an account of what was skipped.
+
+    A field past the csv module's size limit (128 KiB: a file that is not a
+    CSV at all, or one runaway quote) raises inside the reader, and was a
+    server error rather than a sentence about the file."""
+    try:
+        return _parse_csv(text, broker, fmt)
+    except csv.Error as exc:
+        return ParseResult(errors=[f"the file could not be read as a CSV ({exc})"])
+
+
+def _parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
     reader = csv.DictReader(io.StringIO(text))
     if reader.fieldnames is None:
         return ParseResult(errors=["empty file"])
