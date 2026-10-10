@@ -12,6 +12,8 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from app import configfile
 
@@ -143,6 +145,51 @@ def test_the_written_file_survives_the_loader_that_reads_it(config_file):
     reloaded = pyyaml.safe_load(config_file.read_text())
 
     assert reloaded["auth"]["oidc"]["provisioning"] == "off"
+
+
+# The test above tried "off". YAML 1.1 reads more than the boolean words as
+# something other than text: base 60 (a time, or an IPv6 address written out
+# in full), binary, numbers with underscores, the merge and value keys. Any of
+# them typed into a text setting, or a trusted proxy written out in full, came
+# back as a number, or as nothing the loader could build.
+AWKWARD = ["2001:0:0:0:0:0:0:1", "12:30", "1:20:30", "190:20:30.15", "0b1010", "1_000",
+           "1_000.5", "0x1F", "0o17", "017", "1.5", ".5", "1e3", "+12", "-7", "=", "<<",
+           "~", "null", "off", "Yes", "NO", "2026-01-05", "2026-01-05 10:00:00", ".inf",
+           ".NaN", "-.inf", "@home", "!tag", "&anchor", "*alias", "a: b", "- x", "#hash",
+           "x #y", "'q'", '"dq"', "%percent", "`tick", "|", ">", "?", "[1]", "{a: 1}",
+           "10.0.0.0/8", "::1", "fe80::1%eth0", "https://id.example.com/realms/home"]
+TEXT = [o for o in configfile.OPTIONS if o.kind == "text" and "timezone" not in o.path]
+LISTS = [o for o in configfile.OPTIONS if o.kind == "list"]
+typed = st.one_of(st.sampled_from(AWKWARD), st.text(
+    st.characters(blacklist_categories=("Cs", "Cc", "Zl", "Zp")), min_size=1, max_size=12))
+
+
+@given(option=st.sampled_from(TEXT), raw=typed)
+def test_any_text_saved_is_the_text_the_app_reads_back(config_file, option, raw):
+    import yaml as pyyaml  # what pydantic-settings reads with
+
+    value = configfile.coerce(option, raw)
+    config_file.write_text("auth:\n  oidc:\n    enabled: true\n")
+    configfile.save({option.name: value})
+
+    read = pyyaml.safe_load(config_file.read_text())
+    for key in option.path:
+        read = read[key]
+    assert read == value
+
+
+@given(option=st.sampled_from(LISTS), items=st.lists(typed, min_size=1, max_size=4))
+def test_any_list_saved_is_the_list_the_app_reads_back(config_file, option, items):
+    import yaml as pyyaml
+
+    value = configfile.coerce(option, "\n".join(items))
+    config_file.write_text("auth:\n  oidc:\n    enabled: true\n")
+    configfile.save({option.name: value})
+
+    read = pyyaml.safe_load(config_file.read_text())
+    for key in option.path:
+        read = read[key]
+    assert read == value
 
 
 def test_an_ordinary_string_is_left_alone(config_file):

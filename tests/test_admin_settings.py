@@ -485,3 +485,203 @@ def test_restart_is_offered_even_when_the_config_is_read_only(client, session_fa
 
     assert "Save settings" not in page.text   # nothing to save
     assert "Restart now" in page.text         # but restarting still makes sense
+
+
+# --------------------------------------------------------------------------- #
+# Saving the page as it is drawn
+# --------------------------------------------------------------------------- #
+# The tests above post the one field they are about. A browser posts every
+# field on the page, and the feed timezone's box showed the zone it was only
+# following: the first save, of anything, wrote that zone into the file, and a
+# new timezone after it left the daily run in the old one.
+
+def _as_sent(page: str) -> dict:
+    """What a browser submits for the settings form as drawn: every field,
+    a checkbox only when ticked, a list as its text."""
+    from html.parser import HTMLParser
+
+    class Form(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.fields, self.inside, self.text_of, self.select = {}, False, None, None
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            if tag == "form":
+                self.inside = a.get("action") == "/admin/settings"
+            if not self.inside or "disabled" in a:
+                return
+            if tag == "input" and a.get("name"):
+                if a.get("type") != "checkbox" or "checked" in a:
+                    self.fields[a["name"]] = a.get("value", "")
+            elif tag == "textarea":
+                self.text_of = a["name"]
+                self.fields[a["name"]] = ""
+            elif tag == "select":
+                self.select = a["name"]
+            elif tag == "option" and self.select and "selected" in a:
+                self.fields[self.select] = a["value"]
+
+        def handle_endtag(self, tag):
+            if tag == "form":
+                self.inside = False
+            elif tag == "textarea":
+                self.text_of = None
+            elif tag == "select":
+                self.select = None
+
+        def handle_data(self, data):
+            if self.text_of:
+                self.fields[self.text_of] += data
+
+    form = Form()
+    form.feed(page)
+    return form.fields
+
+
+@pytest.fixture
+def live_settings(monkeypatch, tmp_path):
+    """The running settings and the clock, put back afterwards: a save
+    applies every value to both."""
+    from app import clock
+    from app import main as main_mod
+
+    conf_dir = tmp_path / "config"
+    conf_dir.mkdir()
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(conf_dir / "config.yaml"))
+    monkeypatch.setattr(lifecycle, "request_stop", lambda reason: None)
+    live = main_mod.settings
+    before = live.model_copy(deep=True)
+    yield live, conf_dir / "config.yaml"
+    for name in type(live).model_fields:
+        setattr(live, name, getattr(before, name))
+    clock.configure(before.timezone)
+
+
+def _save_as_drawn(client, change: dict):
+    form = _as_sent(client.get("/admin/settings", headers={"accept": "text/html"}).text)
+    assert "timezone" in form and "price_feed.timezone" in form, "the form was not read"
+    form.update(change)
+    resp = client.post("/admin/settings", data=form, headers={"accept": "text/html"})
+    assert resp.status_code == 200 and "Settings saved" in resp.text
+
+
+def test_a_feed_timezone_left_to_follow_still_follows_after_a_save(client, session_factory,
+                                                                   live_settings):
+    from test_routes import make_login
+
+    live, path = live_settings
+    path.write_text(DOCUMENTED)                          # no feed timezone of its own
+    live.timezone = live.price_feed.timezone = "Australia/Melbourne"   # as loaded from it
+    make_login(client, session_factory, admin=True)
+
+    _save_as_drawn(client, {"auth.session_ttl_days": "14"})
+    _save_as_drawn(client, {"timezone": "Australia/Perth"})
+
+    assert live.price_feed.timezone == "Australia/Perth"
+    assert (configfile.load().get("price_feed") or {}).get("timezone") is None
+
+
+def test_a_feed_timezone_set_on_purpose_stays_set(client, session_factory, live_settings):
+    from test_routes import make_login
+
+    live, path = live_settings
+    path.write_text(DOCUMENTED.replace("  minute: 30\n", "  minute: 30\n  timezone: Asia/Tokyo\n"))
+    live.timezone, live.price_feed.timezone = "Australia/Melbourne", "Asia/Tokyo"
+    make_login(client, session_factory, admin=True)
+
+    _save_as_drawn(client, {"timezone": "Australia/Perth"})
+
+    assert live.price_feed.timezone == "Asia/Tokyo"
+    assert configfile.load()["price_feed"]["timezone"] == "Asia/Tokyo"
+
+
+def test_a_feed_timezone_from_the_environment_shows_as_set(live_settings, monkeypatch):
+    live, path = live_settings
+    path.write_text(DOCUMENTED)
+    monkeypatch.setenv("APP_PRICE_FEED__TIMEZONE", "Asia/Tokyo")
+    live.price_feed.timezone = "Asia/Tokyo"
+
+    assert configfile.shown(live, configfile.BY_NAME["price_feed.timezone"]) == "Asia/Tokyo"
+    monkeypatch.delenv("APP_PRICE_FEED__TIMEZONE")
+    assert configfile.shown(live, configfile.BY_NAME["price_feed.timezone"]) is None
+
+
+# --------------------------------------------------------------------------- #
+# Reading a field, and writing the file: what a mutation run found unchecked
+# --------------------------------------------------------------------------- #
+
+def test_a_pasted_value_loses_the_spaces_around_it():
+    """An issuer pasted with a trailing space is not the issuer."""
+    assert configfile.coerce(option("auth.oidc.issuer"),
+                             "  https://id.example.com/realms/home \t") == \
+        "https://id.example.com/realms/home"
+
+
+@pytest.mark.parametrize("raw", ["on", "ON", "true", "True", "1", "yes", "Yes"])
+def test_every_way_of_saying_yes_is_yes(raw):
+    assert configfile.coerce(option("auth.cookie_secure"), raw) is True
+
+
+@pytest.mark.parametrize("opt", [o for o in configfile.OPTIONS if o.kind == "int"],
+                         ids=lambda o: o.name)
+def test_each_whole_number_takes_its_own_limits_and_nothing_past_them(opt):
+    assert configfile.coerce(opt, str(opt.minimum)) == opt.minimum
+    assert configfile.coerce(opt, str(opt.maximum)) == opt.maximum
+    with pytest.raises(ValueError, match="at least"):
+        configfile.coerce(opt, str(opt.minimum - 1))
+    with pytest.raises(ValueError, match="at most"):
+        configfile.coerce(opt, str(opt.maximum + 1))
+
+
+def test_a_list_is_one_entry_per_line_with_blank_lines_dropped():
+    assert configfile.coerce(option("auth.trusted_proxies"),
+                             " 10.0.0.0/8 \n\n  ::1\n \n") == ["10.0.0.0/8", "::1"]
+
+
+@pytest.mark.parametrize("opt", [o for o in configfile.OPTIONS if o.kind == "choice"],
+                         ids=lambda o: o.name)
+def test_every_offered_choice_is_accepted(opt):
+    for choice in opt.choices:
+        assert configfile.coerce(opt, choice) == choice
+
+
+def test_saving_into_an_empty_file_works(config_file):
+    config_file.write_text("")
+
+    configfile.save({"price_feed.hour": 9})
+
+    assert configfile.load() == {"price_feed": {"hour": 9}}
+
+
+def test_saving_under_a_section_left_empty_works(config_file):
+    """The shipped file leaves `oidc:` with every line under it commented
+    out, which YAML reads as nothing at all."""
+    config_file.write_text("auth:\n  oidc:\n    # enabled: true\n")
+
+    configfile.save({"auth.oidc.button_label": "Sign in with Home"})
+
+    assert configfile.load()["auth"]["oidc"]["button_label"] == "Sign in with Home"
+
+
+def test_a_save_changes_its_own_line_and_no_other(config_file):
+    """Quotes, list indentation and comments elsewhere are left as written,
+    so a save is a one-line diff."""
+    before = ("timezone: 'Australia/Melbourne'   # quoted on purpose\n"
+              "auth:\n"
+              "  trusted_proxies:\n"
+              "    - 10.0.0.0/8\n"
+              "    - \"192.168.0.0/16\"\n"
+              "  session_ttl_days: 30\n")
+    config_file.write_text(before)
+
+    configfile.save({"auth.session_ttl_days": 14})
+
+    assert config_file.read_text() == before.replace("session_ttl_days: 30",
+                                                     "session_ttl_days: 14")
+
+
+def test_no_file_at_all_reads_as_nothing_written(tmp_path, monkeypatch):
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(tmp_path / "absent.yaml"))
+
+    assert configfile.load() == {}

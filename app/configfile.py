@@ -289,6 +289,25 @@ def effective(settings, option: Option) -> Any:
     return value
 
 
+def shown(settings, option: Option) -> Any:
+    """The value the settings form shows: the one in use, except a feed
+    timezone nothing sets, which shows as the empty box that means "follow
+    the timezone above".
+
+    Shown filled, it was posted back with the rest of the form: the first save
+    of anything wrote the zone it was following into the file, and a new
+    timezone after that left the daily run in the old one.
+    """
+    if option.path == ("price_feed", "timezone") and not overridden_by_environment(option):
+        try:
+            follows = _dig(load(), option.path) is None
+        except OSError:
+            follows = False     # unreadable: show what is in use, as before
+        if follows:
+            return None
+    return effective(settings, option)
+
+
 def overridden_by_environment(option: Option) -> bool:
     """Whether an environment variable is winning over the file for this option.
 
@@ -518,10 +537,20 @@ _AMBIGUOUS = frozenset({
 
 
 def _quoted(value: Any) -> Any:
-    """A string that YAML 1.1 would misread, wrapped so it cannot be."""
+    """A string that YAML 1.1 would misread, wrapped so it cannot be.
+
+    The words above, and anything else PyYAML's own resolver takes for
+    something other than text: base 60 above all, where `12:30` is 750 and an
+    IPv6 address written out in full is a number, which a text setting then
+    refuses at boot.
+    """
     if not isinstance(value, str):
         return value
-    if value.strip().lower() in _AMBIGUOUS:
+    from yaml.nodes import ScalarNode  # noqa: PLC0415 - writer only
+    from yaml.resolver import Resolver  # noqa: PLC0415 - writer only
+
+    as_read = Resolver().resolve(ScalarNode, value, (True, False))
+    if value.strip().lower() in _AMBIGUOUS or as_read != "tag:yaml.org,2002:str":
         from ruamel.yaml.scalarstring import (  # noqa: PLC0415 - writer only
             SingleQuotedScalarString,
         )

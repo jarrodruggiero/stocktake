@@ -2759,7 +2759,7 @@ def _settings_context(saved: str = "", error: str = "", pending: list[str] | Non
     # scripting off; `console.js` tails from the last seq after that.
     values = {}
     for option in configfile.OPTIONS:
-        value = configfile.effective(settings, option)
+        value = configfile.shown(settings, option)
         # Lists reach the template as lists and are joined there; a date has to
         # be a string for `<input type="date">` to select it.
         values[option.name] = value.isoformat() if isinstance(value, dt.date) else value
