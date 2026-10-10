@@ -823,3 +823,67 @@ def test_a_figure_that_is_not_finite_or_does_not_fit_coerces_to_none(raw, type_)
     """`int(Decimal("Infinity"))` raised from outside the old `try`, and
     1E+999999 is finite but is Infinity once SQLite has stored it."""
     assert fmt.coerce(raw, type_) is None
+
+
+# --------------------------------------------------------------------------- #
+# Reading values and templates: edges a mutation run found unchecked
+# --------------------------------------------------------------------------- #
+
+def test_a_text_value_is_trimmed_and_a_blank_one_is_nothing():
+    assert fmt.coerce("  Alpha Index Fund  ", "text") == "Alpha Index Fund"
+    assert fmt.coerce("   ", "text") is None
+
+
+def test_a_date_with_spaces_around_it_still_reads():
+    assert fmt.coerce(" 15/03/2026 ", "date") == dt.date(2026, 3, 15)
+
+
+def test_a_field_given_only_its_labels_reads_text_and_one_without_labels_is_refused():
+    template = fmt.parse_statement_template("mine", (
+        "fields:\n"
+        "  payment_date:\n"
+        "    after: ['paid on']\n"))
+
+    assert template.name == "mine"                      # no name: its key
+    assert template.fields["payment_date"].type == "text"
+    assert template.match_any == [] and template.rows is None
+    with pytest.raises(fmt.TemplateError, match="at least one `after` label"):
+        fmt.parse_statement_template("mine", "fields:\n  net_amount:\n    type: money\n")
+
+
+def test_a_broker_format_without_a_kind_is_passed_over(tmp_path):
+    (tmp_path / "nokind.yaml").write_text("name: No kind\nexchange: ASX\n")
+    (tmp_path / "mine.yaml").write_text("name: Mine\nkind: mapped\nexchange: ASX\n")
+
+    formats = fmt.load_broker_formats(extra_dir=tmp_path)
+
+    assert "mine" in formats and "nokind" not in formats
+    assert "name" not in formats["mine"]                # documentation, not format
+
+
+def test_a_label_is_at_most_four_words():
+    tokens = fmt.tokenize("total net cash amount paid 104.70")
+    index = next(t.index for t in tokens if t.text == "104.70")
+
+    labels = fmt.infer_labels(tokens, index)
+
+    assert labels[0] == "net cash amount paid"
+    assert labels == ["net cash amount paid", "cash amount paid", "amount paid", "paid"]
+
+
+def test_a_written_date_never_borrows_a_day_from_the_line_above():
+    """"12" ends one line and "March 2026" starts the next: clicking March is
+    not the 12th of March."""
+    tokens = fmt.tokenize("Reference 12\nMarch 2026 paid")
+    march = next(t.index for t in tokens if t.text == "March")
+
+    start, type_, span = fmt._value_start(tokens, march)
+
+    assert (start, span) == (march, 1) and type_ != "date"
+
+
+def test_an_abbreviated_month_is_one_written_date():
+    tokens = fmt.tokenize("Paid 15 Sep 2026")
+    day = next(t.index for t in tokens if t.text == "15")
+
+    assert fmt.infer_type(tokens, day) == ("date", 3)
