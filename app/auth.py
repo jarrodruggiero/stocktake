@@ -681,10 +681,10 @@ def key_reach(db: DbSession, key: ApiKey) -> list[tuple[Portfolio, str | None]]:
 
 @dataclass
 class ApiAccess:
-    """What one API request is acting on, and whether it may write there."""
+    """What one API request is acting on. A write it may not make never gets
+    this far: `api_session` refuses it."""
     key: ApiKey
     portfolio_id: int | None   # None only where no portfolio is chosen
-    can_write: bool
 
 
 def _chosen_portfolio(request: Request, reach: list[tuple[Portfolio, str | None]]) -> int:
@@ -735,7 +735,7 @@ def api_session(request: Request, write: bool = False,
                 401, "the person who created this key no longer has an active account, "
                      "so the key has stopped working"
             )
-        access = ApiAccess(key=key, portfolio_id=None, can_write=False)
+        access = ApiAccess(key=key, portfolio_id=None)
         if choose:
             reach = key_reach(db, key)
             portfolio_id = _chosen_portfolio(request, reach)
@@ -751,8 +751,7 @@ def api_session(request: Request, write: bool = False,
                     403, "the person who created this key can no longer write to this "
                          "portfolio, so the key is read-only here")
             tenancy.bind(db, portfolio_id, key.created_by)
-            access = ApiAccess(key=key, portfolio_id=portfolio_id,
-                               can_write=key.can_write and role in WRITE_ROLES)
+            access = ApiAccess(key=key, portfolio_id=portfolio_id)
         yield access, db
         db.commit()
     except Exception:
