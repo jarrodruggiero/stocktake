@@ -97,6 +97,19 @@ def test_indices_continue_across_pages():
     assert [b.index for b in boxes] == [5, 6, 7, 8, 9]
 
 
+def test_a_two_page_session_numbers_page_two_after_page_one(store, monkeypatch, app_module):
+    """The test above hands `boxes_for` the right start; this is the caller
+    keeping count. Dropping the running total passed: every click on page two
+    mapped to a word on page one."""
+    fake_render(monkeypatch, pages=2)
+
+    token = pagemap.create(app_module.settings, user_id=1, data=b"%PDF")
+    session = pagemap.load(app_module.settings, token, user_id=1)
+
+    indices = [[b["index"] for b in page["boxes"]] for page in session.pages]
+    assert indices == [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]
+
+
 def test_boxes_are_percentages_of_the_page():
     """Not pixels. The image is shown at whatever width the screen allows, and
     a box positioned in pixels drifts off its word the moment the page is
