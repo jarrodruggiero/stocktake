@@ -722,7 +722,8 @@ def test_a_corrected_ticker_moves_every_row_of_it_and_then_commits(client, sessi
 
 
 def test_a_corrected_exchange_finds_the_listing_there(client, session_factory, with_acme):
-    """The same code on two exchanges: ACME is listed on the NASDAQ too."""
+    """The same code on two exchanges: ACME is listed on the NASDAQ too. The
+    exchange is a text box, so it is typed as it comes: lower case, spaced."""
     _holding_acme(client, session_factory)
     with session_factory() as s:
         fac.make_instrument(s, "ACMEE", exchange="NASDAQ", currency="USD")
@@ -730,7 +731,7 @@ def test_a_corrected_exchange_finds_the_listing_there(client, session_factory, w
     uid = resolve_id(upload_csv(client, session_factory, payload=TYPO_CSV))
 
     page = _resolve(client, session_factory, uid,
-                    **{"ticker__ACMEE__ASX": "ACMEE", "exchange__ACMEE__ASX": "NASDAQ"})
+                    **{"ticker__ACMEE__ASX": "ACMEE", "exchange__ACMEE__ASX": " nasdaq "})
 
     assert staged_id(page) == uid
     staged = json.loads((STAGING / f"{uid}.json").read_text())

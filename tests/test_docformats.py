@@ -343,6 +343,7 @@ def test_one_broken_template_does_not_stop_the_others(tmp_path, caplog):
 
     assert "fine" in keys
     assert "broken" not in keys
+    assert "ignoring statement template broken.yaml" in caplog.text
 
 
 # --------------------------------------------------------------------------- #
@@ -851,7 +852,9 @@ def test_a_field_given_only_its_labels_reads_text_and_one_without_labels_is_refu
         fmt.parse_statement_template("mine", "fields:\n  net_amount:\n    type: money\n")
 
 
-def test_a_broker_format_without_a_kind_is_passed_over(tmp_path):
+def test_a_broker_format_without_a_kind_is_passed_over(tmp_path, caplog):
+    """Passed over, and the log says why: it is the only place a format that
+    never reaches the imports page explains itself."""
     (tmp_path / "nokind.yaml").write_text("name: No kind\nexchange: ASX\n")
     (tmp_path / "mine.yaml").write_text("name: Mine\nkind: mapped\nexchange: ASX\n")
 
@@ -859,6 +862,7 @@ def test_a_broker_format_without_a_kind_is_passed_over(tmp_path):
 
     assert "mine" in formats and "nokind" not in formats
     assert "name" not in formats["mine"]                # documentation, not format
+    assert "ignoring broker format nokind.yaml: a broker format needs a `kind`" in caplog.text
 
 
 def test_a_label_is_at_most_four_words():
