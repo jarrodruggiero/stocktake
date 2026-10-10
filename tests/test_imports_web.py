@@ -661,3 +661,108 @@ def test_a_foreign_holdings_statement_waits_for_its_rate(client, session_factory
 
     (dividend,), (trade,) = _recorded(session_factory)
     assert dividend.fx_rate == rate and trade.fx_rate == rate
+
+
+# --------------------------------------------------------------------------- #
+# Correcting a ticker before committing — a route no test sent
+# --------------------------------------------------------------------------- #
+
+TYPO_CSV = ("Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+            "06/01/2025,Buy,ACMEE,100,5.00,9.50\n"
+            "07/02/2025,Buy,ACMEE,50,6.00,9.50\n").encode()
+
+
+def resolve_id(response) -> str:
+    import re
+
+    match = re.search(r"/imports-exports/csv/([0-9a-f-]{36})/resolve", response.text)
+    assert match, "no correction form on the preview page"
+    return match.group(1)
+
+
+def _resolve(client, session_factory, uid, **fields):
+    return client.post(f"/imports-exports/csv/{uid}/resolve",
+                       data={"_csrf": session_csrf(session_factory), **fields}, headers=HTML)
+
+
+def test_a_corrected_ticker_moves_every_row_of_it_and_then_commits(client, session_factory,
+                                                                   with_acme):
+    _holding_acme(client, session_factory)
+    uid = resolve_id(upload_csv(client, session_factory, payload=TYPO_CSV))
+
+    page = _resolve(client, session_factory, uid,
+                    **{"ticker__ACMEE__ASX": " acme ", "exchange__ACMEE__ASX": "asx"})
+
+    assert page.status_code == 200
+    assert "Rechecked against your instruments." not in page.text   # nothing left to fix
+    assert staged_id(page) == uid
+    client.post(f"/imports-exports/csv/{uid}/commit",
+                data={"_csrf": session_csrf(session_factory)}, headers=HTML)
+    with reading(session_factory) as s:
+        trades = s.scalars(select(Trade).order_by(Trade.date)).all()
+        tickers = {s.get(Instrument, t.instrument_id).ticker for t in trades}
+    assert [t.quantity for t in trades] == [100, 50] and tickers == {"ACME"}
+
+
+def test_a_corrected_exchange_finds_the_listing_there(client, session_factory, with_acme):
+    """The same code on two exchanges: ACME is listed on the NASDAQ too."""
+    _holding_acme(client, session_factory)
+    with session_factory() as s:
+        fac.make_instrument(s, "ACMEE", exchange="NASDAQ", currency="USD")
+        s.commit()
+    uid = resolve_id(upload_csv(client, session_factory, payload=TYPO_CSV))
+
+    page = _resolve(client, session_factory, uid,
+                    **{"ticker__ACMEE__ASX": "ACMEE", "exchange__ACMEE__ASX": "NASDAQ"})
+
+    assert staged_id(page) == uid
+    staged = json.loads((STAGING / f"{uid}.json").read_text())
+    assert {(r["ticker"], r["exchange"]) for r in staged["rows"]} == {("ACMEE", "NASDAQ")}
+
+
+@pytest.mark.parametrize("fields", [
+    {"ticker__ACMEE__ASX": "", "exchange__ACMEE__ASX": "ASX"},
+    {"ticker__ACMEE__ASX": "ACME", "exchange__ACMEE__ASX": ""},
+    {"ticker__NOPE__ASX": "ACME", "exchange__NOPE__ASX": "ASX"},
+])
+def test_a_correction_without_both_halves_moves_nothing(client, session_factory, with_acme,
+                                                        fields):
+    _holding_acme(client, session_factory)
+    uid = resolve_id(upload_csv(client, session_factory, payload=TYPO_CSV))
+
+    page = _resolve(client, session_factory, uid, **fields)
+
+    assert resolve_id(page) == uid                     # still to be fixed
+    assert "Rechecked against your instruments." in page.text
+    staged = json.loads((STAGING / f"{uid}.json").read_text())
+    assert {r["ticker"] for r in staged["rows"]} == {"ACMEE"}
+
+
+def test_only_the_uploader_can_correct_their_upload(client, session_factory, with_acme):
+    make_login(client, session_factory, email="first@example.test", admin=True)
+    uid = resolve_id(upload_csv(client, session_factory, payload=TYPO_CSV))
+    with session_factory() as s:
+        other = fac.make_user(s, "second@example.test",
+                              password_hash=auth_mod.hash_password(PASSWORD))
+        fac.make_portfolio(s, "Their portfolio", owner=other)
+        s.commit()
+    client.cookies.clear()
+    from test_routes import pre_auth_csrf
+    token = pre_auth_csrf(client)
+    client.post("/login", data={"email": "second@example.test", "password": PASSWORD,
+                                "_csrf": token}, headers=HTML)
+
+    resp = _resolve(client, session_factory, uid,
+                    **{"ticker__ACMEE__ASX": "ACME", "exchange__ACMEE__ASX": "ASX"})
+
+    assert resp.status_code == 403
+    staged = json.loads((STAGING / f"{uid}.json").read_text())
+    assert {r["ticker"] for r in staged["rows"]} == {"ACMEE"}
+
+
+def test_a_correction_to_an_unknown_or_expired_upload_is_refused(client, session_factory):
+    make_login(client, session_factory)
+
+    assert _resolve(client, session_factory, "not-a-uuid").status_code == 400
+    assert _resolve(client, session_factory, "0" * 8 + "-0000-0000-0000-" + "0" * 12
+                    ).status_code == 404
