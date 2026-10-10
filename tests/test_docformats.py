@@ -887,3 +887,45 @@ def test_an_abbreviated_month_is_one_written_date():
     day = next(t.index for t in tokens if t.text == "15")
 
     assert fmt.infer_type(tokens, day) == ("date", 3)
+
+
+def test_a_designed_template_with_no_name_or_blank_markers_still_exports(client,
+                                                                          session_factory):
+    """No name is "My registry", and the marker box's blank lines and spaces
+    are not markers: a blank one would have matched every document."""
+    import json
+
+    from ruamel.yaml import YAML
+
+    from test_routes import make_login, session_csrf
+
+    make_login(client, session_factory)
+    mapping = {"net_amount": {"after": ["net amount paid"], "type": "money"}}
+
+    resp = client.post("/imports-exports/statement/design/export",
+                       data={"name": "   ", "mapping": json.dumps(mapping),
+                             "marker": "  ACME REGISTRY \n\n   \n Distribution Advice",
+                             "_csrf": session_csrf(session_factory)})
+
+    loaded = YAML(typ="safe").load(resp.text)
+    assert loaded["name"] == "My registry"
+    assert loaded["match"]["any_of"] == ["ACME REGISTRY", "Distribution Advice"]
+    assert 'filename="template.yaml"' in resp.headers["content-disposition"]
+
+
+@pytest.mark.parametrize("mapping", [
+    {"net_amount": {"after": ["net amount"], "type": "colour"}},
+    {"net_amount": {"after": ["net amount", 7], "type": "money"}},
+])
+def test_a_mapping_the_designer_never_sends_is_refused(client, session_factory, mapping):
+    import json
+
+    from test_routes import make_login, session_csrf
+
+    make_login(client, session_factory)
+
+    resp = client.post("/imports-exports/statement/design/export",
+                       data={"name": "X", "mapping": json.dumps(mapping), "marker": "",
+                             "_csrf": session_csrf(session_factory)})
+
+    assert resp.status_code == 400

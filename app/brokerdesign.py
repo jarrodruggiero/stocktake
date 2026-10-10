@@ -98,15 +98,19 @@ def read_csv(text: str) -> ReadCsv:
     # invisibly different from what it looks like on screen.
     text = text.lstrip("﻿")
     reader = csv.DictReader(io.StringIO(text))
-    if not reader.fieldnames:
-        return ReadCsv(problem="This file has no header row — is it a CSV?")
-    headers = [h.strip() for h in reader.fieldnames if h is not None]
+    try:
+        if not reader.fieldnames:
+            return ReadCsv(problem="This file has no header row — is it a CSV?")
+        headers = [h.strip() for h in reader.fieldnames if h is not None]
 
-    rows = []
-    for row in reader:
-        rows.append({(k.strip() if k else k): v for k, v in row.items()})
-        if len(rows) >= SAMPLE_ROWS:
-            break
+        rows = []
+        for row in reader:
+            rows.append({(k.strip() if k else k): v for k, v in row.items()})
+            if len(rows) >= SAMPLE_ROWS:
+                break
+    except csv.Error:
+        # A field past the csv module's 128 KiB limit raises in the reader.
+        return ReadCsv(problem="This file could not be read as a CSV.")
     if not rows:
         return ReadCsv(headers=headers,
                        problem="This file has a header row and no data rows, so "
