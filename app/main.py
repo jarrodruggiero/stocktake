@@ -4514,8 +4514,10 @@ async def trade_create(
 
             # "new" means the fields below the picker were filled in: create the
             # instrument and record the trade in one go, rather than sending someone
-            # to another page and losing what they typed.
-            if instrument_id == "new":
+            # to another page and losing what they typed. Nothing is written until
+            # the trade is accepted, so a refused one adds no instrument either.
+            adding = instrument_id == "new"
+            if adding:
                 ticker = new_ticker.strip().upper()
                 typed_currency = new_currency.strip().upper()
                 problem = (ticker_problem(ticker) or exchange_problem(new_exchange or "ASX")
@@ -4536,12 +4538,7 @@ async def trade_create(
                     # for the "new" one, its class above all, with nothing
                     # said; the form switches to it before getting this far.
                     return _reject(f"{ticker} is already recorded. Pick it from the list.")
-                if inst is not None:
-                    # Not in this portfolio's list — another portfolio added
-                    # it, or it was removed — so this is how it is added here:
-                    # the shared row, with its history and its class.
-                    inst.active = True
-                else:
+                if inst is None:
                     if new_asset_class not in ("etf", "share", "crypto"):
                         return _reject("Pick an asset class for the new instrument.")
                     # No call to the provider here: the form asked it as the
@@ -4558,16 +4555,6 @@ async def trade_create(
                         yahoo_symbol=new_yahoo.strip()
                         or pricefeed.yahoo_symbol_for(ticker, exchange),
                     )
-                    db.add(inst)
-                    db.flush()
-                if queries.prefs_by_instrument(db).get(inst.id) is None:
-                    db.add(
-                        tenancy.owned(
-                            db, HoldingPref(instrument_id=inst.id, drp=bool(new_drp))
-                        )
-                    )
-                db.flush()
-                _kick_feed()  # its price history arrives with the next run
             else:
                 try:
                     wanted = int(instrument_id)
@@ -4584,7 +4571,6 @@ async def trade_create(
             trade = tenancy.owned(
                 db,
                 Trade(
-                    instrument_id=inst.id,
                     date=date,
                     time=when,
                     type=type,
@@ -4597,11 +4583,26 @@ async def trade_create(
                     note=note_text,
                 ),
             )
+            # An instrument being added has no trades here yet, so this walks
+            # the new trade alone.
             problem = _breach(db, inst, trade)
             if problem:
                 return _reject(problem)
+            if adding:
+                # Not in this portfolio's list: new, or another portfolio added
+                # it, or it was removed. A shared row comes back with its
+                # history and its class.
+                inst.active = True
+                db.add(inst)
+                db.flush()
+                if queries.prefs_by_instrument(db).get(inst.id) is None:
+                    db.add(tenancy.owned(
+                        db, HoldingPref(instrument_id=inst.id, drp=bool(new_drp))))
+            trade.instrument_id = inst.id
             db.add(trade)
             db.flush()
+            if adding:
+                _kick_feed()  # its price history arrives with the next run
             target = f"/holding/{inst.ticker}"
         if owned:
             submissions.finish(owned, target)

@@ -107,16 +107,18 @@ def test_an_existing_instrument_does_not_kick_the_feed(client, session_factory, 
     with session_factory() as s:
         bind_to_only_portfolio(s)
         acme = fac.make_instrument(s, "ACME", asset_class="share")
+        fac.hold(s, acme)
         s.commit()
         acme_id = acme.id
 
-    client.post("/trade/new",
-                data={"instrument_id": str(acme_id), "type": "buy",
-                      "trade_date": "2026-07-01", "quantity": "10",
-                      "unit_price": "4.00", "brokerage": "0",
-                      "_csrf": session_csrf(session_factory)},
-                headers=HTML, follow_redirects=False)
+    resp = client.post("/trade/new",
+                       data={"instrument_id": str(acme_id), "type": "buy",
+                             "trade_date": "2026-07-01", "quantity": "10",
+                             "unit_price": "4.00", "brokerage": "0",
+                             "_csrf": session_csrf(session_factory)},
+                       headers=HTML, follow_redirects=False)
 
+    assert resp.status_code == 303, "recorded, so the absence of a kick means something"
     assert kicks == []
 
 
