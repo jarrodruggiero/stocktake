@@ -123,3 +123,77 @@ def test_optional_settings_accept_being_left_empty():
     for option in configfile.OPTIONS:
         if option.optional:
             assert configfile.coerce(option, "") in (None, [])
+
+
+# --------------------------------------------------------------------------- #
+# The defaults the shipped config.yaml writes down
+# --------------------------------------------------------------------------- #
+# config.yaml documents each setting with its default commented out, and the
+# pull request template asks for exactly that. Nothing compared the two: a
+# mutation run changed every default (15 minutes to 16, 3 a.m. to 4) and no
+# test failed, while the file went on telling people the old value.
+
+# Commented lines that show something to copy rather than the default, and why.
+EXAMPLES: dict[str, str] = {
+    "database.host": "Where a Postgres server might be; the default suits one cluster.",
+    "database.name": "An example name; the default is empty, which the wizard asks for.",
+    "database.user": "As above.",
+    "price_feed.timezone": "Unset follows the top-level timezone; the line shows a zone.",
+    "auth.webauthn.rp_id": "The install's own domain; unset uses the request's.",
+    "auth.webauthn.rp_name": "As above, for the name a passkey prompt shows.",
+    "auth.oidc.issuer": "The provider's address, which only the operator knows.",
+    "auth.oidc.client_id": "As above.",
+    "auth.oidc.client_secret": "As above, and a credential.",
+    "auth.oidc.redirect_uri": "As above.",
+}
+
+
+def _documented_defaults() -> dict[str, object]:
+    """Every commented `key: value` line in config.yaml, by dotted path.
+
+    A commented line's depth is where its key starts once the `# ` is taken
+    off, so `#   window_minutes: 15` under `# rate_limit:` under `auth:` is
+    auth.rate_limit.window_minutes. Prose comments do not start with a
+    lower-case key and a colon, so they are passed over."""
+    import re
+    from pathlib import Path
+
+    import yaml
+
+    text = (Path(__file__).resolve().parent.parent / "config.yaml").read_text()
+    stack: list[tuple[int, str]] = []
+    out: dict[str, object] = {}
+    line = re.compile(r"^(\s*)(#\s)?(\s*)([a-z_][a-z0-9_]*):(?:\s+(.*?))?(?:\s+#.*)?$")
+    for raw in text.splitlines():
+        found = line.match(raw)
+        if not found:
+            continue
+        lead, hashed, extra, key, value = found.groups()
+        depth = len(lead) + (len(extra) if hashed else 0)
+        while stack and stack[-1][0] >= depth:
+            stack.pop()
+        if not value:
+            stack.append((depth, key))
+            continue
+        if hashed:
+            out[".".join([k for _, k in stack] + [key])] = yaml.safe_load(value)
+    return out
+
+
+def test_every_default_config_yaml_writes_down_is_the_default():
+    defaults = PortfolioSettings.model_construct()
+    compared = 0
+    for dotted, written in _documented_defaults().items():
+        value = defaults
+        for part in dotted.split("."):
+            value = getattr(value, part, KeyError)
+        if value is KeyError or dotted in EXAMPLES:
+            continue
+        compared += 1
+        assert value == written, f"config.yaml says {dotted}: {written!r}; the default is {value!r}"
+    assert compared >= 30, "the sweep found too few documented defaults to mean anything"
+
+
+def test_every_example_in_the_list_is_still_in_the_file():
+    stale = sorted(set(EXAMPLES) - set(_documented_defaults()))
+    assert not stale, f"EXAMPLES names lines config.yaml no longer has: {stale}"
