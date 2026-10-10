@@ -176,6 +176,24 @@ def test_non_trade_rows_are_skipped():
     assert len(result.skipped) == 1
 
 
+@pytest.mark.parametrize("fmt, header, row", [
+    (MAPPED, "Units, Code, Trade Date, Buy/Sell, Price, Brokerage",
+     "100, ACME, 06/01/2025, Buy, 5.00, 9.50"),
+    (COMMSEC, "Date, Reference, Details, Debit($), Credit($), Balance($)",
+     "06/01/2025, N123, B 100 ACME @ 5.000000, 509.50, , 0.00"),
+], ids=["mapped", "commsec"])
+def test_a_header_spaced_after_its_commas_reads_like_one_that_is_not(fmt, header, row):
+    """The broker designer reads "Trade Date, Buy/Sell" as the columns it
+    names, so the format it writes uses the names without the spaces. The
+    import checked the header the same way but read each row by the spaced
+    names: every mapped row failed, and every CommSec row was skipped."""
+    result = brokercsv.parse_csv(f"{header}\n{row}\n", "testbroker", fmt)
+
+    assert (result.errors, result.skipped) == ([], [])
+    assert [(c.ticker, c.quantity, c.unit_price, c.brokerage) for c in result.candidates] == [
+        ("ACME", Decimal(100), Decimal("5.00"), Decimal("9.50"))]
+
+
 def test_an_implausible_brokerage_is_refused():
     """A cash figure that cannot be explained by brokerage means the row was
     misread — importing it would silently corrupt the cost base."""
@@ -205,10 +223,43 @@ def test_a_brokerage_just_inside_the_bound_is_accepted():
     assert result.candidates[0].brokerage == Decimal("100.00")
 
 
-def test_the_wrong_header_shape_is_rejected():
-    result = brokercsv.parse_csv("Foo,Bar\n1,2\n", "commsec", COMMSEC)
+@pytest.mark.parametrize("details, debit, refused_at", [
+    ("B 10 WIDGET @ 20.000000", "300.00", None),           # $100 on $200: the floor is the bound
+    ("B 100 WIDGET @ 50.000000", "5500.00", None),         # $500 on $5,000: a tenth is
+    ("B 100 WIDGET @ 50.000000", "5500.01", "500.010000"),
+    ("B 50 WIDGET @ 20.000000", "990.00", "-10.000000"),   # less than the shares cost
+])
+def test_brokerage_is_plausible_up_to_100_or_a_tenth_of_the_trade(details, debit, refused_at):
+    """The bound is the larger of the two. Every other test sits on a $1,000
+    trade, where they are equal, so either could have been dropped."""
+    result = brokercsv.parse_csv(
+        "Date,Reference,Details,Debit($),Credit($),Balance($)\n"
+        f"06/01/2025,N123,{details},{debit},,0.00\n", "commsec", COMMSEC)
 
-    assert "transactions export header" in result.errors[0]
+    if refused_at is None:
+        assert (len(result.candidates), result.errors) == (1, [])
+    else:
+        assert result.candidates == [] and len(result.errors) == 1
+        assert result.errors[0].startswith(f"line 2: implausible brokerage {refused_at} from")
+
+
+@pytest.mark.parametrize("header", ["Foo,Bar",
+                                    "Date,Reference,Details,Credit($),Balance($)",
+                                    "Date,Reference,Debit($),Credit($),Balance($)"])
+def test_the_wrong_header_shape_is_rejected(header):
+    """Either of the two columns the layout reads, missing, is the wrong export."""
+    result = brokercsv.parse_csv(f"{header}\n06/01/2025,1,2,3,4\n", "commsec", COMMSEC)
+
+    assert len(result.errors) == 1 and "transactions export header" in result.errors[0]
+
+
+def test_a_commsec_row_for_no_units_is_refused_as_the_trade_form_would():
+    result = brokercsv.parse_csv(
+        "Date,Reference,Details,Debit($),Credit($),Balance($)\n"
+        "06/01/2025,N123,B 0 WIDGET @ 20.000000,9.50,,0.00\n", "commsec", COMMSEC)
+
+    assert result.candidates == []
+    assert result.errors[0].startswith("line 2: Units")
 
 
 # --------------------------------------------------------------------------- #
@@ -304,6 +355,7 @@ def test_with_creation_allowed_the_instrument_is_created(pf, exchange, symbol):
     candidates = [_candidate(ticker="NOVA")]
     candidates[0].exchange = exchange
     brokercsv.annotate(pf, candidates, PERMISSIVE)
+    assert candidates[0].detail == "will be created"
 
     counts = brokercsv.commit(pf, candidates, PERMISSIVE, "testbroker")
 
@@ -335,9 +387,9 @@ def test_a_non_aud_trade_leaves_the_rate_for_the_feed_to_fill(pf):
 def test_a_candidate_survives_the_staging_file_unchanged():
     """Between preview and commit a candidate is written to JSON and read back.
     A lossy round-trip here would silently alter what gets imported — Decimals
-    are the risk, so check them to the last place."""
+    are the risk, so check them to the last place, and the time with them."""
     original = brokercsv.CandidateTrade(
-        date=fac.d("2025-01-06"), ticker="ACME", type="buy",
+        date=fac.d("2025-01-06"), time=dt.time(14, 5), ticker="ACME", type="buy",
         quantity=Decimal("12.34567890"), unit_price=Decimal("1234.567890"),
         brokerage=Decimal("9.50"), currency="AUD", exchange="ASX",
         status="new", detail="something")
@@ -411,6 +463,74 @@ def test_moving_a_time_is_reported_but_the_open_is_not():
         "08/01/2025 14:00:00,Buy,ACME,100,5.00,9.50\n"
     )
     assert result.adjusted == 1
+
+
+@pytest.mark.parametrize("exchange, clock, kept", [
+    ("ASX", dt.time(9, 59), (None, True)),             # before the open: booked at it, and said so
+    ("ASX", dt.time(16, 0), (dt.time(16, 0), False)),  # the close is still inside the session
+    ("ASX", dt.time(16, 1), (dt.time(16, 0), True)),
+    ("LSE", dt.time(3, 0), (dt.time(3, 0), False)),    # no hours known: taken as given
+])
+def test_a_time_is_kept_to_its_exchanges_session(exchange, clock, kept):
+    """A broker format names its exchange freely, so one with no known hours
+    is as likely as a time outside them."""
+    assert brokercsv.in_trading_hours(clock, exchange) == kept
+
+
+def test_an_action_word_mapped_to_no_trade_type_is_not_one():
+    """A format's action words are free text: one mapped to anything but buy,
+    sell or drp skips its rows instead of recording a trade of that type."""
+    assert brokercsv.trade_type("Transfer", {"Transfer": "transfer"}) is None
+
+
+def test_a_row_is_committed_to_its_own_instrument(pf):
+    """Every other commit test has one instrument, the first one there is."""
+    fac.make_instrument(pf, "ACME")
+    beta = fac.make_instrument(pf, "BETA")
+    pf.commit()
+    candidates = [_candidate(ticker="BETA")]
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    brokercsv.commit(pf, candidates, STRICT, "testbroker")
+
+    assert pf.scalars(select(Trade)).one().instrument_id == beta.id
+
+
+def test_a_date_with_no_time_is_not_converted_from_another_zone():
+    """Midnight pads a date rather than stating a time, so a format that reads
+    its times in the account holder's zone has nothing to convert."""
+    fmt = MAPPED.model_copy(update={"times_zone": "America/New_York"})
+    result = _one(
+        "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+        "06/01/2025 00:00:00,Buy,ACME,100,5.00,9.50\n", fmt)
+
+    assert (result.candidates[0].date, result.candidates[0].time) == (dt.date(2025, 1, 6), None)
+
+
+def test_a_time_from_the_export_is_committed_with_the_trade(pf):
+    """Unset means the open; a time the export carried orders the day."""
+    fac.make_instrument(pf, "ACME")
+    pf.commit()
+    candidate = _candidate()
+    candidate.time = dt.time(14, 5)
+    brokercsv.annotate(pf, [candidate], STRICT)
+
+    brokercsv.commit(pf, [candidate], STRICT, "testbroker")
+
+    assert pf.scalars(select(Trade)).one().time == dt.time(14, 5)
+
+
+@pytest.mark.parametrize("ticker, exchange", [("NO TICKER", "ASX"), ("NOVA", "NOT AN EXCHANGE")])
+def test_a_malformed_listing_is_never_created_from_a_file(pf, ticker, exchange):
+    """Creation allowed, a file is still arbitrary input: a ticker or an
+    exchange the trade form would refuse does not become an instrument."""
+    candidate = _candidate(ticker=ticker)
+    candidate.exchange = exchange
+    brokercsv.annotate(pf, [candidate], PERMISSIVE)
+
+    with pytest.raises(ValueError, match=f"got '{ticker}' on '{exchange}'"):
+        brokercsv.commit(pf, [candidate], PERMISSIVE, "testbroker")
+    assert pf.scalars(select(Instrument)).all() == []
 
 
 def test_a_market_that_never_closes_keeps_the_time_it_was_given():
@@ -568,17 +688,19 @@ def test_the_builtin_words_still_work_with_a_vocabulary_set():
     assert result.candidates[0].type == "buy"
 
 
-def test_a_drp_allotment_with_no_price_is_refused_not_booked_at_zero():
+@pytest.mark.parametrize("price", ["", " "], ids=["empty", "a space"])
+def test_a_drp_allotment_with_no_price_is_refused_not_booked_at_zero(price):
     """The row the whole mapping question came from.
 
     An allotment carries units and no price; the registry bought them out of
     the distribution. Booking it at zero understates the parcel's cost base and
-    overstates the gain when it is sold, which is a tax figure.
+    overstates the gain when it is sold, which is a tax figure. A file spaced
+    after its commas writes the missing price as a space.
     """
     fmt = MAPPED.model_copy(update={"actions": {"In": "drp"}})
     result = _one(
         "Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
-        "06/01/2025,In,ACME,7,,\n", fmt,
+        f"06/01/2025,In,ACME,7,{price},\n", fmt,
     )
     assert result.candidates == []
     assert "no price" in result.skipped[0]
@@ -615,8 +737,11 @@ def _one_row(units="100", price="5.00", brokerage="9.50"):
     ({"units": "-100"}, "line 2: Units: -100 has to be more than zero"),
     ({"price": "-5"}, "line 2: Price: -5 can't be negative"),
     ({"brokerage": "-9.50"}, "line 2: Brokerage: -9.50 can't be negative"),
+    # Only a DRP is skipped for having no price; a buy without one is wrong.
+    ({"price": ""}, "line 2: Price: '' is not a number"),
 ], ids=["nan-units", "infinite-price", "nan-brokerage", "huge-units", "brackets",
-        "zero-units", "negative-units", "negative-price", "negative-brokerage"])
+        "zero-units", "negative-units", "negative-price", "negative-brokerage",
+        "missing-price"])
 def test_a_row_the_trade_form_would_refuse_is_an_error_naming_field_and_value(
         kwargs, message):
     result = brokercsv.parse_csv(_one_row(**kwargs), "testbroker", MAPPED)

@@ -192,7 +192,9 @@ def _parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
     reader = csv.DictReader(io.StringIO(text), restval="")
     if reader.fieldnames is None:
         return ParseResult(errors=["empty file"])
-    headers = [h.strip() for h in reader.fieldnames]
+    # "Date, Code" names its columns with the spaces. The rows are read by
+    # the names the header check and the broker designer use: without them.
+    reader.fieldnames = headers = [h.strip() for h in reader.fieldnames]
     result = ParseResult()
 
     if fmt.kind == "mapped":
