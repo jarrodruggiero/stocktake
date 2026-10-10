@@ -39,7 +39,7 @@ from fastapi.responses import (
     Response,
 )
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session as DbSession
 
 from appcore import (
@@ -5604,6 +5604,15 @@ async def instrument_pref(
             symbol = yahoo_symbol.strip() or pricefeed.yahoo_symbol_for(inst.ticker,
                                                                          inst.exchange)
             fetch = symbol != inst.yahoo_symbol
+            if code != inst.currency:
+                # Every recorded rate was for the old currency: an AUD row's 1
+                # would book US dollars as Australian ones. AUD needs none, and
+                # the feed fills a foreign one from the stored series.
+                rate = Decimal(1) if code == money.REPORTING else None
+                for model in (Trade, Dividend):
+                    db.execute(update(model).where(model.instrument_id == inst.id)
+                               .values(fx_rate=rate))
+                fetch = fetch or rate is None
             inst.name = textfield.fit(name, Instrument.name)
             inst.asset_class = asset_class
             inst.currency = code
