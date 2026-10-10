@@ -250,13 +250,49 @@ def test_another_accounts_staged_upload_cannot_be_committed(client, session_fact
 
 def test_committing_refuses_unknown_instruments_by_default(client, session_factory):
     """`allow_new_instruments` is off, so an unrecognised ticker stops the
-    import instead of quietly inventing a holding."""
+    import instead of quietly inventing a holding: no commit form is offered,
+    and a commit posted anyway is refused.
+
+    This test used to end `assert "/commit" not in resp.text or True`, which
+    cannot fail; the form WAS offered, and pressing it gave a 409."""
     make_login(client, session_factory)
     resp = upload_csv(client, session_factory)
-    # No commit form is offered when every row is blocked.
     assert "unknown-instrument" in resp.text
-    assert "/commit" not in resp.text or True
+    assert "/commit" not in resp.text
 
+    committed = client.post(f"/imports-exports/csv/{_newest_staged()}/commit",
+                            data={"_csrf": session_csrf(session_factory)},
+                            headers=HTML, follow_redirects=False)
+    assert committed.status_code == 409
+    with reading(session_factory) as s:
+        assert s.scalars(select(Trade)).all() == []
+
+
+def _newest_staged() -> str:
+    """The preview's staging id, for a page that offers no form carrying it."""
+    newest = max(STAGING.glob("*.json"), key=lambda p: p.stat().st_mtime)
+    return newest.stem
+
+
+def test_a_file_selling_more_than_is_held_cannot_be_committed(client, session_factory,
+                                                              with_acme):
+    """A broker export covering the last year carries sales of shares bought
+    before it starts. Committed, one left a negative holding and the FY page
+    raised; now the row is refused in the preview, and at commit."""
+    make_login(client, session_factory)
+    sale = ("Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+            "06/01/2025,Buy,ACME,100,5.00,9.50\n"
+            "02/03/2025,Sell,ACME,150,6.00,9.50\n").encode()
+
+    resp = upload_csv(client, session_factory, payload=sale)
+
+    assert 'badge-refused' in resp.text
+    assert "more than the 100 units of ACME held on 2025-03-02" in resp.text
+    assert "/commit" not in resp.text
+    committed = client.post(f"/imports-exports/csv/{_newest_staged()}/commit",
+                            data={"_csrf": session_csrf(session_factory)},
+                            headers=HTML, follow_redirects=False)
+    assert committed.status_code == 409
     with reading(session_factory) as s:
         assert s.scalars(select(Trade)).all() == []
 

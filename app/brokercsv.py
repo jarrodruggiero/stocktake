@@ -22,9 +22,9 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import money
+from . import money, queries
 from .markettime import to_market
-from .models import Instrument, Trade, exchange_problem, ticker_problem
+from .models import MARKET_OPEN, Instrument, Trade, exchange_problem, ticker_problem
 from .pricefeed import MARKETS
 from .settings import BrokerFormat, ImportSettings
 from .tenancy import owned
@@ -110,7 +110,7 @@ class CandidateTrade:
     currency: str
     exchange: str
     time: dt.time | None = None  # only when the export carried a real one
-    status: str = "new"  # new / duplicate / unknown-instrument
+    status: str = "new"  # new / duplicate / unknown-instrument / refused
     detail: str = ""
 
     def as_dict(self) -> dict:
@@ -367,10 +367,39 @@ def annotate(session: Session, candidates: list[CandidateTrade], imports: Import
         if dupe is not None:
             c.status = "duplicate"
             c.detail = f"matches trade #{dupe.id}"
+    _refuse_shortfalls(session, candidates)
+
+
+def _refuse_shortfalls(session: Session, candidates: list[CandidateTrade]) -> None:
+    """Refuse a row that would sell more than is held, as the trade form
+    refuses one typed in. Each holding's rows are walked in date order against
+    what is already recorded and the rows accepted before them; a refused row
+    is left out of the walk, so the rest are judged without it.
+    """
+    by_holding: dict[tuple[str, str], list[CandidateTrade]] = {}
+    for c in candidates:
+        if c.status in ("new", "unknown-instrument"):
+            by_holding.setdefault((c.ticker, c.exchange), []).append(c)
+    for (ticker, exchange), rows in by_holding.items():
+        inst = session.scalars(
+            select(Instrument).where(Instrument.ticker == ticker, Instrument.exchange == exchange)
+        ).first()
+        held = (list(session.scalars(select(Trade).where(Trade.instrument_id == inst.id)))
+                if inst is not None else [])
+        for c in sorted(rows, key=lambda r: (r.date, r.time or MARKET_OPEN)):
+            row = Trade(date=c.date, time=c.time, type=c.type, quantity=c.quantity)
+            breach = queries.balance_breach(held, row)
+            if breach is None:
+                held.append(row)
+            else:
+                c.status, c.detail = "refused", queries.breach_message(ticker, breach)
 
 
 def commit(session: Session, candidates: list[CandidateTrade], imports: ImportSettings, source: str) -> dict[str, int]:
     counts = {"inserted": 0, "duplicates_skipped": 0, "instruments_created": 0}
+    refused = [c for c in candidates if c.status == "refused"]
+    if refused:
+        raise ValueError(refused[0].detail)
     for c in candidates:
         if c.status == "duplicate":
             counts["duplicates_skipped"] += 1
@@ -397,6 +426,8 @@ def commit(session: Session, candidates: list[CandidateTrade], imports: ImportSe
             session.add(inst)
             session.flush()
             counts["instruments_created"] += 1
+        # A removed one comes back, as it does when a trade is typed in.
+        inst.active = True
         session.add(
             owned(
                 session,
