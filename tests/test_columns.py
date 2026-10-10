@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 from decimal import Decimal
 
+import pytest
 from freezegun import freeze_time
 from sqlalchemy import select
 
@@ -39,8 +40,8 @@ class _FakeHolding:
     """Just enough of a Holding for the sort-key tests: they are about which
     attribute is read, not about how one is built."""
 
-    def __init__(self, ticker: str, drp: bool = False):
-        self.instrument = type("I", (), {"ticker": ticker})()
+    def __init__(self, ticker: str, drp: bool = False, name: str | None = "Name"):
+        self.instrument = type("I", (), {"ticker": ticker, "name": name})()
         self.drp = drp
 
 
@@ -686,3 +687,37 @@ def test_the_reporting_columns_name_their_currency_in_the_header():
 
     assert native == "Avg price (USD)"
     assert reporting == "Avg price (AUD)"
+
+
+# --------------------------------------------------------------------------- #
+# What a mutation run found unchecked
+# --------------------------------------------------------------------------- #
+
+def test_the_drp_column_says_yes_or_nothing():
+    value = columns.BY_KEY["drp"].value
+
+    assert value(_FakeHolding(ticker="A", drp=True)) == "yes"
+    assert value(_FakeHolding(ticker="B", drp=False)) == ""
+
+
+def test_a_holding_with_no_name_shows_a_blank_not_none():
+    assert columns.BY_KEY["name"].value(_FakeHolding(ticker="A", name=None)) == ""
+
+
+@pytest.mark.parametrize(("chosen", "offered", "withheld"), [
+    (set(), "cost", "cost_reporting"),                         # neither named: native
+    ({"cost"}, "cost", "cost_reporting"),
+    ({"cost_reporting"}, "cost_reporting", "cost"),            # the one the layout names
+    ({"cost", "cost_reporting"}, "cost", "cost_reporting"),
+])
+def test_one_currency_offers_one_of_each_twin_the_layout_names_first(chosen, offered,
+                                                                    withheld):
+    keys = {c.key for _g, items in columns.chooser_groups(True, chosen) for c in items}
+
+    assert offered in keys and withheld not in keys
+
+
+def test_two_currencies_offer_both_twins():
+    keys = {c.key for _g, items in columns.chooser_groups(False, set()) for c in items}
+
+    assert {"cost", "cost_reporting"} <= keys
