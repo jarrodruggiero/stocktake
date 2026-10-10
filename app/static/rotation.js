@@ -271,7 +271,6 @@
       offsetY: event.clientY - box.top,
       clone: floatingCopy(source, ticker),
       placeholder: placeholderFor(mode === "move" ? box.height : 34),
-      moved: false,
     };
     moveClone(event.clientX, event.clientY);
     document.body.classList.add("rotdragging");
@@ -303,7 +302,6 @@
 
   function onMove(e) {
     if (!drag) { return; }
-    drag.moved = true;
     e.preventDefault();
     moveClone(e.clientX, e.clientY);
     if (overList(e.clientX, e.clientY)) {
@@ -314,7 +312,13 @@
     }
   }
 
-  function onUp() { finish(true); }
+  /* Let go on the palette chip it began on, a press is a click, and the
+     chip's own click handler adds it. Placing it as a drop as well added it
+     twice: a chip within reach of the list counts as over it, so a click
+     that wobbled a pixel was both. */
+  function onUp(e) {
+    finish(!(drag && drag.mode === "add" && drag.source.contains(e.target)));
+  }
 
   document.addEventListener("pointermove", onMove);
   document.addEventListener("pointerup", onUp);
@@ -325,7 +329,7 @@
      keyboard- and touch-friendly without a second code path. */
   document.querySelectorAll(".rotsource .add").forEach(function (button) {
     button.addEventListener("click", function () {
-      if (drag) { return; }             // the drag already placed it
+      if (drag) { return; }             // mid-drag: the drop decides
       var li = chip(button.dataset.ticker);
       list.appendChild(li);
       sync();
