@@ -51,11 +51,10 @@ def test_the_session_cookie_cannot_be_read_by_a_script(client, session_factory, 
                                                        monkeypatch, secure):
     """HttpOnly is what keeps a script that slips past the escaping from
     reading the session; nothing checked it. Secure follows the setting."""
-    from test_routes import PASSWORD, pre_auth_csrf
-
     from fastapi.testclient import TestClient
 
     from app.auth import hash_password
+    from test_routes import PASSWORD, pre_auth_csrf
 
     monkeypatch.setattr(app_module.settings.auth, "cookie_secure", secure)
     with session_factory() as s:
