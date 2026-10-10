@@ -445,3 +445,40 @@ def test_charts_are_not_readable_with_a_portfolio_but_no_user(db, owner, session
     with tenancy.portfolio_session(session_factory, portfolio.id, None) as s:
         # No user context, so no chart is this session's to read.
         assert [c.name for c in s.scalars(select(SavedChart)).all()] == []
+
+
+def test_an_aliased_entity_is_filtered_too(two_portfolios):
+    """A self-join or an `aliased()` names the model under another name, and
+    the criteria must follow it there (`include_aliases`)."""
+    from sqlalchemy.orm import aliased
+
+    session = two_portfolios.session
+    other = aliased(Trade)
+    rows = session.scalars(select(other)).all()
+    assert [t.quantity for t in rows] == [Decimal("10")]
+
+
+@pytest.mark.parametrize("shape", ["joined-eager-load", "nested-eager-load", "scoped-on-the-left",
+                                   "from-subquery"])
+def test_personal_data_in_other_statement_shapes_is_refused_unbound(db, owner, shape):
+    """Each of these reaches trades without selecting a Trade: one joins them
+    in for an eager load in the same statement, one walks through them to load
+    something else, one starts FROM them and joins the catalogue, one hides
+    them in a subquery in FROM."""
+    from sqlalchemy.orm import joinedload
+
+    _, portfolio = owner
+    acme = fac.make_instrument(db, "ACME")
+    fac.add_trade(db, acme, "2025-02-03", "buy", 999, "7.00", portfolio_id=portfolio.id)
+    db.commit()
+    inner = select(Trade.instrument_id).subquery()
+    statement = {
+        "joined-eager-load": select(Instrument).options(joinedload(Instrument.trades)),
+        "nested-eager-load": select(Instrument).options(
+            joinedload(Instrument.trades).joinedload(Trade.instrument)),
+        "scoped-on-the-left": select(Instrument).select_from(Trade).join(
+            Instrument, Trade.instrument_id == Instrument.id),
+        "from-subquery": select(Instrument).join(inner, inner.c.instrument_id == Instrument.id),
+    }[shape]
+    with pytest.raises(tenancy.TenancyError):
+        db.execute(statement).unique().all()
