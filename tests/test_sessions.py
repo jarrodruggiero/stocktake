@@ -664,3 +664,52 @@ def test_the_login_page_shows_it(client, session_factory, monkeypatch):
     page = client.get("/login", headers={"accept": "text/html"}).text
 
     assert "reached it over plain HTTP" in page
+
+
+
+# --------------------------------------------------------------------------- #
+# With another person's sessions on file
+# --------------------------------------------------------------------------- #
+# A mutation run removed the owner filter from the profile's list of sessions
+# and of API keys, and from "sign out everywhere else", and nothing failed: no
+# test had anyone else signed in.
+
+def _neighbour_signed_in(session_factory):
+    from app.models import ApiKey
+
+    with session_factory() as s:
+        them = make_user(s, "neighbour@example.test")
+        s.flush()
+        token = auth.create_session(s, them, PortfolioSettings(), ip="198.51.100.77",
+                                    user_agent="NeighbourBrowser/9.9")
+        raw, key_hash, prefix = auth.new_api_key()
+        s.add(ApiKey(name="neighbours key", key_hash=key_hash, prefix=prefix,
+                     scopes="read", created_by=them.id))
+        s.commit()
+        return them.id, token
+
+
+def test_the_profile_lists_only_your_own_sessions_and_keys(client, session_factory):
+    from test_routes import make_login
+
+    make_login(client, session_factory)
+    _neighbour_signed_in(session_factory)
+
+    page = client.get("/profile", headers={"accept": "text/html"}).text
+
+    assert "198.51.100.77" not in page and "NeighbourBrowser" not in page
+    assert "neighbours key" not in page
+
+
+def test_signing_out_everywhere_else_leaves_other_people_alone(client, session_factory):
+    from test_routes import make_login, session_csrf
+
+    make_login(client, session_factory)
+    token = session_csrf(session_factory)
+    them, _ = _neighbour_signed_in(session_factory)
+
+    client.post("/profile/sessions/revoke-others", data={"_csrf": token},
+                headers={"accept": "text/html"}, follow_redirects=False)
+
+    with session_factory() as s:
+        assert len(s.scalars(select(UserSession).where(UserSession.user_id == them)).all()) == 1

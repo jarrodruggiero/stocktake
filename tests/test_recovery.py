@@ -583,3 +583,21 @@ def test_neither_recovery_route_leaks_a_code_into_the_log(path, client,
 
     for code in raw:
         assert code not in caplog.text
+
+
+def test_a_deactivated_account_cannot_be_recovered(client, session_factory):
+    """A valid code on a deactivated account opens nothing, and is not spent:
+    an administrator turned the account off."""
+    email = make_login(client, session_factory)
+    raw = _issue(session_factory, email)
+    with session_factory() as s:
+        s.scalars(select(User).where(User.email == email)).one().is_active = False
+        s.commit()
+    client.cookies.clear()
+
+    resp = _recover(client, email, raw[0])
+
+    assert resp.status_code == 200 and "do not match" in resp.text
+    with session_factory() as s:
+        user = s.scalars(select(User).where(User.email == email)).one()
+        assert twofactor.remaining_recovery_codes(s, user) == len(raw)
