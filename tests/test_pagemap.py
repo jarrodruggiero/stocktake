@@ -125,14 +125,28 @@ def test_boxes_are_percentages_of_the_page():
 
 def test_words_a_point_apart_in_height_share_a_line():
     """Characters on one printed line differ slightly in `top`; an exact key
-    made every word its own line, and every label its own value's row."""
-    words = [{"text": "Net", "x0": 10, "top": 12, "x1": 30, "bottom": 22},
-             {"text": "104.70", "x0": 40, "top": 13, "x1": 80, "bottom": 23},
+    made every word its own line, and every label its own value's row. Each
+    line here has its right-hand word slightly ABOVE its left, so a line split
+    in two would put the value first."""
+    words = [{"text": "Gross", "x0": 10, "top": 12, "x1": 40, "bottom": 22},
+             {"text": "120.00", "x0": 50, "top": 13, "x1": 90, "bottom": 23},
+             {"text": "Net", "x0": 10, "top": 17, "x1": 30, "bottom": 27},
+             {"text": "104.70", "x0": 50, "top": 16, "x1": 90, "bottom": 26},
              {"text": "Paid", "x0": 10, "top": 40, "x1": 30, "bottom": 50}]
 
-    assert pagemap.text_from(words) == "Net 104.70\nPaid"
+    assert pagemap.text_from(words) == "Gross 120.00\nNet 104.70\nPaid"
     boxes = pagemap.boxes_for(words, page_width=100, page_height=100, first_index=0)
-    assert [b.text for b in boxes] == ["Net", "104.70", "Paid"]
+    assert [b.text for b in boxes] == ["Gross", "120.00", "Net", "104.70", "Paid"]
+
+
+def test_a_stray_file_beside_the_sessions_is_neither_swept_nor_counted(store, monkeypatch,
+                                                                       app_module):
+    fake_render(monkeypatch)
+    live = pagemap.create(app_module.settings, user_id=1, data=b"%PDF")
+    (store / "notes.txt").write_text("not a session")
+
+    assert pagemap.sweep(app_module.settings) == 0
+    assert (store / "notes.txt").exists() and (store / live).exists()
 
 
 def test_a_zero_sized_page_does_not_divide_by_zero():
