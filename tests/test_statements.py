@@ -46,8 +46,8 @@ def stub_text(monkeypatch):
 # --------------------------------------------------------------------------- #
 
 def test_each_fund_on_a_combined_advice_becomes_a_row(pf, stub_text):
-    fac.make_instrument(pf, "ALPHA", name="Alpha Index Fund")
-    fac.make_instrument(pf, "BETAX", name="Betax Holdings")
+    fac.hold(pf, fac.make_instrument(pf, "ALPHA", name="Alpha Index Fund"))
+    fac.hold(pf, fac.make_instrument(pf, "BETAX", name="Betax Holdings"))
     pf.commit()
     stub_text(COMBINED_ADVICE)
 
@@ -62,7 +62,7 @@ def test_the_distribution_is_the_reinvestment_amount_not_units_times_price(pf, s
     units allotted x DRP price — residual balances are carried forward between
     quarters, so the two differ. Learned from a real statement; getting it
     wrong would understate income and the cost base together."""
-    fac.make_instrument(pf, "ALPHA", name="Alpha Index Fund")
+    fac.hold(pf, fac.make_instrument(pf, "ALPHA", name="Alpha Index Fund"))
     pf.commit()
     stub_text(COMBINED_ADVICE)
 
@@ -78,7 +78,7 @@ def test_the_distribution_is_the_reinvestment_amount_not_units_times_price(pf, s
 def test_a_fund_allotted_no_units_still_produces_a_row(pf, stub_text):
     """A quarter can allot zero units with the cash carried forward. Dropping
     the row would lose a distribution that really was paid."""
-    fac.make_instrument(pf, "BETAX", name="Betax Holdings")
+    fac.hold(pf, fac.make_instrument(pf, "BETAX", name="Betax Holdings"))
     pf.commit()
     stub_text(COMBINED_ADVICE)
 
@@ -89,7 +89,7 @@ def test_a_fund_allotted_no_units_still_produces_a_row(pf, stub_text):
 
 
 def test_the_carry_forward_balances_are_kept_on_the_row(pf, stub_text):
-    fac.make_instrument(pf, "ALPHA", name="Alpha Index Fund")
+    fac.hold(pf, fac.make_instrument(pf, "ALPHA", name="Alpha Index Fund"))
     pf.commit()
     stub_text(COMBINED_ADVICE)
 
@@ -99,7 +99,7 @@ def test_the_carry_forward_balances_are_kept_on_the_row(pf, stub_text):
 
 
 def test_a_fund_we_do_not_track_is_flagged(pf, stub_text):
-    fac.make_instrument(pf, "ALPHA", name="Alpha Index Fund")
+    fac.hold(pf, fac.make_instrument(pf, "ALPHA", name="Alpha Index Fund"))
     pf.commit()
     stub_text(COMBINED_ADVICE)
 
@@ -123,14 +123,18 @@ def test_the_units_held_figure_is_checked_against_the_ledger(pf, stub_text):
     """The statement says how many units the registry thinks you hold; showing
     ours beside it turns a silent divergence into an obvious one."""
     alpha = fac.make_instrument(pf, "ALPHA", name="Alpha Index Fund")
+    betax = fac.make_instrument(pf, "BETAX", name="Betax Holdings")
     fac.add_trade(pf, alpha, "2025-01-06", "buy", 150, "10.00")
+    fac.add_trade(pf, alpha, "2025-06-02", "sell", 30, "11.00")
+    fac.add_trade(pf, alpha, "2025-09-15", "drp", 5, "10.50")
+    fac.add_trade(pf, betax, "2025-01-06", "buy", 1000, "1.00")     # another holding's
     pf.commit()
     stub_text(COMBINED_ADVICE)
 
     row = statements.parse_statement(b"", pf).rows[0]
 
     assert row.units_held == "200"    # per the statement
-    assert row.db_units == "150"      # per our ledger — a discrepancy to notice
+    assert row.db_units == "125"      # per our ledger — a discrepancy to notice
 
 
 # --------------------------------------------------------------------------- #
@@ -150,7 +154,7 @@ Allotment Price: $29.39
 
 
 def test_a_single_statement_yields_its_fields(pf, stub_text):
-    fac.make_instrument(pf, "ACME", name="Acme Industries Limited")
+    fac.hold(pf, fac.make_instrument(pf, "ACME", name="Acme Industries Limited"))
     pf.commit()
     stub_text(SINGLE)
 
@@ -176,7 +180,7 @@ def test_a_single_statement_yields_its_fields(pf, stub_text):
     ],
 )
 def test_the_common_payment_date_wordings_are_understood(pf, stub_text, line, expected):
-    fac.make_instrument(pf, "ACME", name="Acme Industries Limited")
+    fac.hold(pf, fac.make_instrument(pf, "ACME", name="Acme Industries Limited"))
     pf.commit()
     stub_text(f"Acme Industries Limited\n{line}\nNet Amount: $10.00\n")
 
@@ -184,16 +188,18 @@ def test_the_common_payment_date_wordings_are_understood(pf, stub_text, line, ex
 
 
 def test_an_instrument_is_matched_by_ticker_before_name(pf, stub_text):
-    fac.make_instrument(pf, "ACME", name="Acme Industries Limited")
-    fac.make_instrument(pf, "NOVA", name="Nova Group")
+    """ACME's ticker and, further down, NOVA's name: the ticker decides."""
+    fac.hold(pf, fac.make_instrument(pf, "NOVA", name="Nova Group"))
+    fac.hold(pf, fac.make_instrument(pf, "ACME", name="Acme Industries Limited"))
     pf.commit()
-    stub_text("Statement for ACME\nPayment Date: 15 March 2026\nNet Amount: $10.00\n")
+    stub_text("Statement for ACME\nPayment Date: 15 March 2026\nNet Amount: $10.00\n"
+              "Nova Group is the registry's parent company.\n")
 
     assert statements.parse_statement(b"", pf).ticker == "ACME"
 
 
 def test_an_instrument_is_matched_by_name_when_the_ticker_is_absent(pf, stub_text):
-    fac.make_instrument(pf, "NOVA", name="Nova Group")
+    fac.hold(pf, fac.make_instrument(pf, "NOVA", name="Nova Group"))
     pf.commit()
     stub_text("Nova Group distribution advice\nPayment Date: 15 March 2026\n"
               "Net Amount: $10.00\n")

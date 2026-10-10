@@ -147,3 +147,75 @@ def test_a_delete_that_leaves_the_holding_returns_to_it(client, session_factory)
                        data={"_csrf": session_csrf(session_factory),
                              "return_to": "/holding/ZULU?sort=date"})
     assert resp.headers["location"] == "/holding/ZULU?sort=date"
+
+
+# --------------------------------------------------------------------------- #
+# A dividend statement
+# --------------------------------------------------------------------------- #
+# The statement upload offered every ticker in the catalogue to choose from,
+# guessed among every instrument, and recorded against the first instrument
+# with the ticker it was given: BHP on the NYSE, made first, for mine on the
+# ASX; OMEGA, which only the stranger holds, without a word.
+
+def test_a_statement_offers_and_guesses_only_this_portfolios_instruments(
+        client, session_factory, monkeypatch):
+    import re
+
+    from app import statements
+
+    make_login(client, session_factory)
+    _theirs(session_factory)
+    monkeypatch.setattr(statements, "_pdf_text", lambda data: (
+        "Omega Holdings distribution advice\nOMEGA\nPayment Date: 15 March 2026\n"
+        "Net Amount: $10.00\n"))
+
+    page = client.post("/imports-exports/statement",
+                       files={"file": ("advice.pdf", b"%PDF-1.4", "application/pdf")},
+                       data={"_csrf": session_csrf(session_factory)}, headers=HTML)
+
+    assert page.status_code == 200
+    assert re.findall(r'<option value="([A-Z]+)"', page.text) == ["ACME", "BHP"]
+    assert re.search(r'<option value="[A-Z]+" selected', page.text) is None, \
+        "a ticker this portfolio does not have was guessed"
+
+
+def test_a_combined_advice_knows_only_this_portfolios_funds(client, session_factory):
+    from app import statements
+
+    make_login(client, session_factory)
+    ids = _theirs(session_factory)
+    text = ("Distribution and Reinvestment Advice\nPayment Date: 15 March 2026\n\n"
+            "Fund Price Held PerSec Tax Amount Brought Allotted Carried\n"
+            "ACME 5.00 10 0.50000000 0.00 5.00 0.00 1 0.00\n"
+            "OMEGA 5.00 3 0.50000000 0.00 1.50 0.00 0 1.50\n")
+    with session_factory() as s:
+        tenancy.bind(s, ids["mine"])
+        statements._pdf_text, real = (lambda data: text), statements._pdf_text
+        try:
+            rows = {r.ticker: r for r in statements.parse_statement(b"", s).rows}
+        finally:
+            statements._pdf_text = real
+
+    assert rows["ACME"].status != "unknown-instrument" and rows["ACME"].db_units == "10"
+    assert rows["OMEGA"].status == "unknown-instrument"
+
+
+@pytest.mark.parametrize(("ticker", "status"), [("BHP", 303), ("OMEGA", 400)])
+def test_a_statement_is_recorded_against_this_portfolios_own_holding(
+        client, session_factory, ticker, status):
+    from app.models import Dividend, Instrument
+
+    make_login(client, session_factory)
+    ids = _theirs(session_factory)
+
+    resp = client.post("/imports-exports/statement/commit", data={
+        "_csrf": session_csrf(session_factory), "ticker": ticker,
+        "payment_date": "2026-03-15", "net_amount": "12.00"},
+        headers=HTML, follow_redirects=False)
+
+    assert resp.status_code == status
+    with session_factory() as s:
+        tenancy.allow_unscoped(s)
+        recorded = [(s.get(Instrument, d.instrument_id).name, d.portfolio_id)
+                    for d in s.scalars(select(Dividend))]
+    assert recorded == ([("BHP on the ASX", ids["mine"])] if ticker == "BHP" else [])

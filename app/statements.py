@@ -25,7 +25,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import docformats, ocr
+from . import docformats, ocr, queries
 from .models import Dividend, Instrument
 
 
@@ -186,6 +186,21 @@ def extract_text(data: bytes) -> str:
     return extract(data).text
 
 
+def own_instruments(session: Session) -> list[Instrument]:
+    """This portfolio's instruments, in ticker order. A statement is for
+    something it holds or held (decisions.md #139): another portfolio's is not
+    it, nor the same ticker on another exchange, and the catalogue's own order
+    is no order at all."""
+    ids = queries.portfolio_instrument_ids(session)
+    return list(session.scalars(select(Instrument).where(Instrument.id.in_(ids))
+                                .order_by(Instrument.ticker, Instrument.id)))
+
+
+def instrument_for(session: Session, ticker: str) -> Instrument | None:
+    """This portfolio's instrument with that ticker, or None."""
+    return next((i for i in own_instruments(session) if i.ticker == ticker.upper()), None)
+
+
 def _rows_from(
     values: dict, payment_date: dt.date | None, session: Session
 ) -> list[StatementRow] | None:
@@ -201,6 +216,9 @@ def _rows_from(
 
     from .models import Trade
 
+    own: dict[str, Instrument] = {}
+    for inst in own_instruments(session):
+        own.setdefault(inst.ticker, inst)
     rows = []
     for row_values in matches:
         ticker = row_values["ticker"]
@@ -218,7 +236,7 @@ def _rows_from(
             units_held=held.replace(",", ""),
             carry_note=f"DRP carry: brought fwd {brought}, carried fwd {carried}",
         )
-        inst = session.scalars(select(Instrument).where(Instrument.ticker == ticker)).first()
+        inst = own.get(ticker)
         if inst is None:
             row.status = "unknown-instrument"
         else:
@@ -244,7 +262,7 @@ def parse_statement(data: bytes, session: Session,
                              problem=read.problem)
 
     # Instrument: match against what we track — ticker first, then name words.
-    instruments = session.scalars(select(Instrument)).all()
+    instruments = own_instruments(session)
     upper = f" {text.upper()} "
     for inst in instruments:
         if re.search(rf"\b{re.escape(inst.ticker)}\b", upper):
