@@ -97,7 +97,7 @@ def read_csv(text: str) -> ReadCsv:
     # inside an already-decoded string, and it makes the first column's name
     # invisibly different from what it looks like on screen.
     text = text.lstrip("﻿")
-    reader = csv.DictReader(io.StringIO(text))
+    reader = csv.DictReader(io.StringIO(text), restval="")      # a short row is blanks
     try:
         if not reader.fieldnames:
             return ReadCsv(problem="This file has no header row — is it a CSV?")

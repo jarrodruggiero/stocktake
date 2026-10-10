@@ -186,7 +186,10 @@ def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
 
 
 def _parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
-    reader = csv.DictReader(io.StringIO(text))
+    # `restval`: a row shorter than the header (an export's one-line footer)
+    # reads as blanks, and is skipped by line like any other, instead of
+    # handing None to the first `.strip()`.
+    reader = csv.DictReader(io.StringIO(text), restval="")
     if reader.fieldnames is None:
         return ParseResult(errors=["empty file"])
     headers = [h.strip() for h in reader.fieldnames]
