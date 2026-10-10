@@ -586,3 +586,141 @@ def test_run_refuses_a_spec_whose_measures_belong_to_another_grain(pf):
 
     with pytest.raises(ValueError, match="same kind of chart"):
         charts_build.run(pf, spec)
+
+
+# --------------------------------------------------------------------------- #
+# The filter shelf, splits and order: what a mutation run found unchecked
+# --------------------------------------------------------------------------- #
+# Nothing failed with the "since" filter ignored, a split chart drawn as the
+# total, a positions chart's filters ignored, or the biggest-first and
+# legend orders dropped. And a delta after "since" was measured from zero, so
+# the first bar of a filtered chart was everything since the first trade.
+
+def _ts(**spec) -> dict:
+    return {"grain": "timeseries", "x": "date", "type": "table", "bucket": "day", **spec}
+
+
+def _by_key(data: dict) -> dict:
+    return {d["key"]: d["data"] for d in data["datasets"]}
+
+
+def test_since_keeps_its_own_day_and_drops_the_days_before(two_day_bucket):
+    data = charts_build.run(two_day_bucket, _ts(measures=["value"], since="2026-06-15"))
+
+    assert data["labels"] == ["2026-06-15", "2026-06-16"]
+    assert _by_key(data)["value"] == [1000.0, 1500.0]
+
+
+def test_a_delta_after_since_is_measured_from_the_day_before_it(two_day_bucket):
+    """What went in on the 15th is that day's buy, 510, not the 920 invested
+    by then; the gain moved 110, from -10 to 100."""
+    data = charts_build.run(two_day_bucket, _ts(
+        measures=["invested_delta", "gain_delta", "period_return"], since="2026-06-15"))
+
+    by = _by_key(data)
+    assert by["invested_delta"] == [510.0, 300.0]
+    assert by["gain_delta"] == [110.0, 230.0]
+    assert by["period_return"] == [round(110 / 920, 4), round(230 / 1220, 4)]
+
+
+def test_a_since_before_any_history_measures_from_zero(two_day_bucket):
+    data = charts_build.run(two_day_bucket, _ts(measures=["invested_delta"],
+                                                since="2026-01-01"))
+
+    assert _by_key(data)["invested_delta"] == [410.0, 510.0, 300.0]
+
+
+@pytest.fixture
+def crossing_lines(pf):
+    """ALPHA worth more than ZULU on the first two days and less on the last,
+    so ordering by the last value differs from the alphabet and from any
+    other day's."""
+    alpha = make_instrument(pf, "ALPHA", asset_class="share")
+    zulu = make_instrument(pf, "ZULU", asset_class="etf")
+    add_trade(pf, alpha, "2026-06-01", "buy", 100, "3.00")
+    add_trade(pf, zulu, "2026-06-01", "buy", 100, "1.00")
+    add_prices(pf, alpha, [("2026-06-01", "10.00"), ("2026-06-02", "10.00"),
+                           ("2026-06-03", "1.00")])
+    add_prices(pf, zulu, [("2026-06-01", "1.00"), ("2026-06-02", "1.00"),
+                          ("2026-06-03", "20.00")])
+    pf.commit()
+    return pf
+
+
+def test_a_split_line_chart_has_a_line_per_ticker_biggest_last_value_first(crossing_lines):
+    data = charts_build.run(crossing_lines, _ts(measures=["value"], split="ticker",
+                                                type="line"))
+
+    assert [d["label"] for d in data["datasets"]] == ["ZULU", "ALPHA"]
+    assert [d["key"] for d in data["datasets"]] == ["value:ZULU", "value:ALPHA"]
+    assert _by_key(data) == {"value:ZULU": [100.0, 100.0, 2000.0],
+                             "value:ALPHA": [1000.0, 1000.0, 100.0]}
+
+
+def test_a_split_percent_chart_keeps_four_places(crossing_lines):
+    data = charts_build.run(crossing_lines, _ts(measures=["period_return"], split="ticker",
+                                                type="line"))
+
+    # ALPHA cost 300 and made 700 on its first day, 7/3; on the last it gave
+    # back 900, three times its cost. ZULU made 1900 on 100.
+    assert _by_key(data)["period_return:ALPHA"] == [2.3333, 0.0, -3.0]
+    assert _by_key(data)["period_return:ZULU"] == [0.0, 0.0, 19.0]
+
+
+def test_a_split_chart_after_its_last_day_is_empty_not_an_error(crossing_lines):
+    data = charts_build.run(crossing_lines, _ts(measures=["value"], split="ticker",
+                                                type="line", since="2027-01-01"))
+
+    assert data["labels"] == []
+    assert all(d["data"] == [] for d in data["datasets"])
+
+
+def test_a_timeseries_with_no_history_has_no_datasets(pf):
+    assert charts_build.run(pf, _ts(measures=["value"]))["datasets"] == []
+
+
+def _positions(**spec) -> dict:
+    return {"grain": "positions", "x": "ticker", "measures": ["pos_value"], **spec}
+
+
+def test_a_positions_chart_keeps_to_its_filters(crossing_lines):
+    data = charts_build.run(crossing_lines, _positions(type="bar",
+                                                       filters={"asset_class": ["etf"]}))
+
+    assert data["labels"] == ["ZULU"]
+
+
+def test_bars_run_biggest_first_and_a_table_alphabetically(crossing_lines):
+    """ZULU is worth 2000 and ALPHA 100 on the last day."""
+    for kind in ("bar", "hbar", "doughnut"):
+        assert charts_build.run(crossing_lines, _positions(type=kind))["labels"] == \
+            ["ZULU", "ALPHA"], kind
+    assert charts_build.run(crossing_lines, _positions(type="table"))["labels"] == \
+        ["ALPHA", "ZULU"]
+
+
+def test_a_split_bar_skips_a_holding_with_no_figure(pf):
+    """WIDGET has two closes and so a day's change; FUNDX has one and none.
+    Its share of the bar is nothing, not an error."""
+    widget = make_instrument(pf, "WIDGET", asset_class="share")
+    fundx = make_instrument(pf, "FUNDX", asset_class="share")
+    add_trade(pf, widget, "2026-06-01", "buy", 100, "10.00")
+    add_trade(pf, fundx, "2026-06-01", "buy", 100, "10.00")
+    add_prices(pf, widget, [("2026-06-01", "10.00"), ("2026-06-02", "12.00")])
+    add_prices(pf, fundx, [("2026-06-02", "10.00")])
+    pf.commit()
+
+    data = charts_build.run(pf, {"grain": "positions", "x": "asset_class",
+                                 "measures": ["pos_day_change"], "type": "bar",
+                                 "split": "ticker"})
+
+    assert {d["label"]: d["data"] for d in data["datasets"]} == {"FUNDX": [0.0],
+                                                                "WIDGET": [200.0]}
+
+
+def test_thin_never_draws_the_last_point_twice():
+    """802 points step by 3 and the slice already ends on the last one."""
+    kept = charts_build._thin([str(i) for i in range(802)])
+
+    assert kept[-1] == "801"
+    assert len(kept) == len(set(kept)) == 268

@@ -14,6 +14,11 @@ from __future__ import annotations
 
 import datetime as dt
 
+import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+
+import factories as fac
 from app import charts_build
 
 TODAY = dt.date(2026, 8, 8)
@@ -88,6 +93,59 @@ def test_the_ranges_come_back_shortest_first():
 
     assert keys[-1] == "all"
     assert keys.index("1w") < keys.index("1y") < keys.index("10y")
+
+
+# Every window and where it starts. The tests above each try one history; a
+# mutation run found the start dates, the boundaries and the financial year's
+# condition unchecked: a window starting after today, or offered a day before
+# the history could fill it, passed.
+WINDOWS = [("1d", "1D", 1), ("1w", "1W", 7), ("1mo", "1M", 30), ("3mo", "3M", 91),
+           ("6mo", "6M", 182), ("fy", "FY", None), ("1y", "1Y", 365), ("3y", "3Y", 365 * 3),
+           ("5y", "5Y", 365 * 5), ("10y", "10Y", 365 * 10), ("20y", "20Y", 365 * 20),
+           ("30y", "30Y", 365 * 30), ("all", "All", None)]
+
+
+@given(days=st.integers(0, 365 * 31), fy_back=st.integers(0, 366))
+def test_each_window_is_offered_once_the_history_fills_it(days, fy_back):
+    """A span is offered once the history is at least that long, and starts
+    that many days before today. The financial year is offered when the
+    history reaches back to its start, and starts there. All always, from the
+    first day."""
+    fy_start = TODAY - dt.timedelta(days=fy_back)
+    first = TODAY - dt.timedelta(days=days)
+    want = []
+    for key, label, span in WINDOWS:
+        if key == "all":
+            want.append((key, label, first.isoformat()))
+        elif key == "fy":
+            if first <= fy_start:
+                want.append((key, label, fy_start.isoformat()))
+        elif span <= days:
+            want.append((key, label, (TODAY - dt.timedelta(days=span)).isoformat()))
+
+    got = charts_build.summary_ranges(_dates(days), TODAY, fy_start)
+
+    assert [(r["key"], r["label"], r["from"]) for r in got] == want
+
+
+@pytest.mark.parametrize(("key", "span"), [(k, d) for k, _label, d in WINDOWS if d])
+def test_a_window_is_offered_on_the_day_the_history_fills_it(key, span):
+    assert key in _keys(span)
+    assert key not in _keys(span - 1)
+
+
+def test_one_day_of_history_draws_no_chart(pf):
+    """A line needs two points; one is the invitation, not a dot."""
+    acme = fac.make_instrument(pf, "ACME")
+    fac.add_trade(pf, acme, "2026-08-03", "buy", 10, "5.00")
+    fac.add_prices(pf, acme, [("2026-08-03", "5.00")])
+    pf.commit()
+    assert charts_build.summary_chart(pf, TODAY, FY_START) is None
+
+    fac.add_prices(pf, acme, [("2026-08-04", "5.50")])
+    pf.commit()
+    assert charts_build.summary_chart(pf, TODAY, FY_START)["dates"] == ["2026-08-03",
+                                                                        "2026-08-04"]
 
 
 # What the line means: cumulative gain over money in, the SAME definition as

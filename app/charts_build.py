@@ -70,18 +70,21 @@ _TS_MEASURES = {
 _TS_BASE = ("value", "invested", "gain", "gain_pct", "flow_in", "cash_div")
 
 
-def _bucket_series(series: dict, spec: dict, measures: list[str], label_prefix: str = "") -> tuple[list[str], list[dict]]:
+def _bucket_series(series: dict, spec: dict, measures: list[str]) -> tuple[list[str], list[dict]]:
     """Bucket one daily series and evaluate the measures over it."""
     dates = series["dates"]
     bucket = spec.get("bucket") or "day"
     since = spec.get("since")
 
     # One pass: for each bucket keep the closing value of every base field and
-    # the running total of the flow ones.
+    # the running total of the flow ones. The days before `since` are not
+    # drawn, but the last of them is the close the first bucket moved from.
     order: list[str] = []
     agg: dict[str, dict] = {}
+    before = {f: 0.0 for f in _TS_BASE}
     for i, iso in enumerate(dates):
         if since and iso < since:
+            before = {f: series[f][i] for f in _TS_BASE}
             continue
         key = _bucket_key(dt.date.fromisoformat(iso), bucket)
         slot = agg.get(key)
@@ -92,10 +95,12 @@ def _bucket_series(series: dict, spec: dict, measures: list[str], label_prefix: 
             slot["last"][f] = series[f][i]
             slot["sum"][f] += series[f][i]
 
-    # Deltas measure against the previous bucket's close, starting from zero —
-    # the same basis the FY chart used before these became specs.
+    # Deltas measure against the previous bucket's close: from zero at the
+    # start of the history, the same basis the FY chart used before these
+    # became specs, and from the close before `since` when that cuts in.
+    # From zero there, the first bar was everything since the first trade.
     rows: dict[str, dict[str, float]] = {}
-    prev = {f: 0.0 for f in _TS_BASE}
+    prev = before
     for key in order:
         cur = agg[key]
         rows[key] = {m: float(_TS_MEASURES[m](cur, prev)) for m in measures}
@@ -103,7 +108,7 @@ def _bucket_series(series: dict, spec: dict, measures: list[str], label_prefix: 
     return order, [
         {
             "key": m,
-            "label": label_prefix or fields.BY_KEY[m].label,
+            "label": fields.BY_KEY[m].label,
             "kind": fields.BY_KEY[m].kind,
             "rows": rows,
         }
@@ -133,7 +138,7 @@ def _timeseries_split(session: Session, spec: dict) -> dict:
     datasets = []
     for name, series in grouped["groups"].items():
         series = {**series, "dates": grouped["dates"]}
-        order, built = _bucket_series(series, spec, [measure], label_prefix=name)
+        order, built = _bucket_series(series, spec, [measure])
         if not labels:
             labels = _thin(order)
         rows = built[0]["rows"]
