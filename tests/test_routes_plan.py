@@ -644,3 +644,57 @@ def test_a_viewer_cannot_change_the_plan(client, session_factory):
 
     assert save_plan(client, session_factory).status_code == 403
     assert InvestmentPlanEntry is not None
+
+
+# --------------------------------------------------------------------------- #
+# What the plan's routes left unchecked
+# --------------------------------------------------------------------------- #
+# A mutation run removed the lines saving an edited plan's name and brokerage,
+# the due-date half of "is this still the next buy", and the AUD/foreign
+# choice of a planned buy's rate, and nothing failed.
+
+@freeze_time(TODAY)
+def test_saving_again_changes_the_name_and_brokerage_too(client, session_factory, holdings):
+    save_plan(client, session_factory)
+
+    save_plan(client, session_factory, name="Monthly", brokerage="4.95")
+
+    with reading(session_factory) as s:
+        plan = s.scalars(select(InvestmentPlan)).one()
+        assert (plan.name, plan.brokerage) == ("Monthly", Decimal("4.95"))
+
+
+@freeze_time(TODAY)
+@pytest.mark.parametrize("path", ["/schedule/complete", "/schedule/skip"])
+def test_a_buy_whose_date_has_moved_on_is_refused(client, session_factory, holdings, path):
+    """The right ticker with a stale due date is a form left open while the
+    slot was filled; recording it would fill the next slot by mistake."""
+    save_plan(client, session_factory, start_date="2026-07-06")
+
+    resp = client.post(path, headers=HTML, data={
+        "ticker": "ACME", "due_date": "2026-06-08", "trade_date": "2026-07-06",
+        "quantity": "10", "unit_price": "5.00", "_csrf": session_csrf(session_factory)})
+
+    assert resp.status_code == 409
+    with reading(session_factory) as s:
+        assert s.scalars(select(PlannedPurchase)).all() == []
+
+
+@freeze_time(TODAY)
+@pytest.mark.parametrize("currency, rate", [("USD", None), ("AUD", Decimal(1))])
+def test_a_planned_buys_rate_is_1_in_aud_and_left_for_the_feed_otherwise(
+        client, session_factory, currency, rate):
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        fac.hold(s, fac.make_instrument(s, "GAMMA", currency=currency,
+                                        exchange="ASX" if currency == "AUD" else "NYSE"))
+        s.commit()
+    save_plan(client, session_factory, tickers="GAMMA", start_date="2026-07-06")
+
+    client.post("/schedule/complete", headers=HTML, follow_redirects=False, data={
+        "ticker": "GAMMA", "due_date": "2026-07-06", "trade_date": "2026-07-06",
+        "quantity": "10", "unit_price": "5.00", "_csrf": session_csrf(session_factory)})
+
+    with reading(session_factory) as s:
+        assert s.scalars(select(Trade)).one().fx_rate == rate
