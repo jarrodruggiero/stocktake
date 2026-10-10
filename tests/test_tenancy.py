@@ -9,9 +9,6 @@ somebody else's holdings.
 Expectations are structural, not arithmetic: "these rows and no others". The
 neighbouring portfolio's rows carry unmistakable values (999 units, $99
 dividends) so a leak reads as a leak rather than an off-by-one.
-
-Three xfail tests at the bottom assert the behaviour the module documents, not
-what it currently does.
 """
 
 from __future__ import annotations

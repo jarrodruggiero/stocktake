@@ -145,12 +145,9 @@ def test_nothing_is_held_in_memory_between_requests(store, monkeypatch, app_modu
     not carrying page bitmaps until its next restart."""
     fake_render(monkeypatch, pages=3)
 
-    pagemap.create(app_module.settings, user_id=1, data=b"%PDF")
-
-    assert not [v for v in vars(pagemap).values() if isinstance(v, (dict, list)) and v
-                and not isinstance(v, type)] or True
-    # Concretely: reading a page goes to the file, so deleting it is enough to
-    # make the page unavailable. A cache would keep answering.
+    # Reading a page goes to the file, so deleting it is enough to make the
+    # page unavailable. A cache would keep answering. (An earlier first
+    # assertion here ended `or True` and could not fail.)
     token = pagemap.create(app_module.settings, user_id=1, data=b"%PDF")
     (store / token / "0.png").unlink()
 
