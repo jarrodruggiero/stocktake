@@ -27,7 +27,6 @@ from histories import (
     TODAY,
     ZERO,
     History,
-    booked_rate,
     fx_of,
     histories,
     load,
@@ -49,13 +48,17 @@ def _realised(history: History, names: dict) -> list:
     rows = []
     for d in worked_disposals(history):
         for p in d["parcels"]:
-            gain = p["proceeds"] - p["cost_base"]
-            discount = gain / 2 if p["discountable"] and gain > 0 else ZERO
+            # Either side with no rate is no gain at all: a blank, not 1:1 (#5).
+            gain = (None if p["proceeds"] is None or p["cost_base"] is None
+                    else p["proceeds"] - p["cost_base"])
+            discount = (None if gain is None else
+                        gain / 2 if p["discountable"] and gain > 0 else ZERO)
             rows.append([d["date"].isoformat(), d["ticker"], names[d["ticker"]],
                          _d(p["quantity"], "0.00000001"), p["acquired"].isoformat(),
                          (d["date"] - p["acquired"]).days, _d(p["cost_base"]),
                          _d(p["proceeds"]), _d(gain), "yes" if p["discountable"] else "no",
-                         _d(discount), _d(gain - discount), _label(d["date"])])
+                         _d(discount), _d(None if gain is None else gain - discount),
+                         _label(d["date"])])
     return sorted(rows, key=lambda r: (r[0], r[1]))
 
 
@@ -106,19 +109,21 @@ def _closed(history: History, names: dict) -> list:
         if not sales or (held[h.ticker]["units"] > 0 and h.active):
             continue
         parcels = [p for d in sales for p in d["parcels"]]
-        cost = sum((p["cost_base"] for p in parcels), ZERO)
-        proceeds = sum((d["proceeds"] for d in sales), ZERO)
-        gross = proceeds - cost
-        discount = sum((((p["proceeds"] - p["cost_base"]) / 2) for p in parcels
-                        if p["discountable"] and p["proceeds"] > p["cost_base"]), ZERO)
-        dividends = sum((d.cash * (fx_of(history, h.currency, d) or Decimal(1))
-                         for d in h.dividends), ZERO)
+        cost = _all(p["cost_base"] for p in parcels)
+        proceeds = _all(d["proceeds"] for d in sales)
+        gross = None if cost is None or proceeds is None else proceeds - cost
+        discount = None if gross is None else sum(
+            (((p["proceeds"] - p["cost_base"]) / 2) for p in parcels
+             if p["discountable"] and p["proceeds"] > p["cost_base"]), ZERO)
+        rates = [fx_of(history, h.currency, d) for d in h.dividends]
+        dividends = _all(None if r is None else d.cash * r for d, r in zip(h.dividends, rates))
         rows.append([h.ticker, names[h.ticker],
                      _d(sum((d["quantity"] for d in sales), ZERO), "0.00000001"),
                      min(t.date for t in h.trades if t.type != "sell").isoformat(),
                      max(d["date"] for d in sales).isoformat(), _d(cost), _d(proceeds),
-                     _d(dividends), _d(gross), _d(discount), _d(gross - discount),
-                     _d(gross + dividends), ""])
+                     _d(dividends), _d(gross), _d(discount),
+                     _d(None if gross is None else gross - discount),
+                     _d(None if gross is None or dividends is None else gross + dividends), ""])
     return sorted(rows, key=lambda r: r[0])
 
 
@@ -167,6 +172,12 @@ def _dividends(history: History, names: dict) -> list:
     return sorted(rows, key=lambda r: r[0])
 
 
+def _all(parts):
+    """A sum, or None when any part is unknown."""
+    parts = list(parts)
+    return None if any(p is None for p in parts) else sum(parts, ZERO)
+
+
 def _unordered(rows) -> list:
     return sorted((list(r) for r in rows), key=lambda r: [str(x) for x in r])
 
@@ -199,17 +210,6 @@ def test_every_report_agrees_with_the_working_out(session_factory, portfolio, hi
     finally:
         s.rollback()
         s.close()
-
-
-def test_the_fallback_rate_of_the_fy_engine_is_the_one_used_here(session_factory, portfolio):
-    """`booked_rate` (the FY engine's) and `fx_of` (FxBook's) differ only when
-    no rate exists at all; the closed-positions dividends use the engine's.
-    Pinned so a change to either is a decision, not a drift."""
-    from histories import Dividend as D
-
-    history = History((), ())
-    row = D(TODAY, Decimal(5), None, None)
-    assert booked_rate(history, "USD", row) == 1 and fx_of(history, "USD", row) is None
 
 
 def test_a_parcel_held_exactly_a_year_is_not_yet_eligible(session_factory, portfolio):

@@ -534,6 +534,25 @@ def test_the_fy_endpoint_agrees_with_the_report(client, session_factory, furnish
         assert fyreport.fy_cgt(s, ref.FY2024).net_capital_gain == ref.FY2024_NET_CAPITAL_GAIN
 
 
+@freeze_time(ref.TODAY)
+def test_the_fy_endpoint_names_what_its_totals_leave_out(client, session_factory, furnished):
+    """A sale in a currency with no exchange rate anywhere stays out of the
+    gain and is named, rather than counted as if a pound were a dollar."""
+    portfolio_id, user_id = furnished
+    with bound(session_factory, portfolio_id, user_id) as s:
+        nova = fac.make_instrument(s, "NOVA", exchange="LSE", currency="GBP",
+                                   asset_class="share")
+        fac.add_trade(s, nova, "2023-08-01", "buy", 100, "10.00")
+        fac.add_trade(s, nova, "2023-09-01", "sell", 100, "12.00")
+        s.commit()
+    raw = issue_key(session_factory, portfolio_id, created_by=user_id)
+
+    payload = client.get(f"/api/v1/fy/{ref.FY2024}", headers=bearer(raw)).json()
+
+    assert payload["withheld"] == ["NOVA"]
+    assert Decimal(str(payload["cgt"]["net_capital_gain"])) == ref.FY2024_NET_CAPITAL_GAIN
+
+
 @pytest.mark.parametrize("year", [1999, 2101])
 def test_a_year_outside_the_supported_range_is_rejected(client, session_factory, furnished,
                                                         year):

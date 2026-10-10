@@ -32,11 +32,12 @@ from histories import (
     TODAY,
     ZERO,
     History,
-    booked_rate,
     close_on_or_before,
+    fx_of,
     fy_bounds,
     fy_of,
     histories,
+    known,
     load,
     stored_rate,
     worked_disposals,
@@ -61,6 +62,8 @@ def _cgt(history: History, fy: int) -> dict:
                        key=lambda d: d["date"])
     gains_disc = gains_other = losses = ZERO
     for d in disposals:
+        if not known(d):
+            continue            # listed, and left out of every figure (decisions.md #5)
         for p in d["parcels"]:
             gain = p["proceeds"] - p["cost_base"]
             if gain < 0:
@@ -78,7 +81,8 @@ def _cgt(history: History, fy: int) -> dict:
     net_gain = ZERO if unapplied > 0 else (gains_other - off_other) + discounted / 2
     return {"disposals": disposals, "gains_discountable": gains_disc,
             "gains_other": gains_other, "losses": losses, "discount": discounted / 2,
-            "net_capital_gain": net_gain, "net_capital_loss": max(unapplied, ZERO)}
+            "net_capital_gain": net_gain, "net_capital_loss": max(unapplied, ZERO),
+            "withheld": sorted({d["ticker"] for d in disposals if not known(d)})}
 
 
 def _report(history: History, fy: int) -> dict:
@@ -86,47 +90,64 @@ def _report(history: History, fy: int) -> dict:
     asof = min(end, TODAY)
     snapshot, activity = {}, dict(invested=ZERO, buys=0, sells=0, brokerage=ZERO,
                                   proceeds=ZERO)
+    # decisions.md #5: an AUD figure a row has no rate for is left out of it,
+    # and the holding named, never booked at 1:1.
+    withheld = set()
     for h in history.holdings:
-        units = invested = ZERO
+        units, invested = ZERO, ZERO
         for t in h.trades:
             if t.date > asof:
                 continue
-            rate = booked_rate(history, h.currency, t)
+            rate = fx_of(history, h.currency, t)
             units += -t.quantity if t.type == "sell" else t.quantity
             if t.type == "buy":
-                invested += (t.quantity * t.unit_price + t.brokerage) * rate
+                invested = (None if invested is None or rate is None else
+                            invested + (t.quantity * t.unit_price + t.brokerage) * rate)
             if not start <= t.date <= end or t.type == "drp":
                 continue
-            activity["brokerage"] += t.brokerage * rate
+            if rate is None:
+                withheld.add(h.ticker)
+            else:
+                activity["brokerage"] += t.brokerage * rate
             if t.type == "buy":
                 activity["buys"] += 1
-                activity["invested"] += (t.quantity * t.unit_price + t.brokerage) * rate
+                if rate is not None:
+                    activity["invested"] += (t.quantity * t.unit_price + t.brokerage) * rate
             else:
                 activity["sells"] += 1
-                activity["proceeds"] += (t.quantity * t.unit_price - t.brokerage) * rate
+                if rate is not None:
+                    activity["proceeds"] += (t.quantity * t.unit_price - t.brokerage) * rate
         if units > 0:
             close = close_on_or_before(h, asof)
             rate = stored_rate(history, h.currency, asof)
+            if invested is None or (close and rate is None):
+                withheld.add(h.ticker)
             # No rate stored for the currency is no AUD value: decisions.md #5.
             value = units * close[0] * rate if close and rate is not None else None
-            gain = None if value is None else value - invested
+            gain = None if value is None or invested is None else value - invested
             snapshot[h.ticker] = {
                 "units": units, "invested": invested,
                 "price": close[0] if close else None, "price_date": close[1] if close else None,
                 "value": value, "gain": gain,
-                # A percentage of nothing invested does not exist (a DRP-only holding).
+                # A percentage of nothing invested does not exist (a DRP-only
+                # holding); one of an unknown amount exists but is not known.
                 "gain_pct": gain / invested if gain is not None and invested else None,
-                "applies": bool(invested)}
+                "applies": invested is None or bool(invested)}
     income = {}
     for h in history.holdings:
         paid = [d for d in h.dividends if start <= d.date <= end]
         if paid:
+            rates = [fx_of(history, h.currency, d) for d in paid]
+            cash = None if None in rates else sum((d.cash * r for d, r in zip(paid, rates)), ZERO)
+            if cash is None:
+                withheld.add(h.ticker)
             income[h.ticker] = {
-                "cash": sum((d.cash * booked_rate(history, h.currency, d) for d in paid), ZERO),
+                "cash": cash,
                 "franking": sum((d.franking or ZERO for d in paid), ZERO),
                 "missing": sum(1 for d in paid if d.franking is None)}
-    return {"snapshot": snapshot, "activity": activity, "income": income,
-            "cgt": _cgt(history, fy)}
+    cgt = _cgt(history, fy)
+    return {"snapshot": snapshot, "activity": activity, "income": income, "cgt": cgt,
+            "withheld": sorted(withheld | set(cgt["withheld"]))}
 
 
 # --------------------------------------------------------------------------- #
@@ -160,7 +181,8 @@ def _app(report: dict) -> dict:
                 "gains_discountable": cgt.gains_discountable, "gains_other": cgt.gains_other,
                 "losses": cgt.losses, "discount": cgt.discount,
                 "net_capital_gain": cgt.net_capital_gain,
-                "net_capital_loss": cgt.net_capital_loss},
+                "net_capital_loss": cgt.net_capital_loss, "withheld": cgt.withheld},
+        "withheld": report["withheld"],
     }
 
 
@@ -176,7 +198,8 @@ def _rounded(expected: dict) -> dict:
     cgt["disposals"] = [{**d, "quantity": _round(d["quantity"]),
                          "parcels": [{**p, "quantity": _round(p["quantity"])}
                                      for p in d["parcels"]]} for d in cgt["disposals"]]
-    return {"snapshot": snap, "activity": act, "income": inc, "cgt": cgt}
+    return {"snapshot": snap, "activity": act, "income": inc, "cgt": cgt,
+            "withheld": expected["withheld"]}
 
 
 @given(history=histories())
@@ -199,7 +222,7 @@ def test_every_financial_year_agrees_with_the_working_out(session_factory, portf
                 # Sales on one day in different holdings come in no set order.
                 for side in (got, want):
                     side["cgt"]["disposals"].sort(key=lambda d: (d["date"], d["ticker"]))
-                for part in ("snapshot", "activity", "income", "cgt"):
+                for part in ("snapshot", "activity", "income", "cgt", "withheld"):
                     assert got[part] == want[part], f"FY{fy} {part}"
     finally:
         s.rollback()
@@ -218,12 +241,14 @@ def test_the_parts_of_every_disposal_add_up(session_factory, portfolio, history)
             s.refresh(inst, ["trades"])
             disposals = fyreport.instrument_disposals(inst, _book(s))
             for d in disposals:
-                assert sum((p.proceeds for p in d.parcels), ZERO) == d.proceeds
+                if d.proceeds is not None:
+                    assert sum((p.proceeds for p in d.parcels), ZERO) == d.proceeds
                 assert sum((p.quantity for p in d.parcels), ZERO) == d.quantity
             billed: dict[dt.date, Decimal] = {}
             for d in disposals:
                 for p in d.parcels:
-                    billed[p.acquired] = billed.get(p.acquired, ZERO) + p.cost_base
+                    if p.cost_base is not None:
+                        billed[p.acquired] = billed.get(p.acquired, ZERO) + p.cost_base
             sold = sum((t.quantity for t in h.trades if t.type == "sell"), ZERO)
             used = ZERO
             for t in h.trades:
@@ -232,10 +257,10 @@ def test_the_parts_of_every_disposal_add_up(session_factory, portfolio, history)
                 if used + t.quantity > sold:
                     break                   # FIFO: nothing after this is used up
                 used += t.quantity
-                cost = ((t.quantity * t.unit_price + t.brokerage)
-                        * booked_rate(history, h.currency, t)).quantize(CENTS)
+                rate = fx_of(history, h.currency, t)
                 same_day = [x for x in h.trades if x.type != "sell" and x.date == t.date]
-                if len(same_day) == 1:      # parcels from one day share a key here
+                if rate is not None and len(same_day) == 1:   # one day's parcels share a key
+                    cost = ((t.quantity * t.unit_price + t.brokerage) * rate).quantize(CENTS)
                     assert billed.get(t.date, ZERO) == cost, t
     finally:
         s.rollback()

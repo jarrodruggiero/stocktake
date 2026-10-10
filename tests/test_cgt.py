@@ -628,3 +628,85 @@ def test_the_fy_page_shows_the_refusal(client, session_factory):
 
     assert "not calculated for FY27/28" in page
     assert "cost-base indexation" in page
+
+
+# --------------------------------------------------------------------------- #
+# A foreign row with no exchange rate anywhere: withheld and named, not 1:1
+# --------------------------------------------------------------------------- #
+
+def _usd(pf, ticker="NOVA"):
+    return make_instrument(pf, ticker, asset_class="share", exchange="NASDAQ", currency="USD")
+
+
+def test_a_sale_with_no_rate_anywhere_is_listed_but_left_out_of_the_totals(pf):
+    """Booked at 1:1, this US$200 gain went into the net capital gain as A$200.
+    With no rate it is a question, not a number (decisions.md #5)."""
+    inst = _usd(pf)
+    add_trade(pf, inst, "2025-08-01", "buy", 100, "10.00")
+    add_trade(pf, inst, "2025-09-01", "sell", 100, "12.00")
+
+    out = fyreport.fy_cgt(pf, 2026)
+
+    [sale] = out.disposals
+    assert (sale.proceeds, sale.cost_base, sale.gain, sale.known) == (None, None, None, False)
+    assert (out.gains_other, out.net_capital_gain, out.withheld) == (0, 0, ["NOVA"])
+
+
+def test_only_the_sale_that_used_a_rateless_parcel_is_withheld(pf):
+    inst = _usd(pf)
+    add_trade(pf, inst, "2025-08-01", "buy", 10, "10.00", fx_rate="1.50")
+    add_trade(pf, inst, "2025-08-02", "buy", 10, "10.00")                  # no rate anywhere
+    add_trade(pf, inst, "2025-09-01", "sell", 10, "12.00", fx_rate="1.60")  # FIFO: the first
+    add_trade(pf, inst, "2025-10-01", "sell", 10, "12.00", fx_rate="1.60")  # the second
+
+    first, second = fyreport.fy_cgt(pf, 2026).disposals
+
+    assert (first.known, first.cost_base, first.proceeds) == (True, Decimal("150.00"),
+                                                              Decimal("192.00"))
+    assert (second.known, second.cost_base, second.proceeds) == (False, None, Decimal("192.00"))
+    assert fyreport.fy_cgt(pf, 2026).gains_other == Decimal("42.00")
+
+
+@freeze_time("2026-07-15")
+def test_a_dividend_with_no_rate_leaves_its_holding_out_of_income(pf):
+    nova = _usd(pf)
+    add_trade(pf, nova, "2025-08-01", "buy", 100, "10.00", fx_rate="1.50")
+    add_dividend(pf, nova, "2025-12-01", "50.00")
+    acme = make_instrument(pf, "ACME", asset_class="share")
+    add_trade(pf, acme, "2025-08-01", "buy", 100, "10.00")
+    add_dividend(pf, acme, "2025-12-01", "30.00")           # AUD needs no rate (#6)
+
+    report = fyreport.fy_report(pf, 2026)
+
+    assert {r.instrument.ticker: r.cash for r in report["income"]} == {
+        "ACME": Decimal("30.00"), "NOVA": None}
+    assert (report["income_cash"], report["withheld"]) == (Decimal("30.00"), ["NOVA"])
+
+
+@freeze_time("2026-07-15")
+def test_a_sale_whose_parcel_had_no_rate_still_names_its_holding(pf):
+    """Bought the year before with no rate, sold this year with one: the sale
+    is the only figure the gap reaches, and the page still names it."""
+    inst = _usd(pf)
+    add_trade(pf, inst, "2025-05-01", "buy", 10, "10.00")
+    add_trade(pf, inst, "2025-09-01", "sell", 10, "12.00", fx_rate="1.60")
+
+    assert fyreport.fy_report(pf, 2026)["withheld"] == ["NOVA"]
+
+
+@freeze_time("2026-07-15")
+def test_a_purchase_with_no_rate_leaves_the_amount_invested_unknown(pf):
+    """Each AUD figure the purchase feeds is blank or short of it, and the
+    holding is named. The year's activity still counts the trade."""
+    inst = _usd(pf)
+    add_trade(pf, inst, "2025-08-01", "buy", 10, "10.00", fx_rate="1.50")
+    add_trade(pf, inst, "2025-08-02", "buy", 10, "10.00")
+    add_prices(pf, inst, [("2025-12-31", "11.00")])
+
+    report = fyreport.fy_report(pf, 2026)
+
+    [row] = report["snapshot"]
+    assert (row.invested_cum, row.gain_aud, row.gain_pct, row.percentage_applies) == (
+        None, None, None, True)                      # unknown, not "nothing invested"
+    assert (report["activity"].buys, report["activity"].invested) == (2, Decimal("150.00"))
+    assert (report["total_invested"], report["withheld"]) == (0, ["NOVA"])

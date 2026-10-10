@@ -35,6 +35,10 @@
     <span class="label">Net capital gain</span><span class="big"><span class="dir" aria-hidden="true">{{ '▲' if r.cgt.net_capital_gain >= 0 else '▼' }}</span>{{ r.cgt.net_capital_gain | cash }}</span>
     {% if r.cgt.net_capital_loss %}<span class="sub">loss carried: {{ r.cgt.net_capital_loss | money_plain }}</span>{% endif %}</div>
 </section>
+{% if r.withheld %}
+<p class="note">Totals exclude {{ r.withheld | join(', ') }} — no exchange rate stored
+yet. The next price refresh fills it in.</p>
+{% endif %}
 
 <section>
   <h2>Holdings at {{ r.asof }}</h2>
@@ -164,7 +168,7 @@
         <td class="num">{{ d.quantity | qty }}</td>
         <td class="num">{{ d.cost_base | money }}</td>
         <td class="num">{{ d.proceeds | money }}</td>
-        <td class="num {{ 'up' if d.gain >= 0 else 'down' }}">{{ d.gain | money }}</td>
+        <td class="num {{ 'up' if d.gain is not none and d.gain >= 0 else 'down' if d.gain is not none }}">{{ d.gain | money }}</td>
         <td class="sub">{% for p in d.parcels %}{{ p.acquired }}{% if p.discountable %} ✓{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</td>
       </tr>
       {% endfor %}

@@ -719,3 +719,20 @@ def test_performance_cumulative_columns_only_move_forward(portfolio):
     cumulative = column(headers, rows, "Invested cumulative (AUD)")
 
     assert cumulative == sorted(cumulative)
+
+
+@freeze_time("2026-07-15")
+def test_a_closed_positions_dividend_with_no_rate_is_blank_not_one_to_one(pf):
+    """The figure went to an accountant as if a pound were a dollar
+    (decisions.md #5). The trades carry their rates; the dividend has none."""
+    inst = make_instrument(pf, "NOVA", exchange="LSE", currency="GBP", asset_class="share")
+    add_trade(pf, inst, "2025-08-01", "buy", 10, "10.00", fx_rate="2.00")
+    add_dividend(pf, inst, "2025-10-01", "5.00")
+    add_trade(pf, inst, "2025-12-01", "sell", 10, "12.00", fx_rate="2.00")
+
+    headers, rows = exports.build(pf, ["closed_positions"])[exports.TITLES["closed_positions"]]
+
+    [row] = rows
+    assert row[headers.index("Gross capital gain (AUD)")] == Decimal("40.00")
+    assert row[headers.index("Dividends (AUD)")] == ""
+    assert row[headers.index("Total return incl. dividends (AUD)")] == ""

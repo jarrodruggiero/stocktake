@@ -146,12 +146,16 @@ def stored_rate(history: History, currency: str, on: dt.date) -> Decimal | None:
     return history.usd[i - 1][1] if i else history.usd[0][1]
 
 
-def booked_rate(history: History, currency: str, row) -> Decimal:
-    """What the FY report books a trade or dividend at: its own rate, else the
-    stored series, else 1 (fyreport._rate's documented fallback)."""
-    if row.fx_rate is not None:
-        return row.fx_rate
-    return stored_rate(history, currency, row.date) or ONE
+def fx_of(history: History, currency: str, row) -> Decimal | None:
+    """The rate every figure books a row at (queries.FxBook.of, fyreport._rate):
+    its own, else the stored series, else none at all (decisions.md #5)."""
+    return row.fx_rate if row.fx_rate is not None else stored_rate(history, currency, row.date)
+
+
+def known(disposal: dict) -> bool:
+    """A sale whose every AUD figure converts; any other is withheld (#5)."""
+    return disposal["proceeds"] is not None and all(
+        p["cost_base"] is not None for p in disposal["parcels"])
 
 
 def close_on_or_before(h: Holding, on: dt.date) -> tuple[Decimal, dt.date] | None:
@@ -179,42 +183,44 @@ def over_a_year(acquired: dt.date, sold: dt.date) -> bool:
 
 def worked_disposals(history: History) -> list[dict]:
     """FIFO, with each parcel's cost and each sale's proceeds billed by running
-    total so the parts add to the whole (decisions.md #7, #93)."""
+    total so the parts add to the whole (decisions.md #7, #93). A purchase or
+    sale with no rate keeps its units in the matching and has no AUD figure."""
     out = []
     for h in history.holdings:
-        parcels = []        # [acquired, remaining, quantity, cost, billed]
+        parcels = []        # [acquired, remaining, quantity, cost or None, billed]
         for t in h.trades:
-            rate = booked_rate(history, h.currency, t)
+            rate = fx_of(history, h.currency, t)
             if t.type != "sell":
-                cost = (t.quantity * t.unit_price + t.brokerage) * rate
+                cost = None if rate is None else (t.quantity * t.unit_price + t.brokerage) * rate
                 parcels.append([t.date, t.quantity, t.quantity, cost, ZERO])
                 continue
-            proceeds = ((t.quantity * t.unit_price - t.brokerage) * rate).quantize(CENTS)
+            proceeds = (None if rate is None else
+                        ((t.quantity * t.unit_price - t.brokerage) * rate).quantize(CENTS))
             left, uses = t.quantity, []
             while left > 0:
                 p = parcels[0]
                 take = min(p[1], left)
                 p[1] -= take
-                owed = (p[3] * (p[2] - p[1]) / p[2]).quantize(CENTS)
-                uses.append({"acquired": p[0], "quantity": take, "cost_base": owed - p[4],
+                cost_base = None
+                if p[3] is not None:
+                    owed = (p[3] * (p[2] - p[1]) / p[2]).quantize(CENTS)
+                    cost_base, p[4] = owed - p[4], owed
+                uses.append({"acquired": p[0], "quantity": take, "cost_base": cost_base,
                              "discountable": over_a_year(p[0], t.date)})
-                p[4] = owed
                 left -= take
                 if p[1] == 0:
                     parcels.pop(0)
             sold = billed = ZERO
             for use in uses:
                 sold += use["quantity"]
+                if proceeds is None:
+                    use["proceeds"] = None
+                    continue
                 owed = (proceeds * sold / t.quantity).quantize(CENTS)
                 use["proceeds"], billed = owed - billed, owed
             out.append({"ticker": h.ticker, "date": t.date, "quantity": t.quantity,
                         "proceeds": proceeds, "parcels": uses})
     return out
-
-
-def fx_of(history: History, currency: str, row) -> Decimal | None:
-    """queries.FxBook.of: the row's own rate, else the stored series, else none."""
-    return row.fx_rate if row.fx_rate is not None else stored_rate(history, currency, row.date)
 
 
 def _in_aud(amount, currency, rate):
