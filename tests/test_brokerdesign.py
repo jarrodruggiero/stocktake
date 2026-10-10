@@ -697,3 +697,49 @@ def test_the_back_button_goes_where_you_came_from_not_somewhere_fixed():
         assert navigation.safe_path(hostile, "/imports-exports") == "/imports-exports"
     # Unnamed but valid: the fallback names it rather than the template guessing.
     assert navigation.back_label("/holding/ALPHA", "Imports") == "Imports"
+
+
+# --------------------------------------------------------------------------- #
+# The small helpers the page leans on, found unchecked by a mutation run
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize(("index", "letters"), [
+    (0, "A"), (25, "Z"), (26, "AA"), (27, "AB"), (51, "AZ"), (52, "BA"), (701, "ZZ"),
+    (702, "AAA")])
+def test_columns_are_lettered_as_a_spreadsheet_letters_them(index, letters):
+    assert brokerdesign.column_letter(index) == letters
+
+
+def test_the_action_words_on_offer_are_the_files_own_commonest_first():
+    """Blank cells say nothing; equal counts fall back to the alphabet, so the
+    order does not depend on which row came first."""
+    rows = [{"Side": w} for w in ["Sell", "Buy", " Buy ", "In", "", None, "Buy", "Sell", "Adj"]]
+
+    assert brokerdesign.action_words(rows, "Side") == ["Buy", "Sell", "Adj", "In"]
+    assert brokerdesign.action_words(rows, None) == []
+
+
+def test_blank_dates_are_neither_ambiguous_nor_a_format():
+    assert brokerdesign.dates_are_ambiguous(["", "  "]) is False
+    assert brokerdesign.guess_date_format(["", "  "]) is None
+    # A blank among real ones is passed over rather than failing every format.
+    assert brokerdesign.guess_date_format(["17/02/2026", " ", "05/01/2026"]) == "%d/%m/%Y"
+    assert brokerdesign.dates_are_ambiguous(["01/02/2026", ""]) is True
+
+
+def test_only_the_rows_left_out_for_want_of_a_price_are_counted():
+    skipped = ["line 3: DRP allotment with no price — import the dividend statement",
+               "line 5: action 'Transfer'",
+               "line 9: DRP allotment with no price — import the dividend statement"]
+
+    assert brokerdesign.drp_skipped(skipped) == 2
+    assert brokerdesign.drp_skipped([]) == 0
+
+
+def test_a_format_with_no_date_format_chosen_reads_day_first():
+    from ruamel.yaml import YAML
+
+    body = brokerdesign.broker_yaml(name="X", exchange="ASX", currency="AUD",
+                                    date_format=None, columns={})
+
+    assert YAML(typ="safe").load(body)["date_format"] == "%d/%m/%Y"
