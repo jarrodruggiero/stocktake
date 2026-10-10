@@ -169,10 +169,14 @@ def _report(history: History, fy: int) -> dict:
             rate = stored_rate(history, h.currency, asof)
             # No rate stored for the currency is no AUD value: decisions.md #5.
             value = units * close[0] * rate if close and rate is not None else None
+            gain = None if value is None else value - invested
             snapshot[h.ticker] = {
                 "units": units, "invested": invested,
                 "price": close[0] if close else None, "price_date": close[1] if close else None,
-                "value": value, "gain": None if value is None else value - invested}
+                "value": value, "gain": gain,
+                # A percentage of nothing invested does not exist (a DRP-only holding).
+                "gain_pct": gain / invested if gain is not None and invested else None,
+                "applies": bool(invested)}
     income = {}
     for h in history.holdings:
         paid = [d for d in h.dividends if start <= d.date <= end]
@@ -199,7 +203,8 @@ def _app(report: dict) -> dict:
     return {
         "snapshot": {r.instrument.ticker: {
             "units": _round(r.units), "invested": _round(r.invested_cum), "price": r.price,
-            "price_date": r.price_date, "value": _round(r.value_aud), "gain": _round(r.gain_aud)}
+            "price_date": r.price_date, "value": _round(r.value_aud), "gain": _round(r.gain_aud),
+            "gain_pct": _round(r.gain_pct), "applies": r.percentage_applies}
             for r in report["snapshot"]},
         "activity": {"invested": _round(a.invested), "buys": a.buys, "sells": a.sells,
                      "brokerage": _round(a.brokerage), "proceeds": _round(a.proceeds)},
@@ -221,7 +226,7 @@ def _app(report: dict) -> dict:
 
 def _rounded(expected: dict) -> dict:
     """The working-out in the comparison's shape (quantities and money to 1e-8)."""
-    snap = {t: {k: (_round(v) if k in ("units", "invested", "value", "gain") else v)
+    snap = {t: {k: (_round(v) if k in ("units", "invested", "value", "gain", "gain_pct") else v)
                 for k, v in row.items()} for t, row in expected["snapshot"].items()}
     act = {k: (_round(v) if isinstance(v, Decimal) else v)
            for k, v in expected["activity"].items()}
@@ -244,7 +249,12 @@ def test_every_financial_year_agrees_with_the_working_out(session_factory, portf
             first = min(t.date for h in history.holdings for t in h.trades)
             assert years == list(range(_fy_of(TODAY), _fy_of(first) - 1, -1))
             for fy in years:
-                got = _app(fyreport.fy_report(s, fy))
+                report = fyreport.fy_report(s, fy)
+                dates = [d.date for d in report["cgt"].disposals]
+                assert dates == sorted(dates), "the schedule reads in date order"
+                tickers = [r.instrument.ticker for r in report["income"]]
+                assert tickers == sorted(tickers)
+                got = _app(report)
                 want = _rounded(_report(history, fy))
                 # Sales on one day in different holdings come in no set order.
                 for side in (got, want):
@@ -343,6 +353,62 @@ def test_a_net_loss_of_cents_is_still_a_loss(session_factory, portfolio):
         fac.add_trade(s, inst, "2025-09-01", "sell", 10, "0.95")   # 50 cents down
         out = fyreport.fy_cgt(s, 2026)
         assert (out.net_capital_loss, out.net_capital_gain) == (Decimal("0.50"), ZERO)
+    finally:
+        s.rollback()
+        s.close()
+
+
+def test_a_close_on_the_last_day_of_the_year_is_its_price(session_factory, portfolio):
+    s = _session(session_factory, portfolio)
+    try:
+        inst = fac.make_instrument(s, "ALPHA")
+        fac.add_trade(s, inst, "2025-01-06", "buy", 10, "1.00")
+        fac.add_prices(s, inst, [("2025-06-27", "1.10"), ("2025-06-30", "1.20"),
+                                 ("2025-07-01", "1.30")])
+        with freeze_time(TODAY):
+            row = fyreport.fy_report(s, 2025)["snapshot"][0]
+        assert (row.price, row.price_date) == (Decimal("1.20"), dt.date(2025, 6, 30))
+    finally:
+        s.rollback()
+        s.close()
+
+
+@pytest.mark.parametrize("today, current", [("2026-06-30", 2026), ("2026-07-01", 2027)])
+def test_the_last_day_of_june_is_still_in_the_year(session_factory, portfolio, today, current):
+    s = _session(session_factory, portfolio)
+    try:
+        inst = fac.make_instrument(s, "ALPHA")
+        fac.add_trade(s, inst, "2025-01-06", "buy", 10, "1.00")
+        with freeze_time(today):
+            assert fyreport.available_fys(s)[0] == current
+            assert fyreport.fy_report(s, 2026)["is_current"] is (current == 2026)
+    finally:
+        s.rollback()
+        s.close()
+
+
+def test_each_table_sorts_by_its_own_column(session_factory, portfolio):
+    from app import sorting
+
+    s = _session(session_factory, portfolio)
+    try:
+        for ticker, bought, sold in (("ALPHA", "1.00", "3.00"), ("BETAX", "1.00", "1.50"),
+                                     ("GAMMA", "1.00", "2.00")):
+            inst = fac.make_instrument(s, ticker)
+            fac.add_trade(s, inst, "2025-08-01", "buy", 20, bought)
+            fac.add_trade(s, inst, "2025-09-01", "sell", 10, sold)
+            fac.add_prices(s, inst, [("2026-06-30", sold)])
+            fac.add_dividend(s, inst, "2025-10-01", sold)
+        with freeze_time(TODAY):
+            report = fyreport.fy_report(s, 2026)
+            query = {"disposals_sort": "gain", "disposals_dir": "desc",
+                     "snapshot_sort": "value_aud", "income_sort": "cash", "income_dir": "desc"}
+            sorts = {t: sorting.read(query, t, keys) for t, keys in fyreport.SORTABLE.items()}
+            fyreport.sort_tables(report, sorts)
+        assert [d.instrument.ticker for d in report["cgt"].disposals] == ["ALPHA", "GAMMA",
+                                                                          "BETAX"]
+        assert [r.instrument.ticker for r in report["snapshot"]] == ["BETAX", "GAMMA", "ALPHA"]
+        assert [r.instrument.ticker for r in report["income"]] == ["ALPHA", "GAMMA", "BETAX"]
     finally:
         s.rollback()
         s.close()
