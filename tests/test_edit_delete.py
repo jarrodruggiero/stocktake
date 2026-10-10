@@ -41,11 +41,13 @@ TODAY = "2026-08-02"
 
 @pytest.fixture
 def ledger(client, session_factory):
-    """A signed-in owner holding 100 ACME bought in March."""
+    """A signed-in owner holding 100 ACME bought in March, added as "+ Add an
+    instrument" adds it, so deleting the trade leaves the holding on the list."""
     make_login(client, session_factory)
     with session_factory() as s:
         bind_to_only_portfolio(s)
         acme = fac.make_instrument(s, "ACME", name="Acme Industries")
+        fac.hold(s, acme)
         buy = fac.add_trade(s, acme, "2026-03-02", "buy", 100, "5.00", brokerage="9.50")
         s.commit()
         return {"acme_id": acme.id, "buy_id": buy.id}

@@ -20,7 +20,7 @@ from sqlalchemy import select
 import factories as fac
 import fixture_portfolio as ref
 from app import auth as auth_mod
-from app.models import Instrument, SavedChart, Trade, User, UserSession
+from app.models import HoldingPref, Instrument, SavedChart, Trade, User, UserSession
 
 PASSWORD = "correct-horse-battery"
 
@@ -363,6 +363,42 @@ def test_an_instrument_can_be_added_inline_while_recording_the_trade(client, ses
         assert inst.ticker == "NOVA"   # upper-cased on the way in
         assert inst.name == "Nova Group"
         assert s.scalars(select(Trade)).one().instrument_id == inst.id
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_a_refused_trade_adds_nothing_inline(client, session_factory, app_module,
+                                             monkeypatch, existing):
+    """A sell of something not held is refused, and the instrument typed in
+    beside it is not added either: not to the catalogue, not to the list, and
+    not reactivated if another portfolio had removed it. Found by a generated
+    sequence (test_sequences_through_the_routes.py)."""
+    kicked = []
+    monkeypatch.setattr(app_module, "_kick_feed", lambda: kicked.append(1))
+    make_login(client, session_factory)
+    if existing:
+        with session_factory() as s:
+            fac.make_instrument(s, "NOVA", active=False)
+            s.commit()
+    before = _counts(session_factory)
+
+    resp = client.post(
+        "/trade/new",
+        data={"instrument_id": "new", "type": "sell", "trade_date": "2026-07-01",
+              "quantity": "5", "unit_price": "12.00", "new_ticker": "NOVA",
+              "new_exchange": "ASX", "new_asset_class": "share", "new_currency": "AUD",
+              "_csrf": session_csrf(session_factory)},
+        headers={"accept": "text/html"}, follow_redirects=False)
+
+    assert resp.status_code == 200 and 'class="panel error"' in resp.text
+    assert _counts(session_factory) == before
+    assert kicked == []
+
+
+def _counts(session_factory) -> tuple:
+    with reading(session_factory) as s:
+        return (s.scalars(select(Instrument.active)).all(),
+                len(s.scalars(select(HoldingPref)).all()),
+                len(s.scalars(select(Trade)).all()))
 
 
 # --------------------------------------------------------------------------- #
