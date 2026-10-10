@@ -183,6 +183,9 @@ def get_fy(request: Request, year: int) -> dict:
             "end": r["end"].isoformat(),
             "as_at": r["asof"].isoformat(),
             "is_current": r["is_current"],
+            # Holdings every total below leaves out, for want of an exchange
+            # rate: the figures are short of them, not wrong (decisions.md #5).
+            "withheld": r["withheld"],
             "value": _num(r["total_value"]),
             "invested": _num(r["total_invested"]),
             "invested_this_fy": _num(r["activity"].invested),

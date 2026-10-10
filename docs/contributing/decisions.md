@@ -33,8 +33,8 @@ that switches a feature off is not carrying an unlinked door to it
 guessed. The rule has three parts: use the nearest stored FX rate within a
 tracked pair; **withhold and name the holding** when the pair is unknown; never
 fall back to 1:1, which books a foreign holding as though the currency did not
-exist. `totals.excluded` and `dividends_excluded` are how the withholding gets
-said out loud.
+exist. `totals.excluded`, `dividends_excluded` and the FY report's `withheld`
+are how the withholding gets said out loud.
 
 **6. …but a same-currency row needs no rate at all.** AUD → AUD is 1 by
 arithmetic, so requiring a stored `fx_rate` on an AUD row turns a fact about

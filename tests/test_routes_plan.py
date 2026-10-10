@@ -552,6 +552,23 @@ def test_the_fy_tab_renders_a_past_year(client, session_factory):
 
 
 @freeze_time(ref.TODAY)
+def test_the_fy_tab_names_what_its_totals_leave_out(client, session_factory):
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        ref.build_reference(s)
+        nova = fac.make_instrument(s, "NOVA", exchange="LSE", currency="GBP",
+                                   asset_class="share")
+        fac.add_trade(s, nova, "2023-08-01", "buy", 100, "10.00")
+        fac.add_trade(s, nova, "2023-09-01", "sell", 100, "12.00")
+        s.commit()
+
+    page = client.get(f"/?fy={ref.FY2024}", headers=HTML).text
+
+    assert "Totals exclude NOVA — no exchange rate stored" in page
+
+
+@freeze_time(ref.TODAY)
 def test_a_financial_year_with_no_history_is_a_404(client, session_factory):
     make_login(client, session_factory)
     with session_factory() as s:

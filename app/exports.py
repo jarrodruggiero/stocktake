@@ -47,6 +47,13 @@ def _d(value: Decimal | float | None, places: str = "0.01"):
     return Decimal(value).quantize(Decimal(places))
 
 
+def _total(parts) -> Decimal | None:
+    """The sum, or None when any part is unknown: a total short of a part it
+    cannot convert is a wrong number, and a blank is an honest one (#5)."""
+    parts = list(parts)
+    return None if any(p is None for p in parts) else sum(parts, ZERO)
+
+
 def _aud(value: Decimal | None, fx: Decimal | None) -> Decimal | None:
     """Convert, or return None so the cell comes out blank.
 
@@ -179,15 +186,17 @@ def realised_cgt(session: Session, fy: int | None = None, **_) -> Report:
             if fy and year != fy:
                 continue
             for parcel in disposal.parcels:
-                gain = parcel.gain
-                discount = (gain / 2) if (parcel.discountable and gain > 0) else ZERO
+                gain = parcel.gain          # None when either side had no rate
+                discount = (None if gain is None else
+                            gain / 2 if parcel.discountable and gain > 0 else ZERO)
                 rows.append([
                     disposal.date.isoformat(), inst.ticker, inst.name or "",
                     _d(parcel.quantity, "0.00000001"), parcel.acquired.isoformat(),
                     (disposal.date - parcel.acquired).days,
                     _d(parcel.cost_base), _d(parcel.proceeds), _d(gain),
                     "yes" if parcel.discountable else "no",
-                    _d(discount), _d(gain - discount), fyreport.fy_label(year),
+                    _d(discount), _d(None if gain is None else gain - discount),
+                    fyreport.fy_label(year),
                 ])
     rows.sort(key=lambda r: (r[0], r[1]))
     return headers, rows
@@ -295,20 +304,16 @@ def closed_positions(session: Session, **_) -> Report:
         disposals = fyreport.instrument_disposals(inst, fxbook)
         if not disposals:
             continue
-        cost_base = sum((d.cost_base for d in disposals), ZERO)
-        proceeds = sum((d.proceeds for d in disposals), ZERO)
-        gross = proceeds - cost_base
-        discount = sum(
-            ((p.gain / 2) for d in disposals for p in d.parcels if p.discountable and p.gain > 0),
-            ZERO,
-        )
+        cost_base = _total(d.cost_base for d in disposals)
+        proceeds = _total(d.proceeds for d in disposals)
+        gross = None if cost_base is None or proceeds is None else proceeds - cost_base
+        parcels = [p for d in disposals for p in d.parcels]
+        discount = (None if any(p.gain is None for p in parcels) else
+                    sum((p.gain / 2 for p in parcels if p.discountable and p.gain > 0), ZERO))
         units = sum((d.quantity for d in disposals), ZERO)
-        dividends_aud = sum(
-            (
-                dv.cash_amount * (fxbook.of(dv, inst.currency) or Decimal(1))
-                for dv in inst.dividends
-            ),
-            ZERO,
+        dividends_aud = _total(
+            queries.in_aud(dv.cash_amount, inst.currency, fxbook.of(dv, inst.currency))
+            for dv in inst.dividends
         )
         buys = [t.date for t in inst.trades if t.type in ("buy", "drp")]
         pref = prefs.get(inst.id)
@@ -316,8 +321,9 @@ def closed_positions(session: Session, **_) -> Report:
             inst.ticker, inst.name or "", _d(units, "0.00000001"),
             min(buys).isoformat() if buys else "",
             max(d.date for d in disposals).isoformat(),
-            _d(cost_base), _d(proceeds), _d(dividends_aud), _d(gross),
-            _d(discount), _d(gross - discount), _d(gross + dividends_aud),
+            _d(cost_base), _d(proceeds), _d(dividends_aud), _d(gross), _d(discount),
+            _d(None if gross is None or discount is None else gross - discount),
+            _d(None if gross is None or dividends_aud is None else gross + dividends_aud),
             (pref.note if pref else "") or "",
         ])
     rows.sort(key=lambda r: r[0])
