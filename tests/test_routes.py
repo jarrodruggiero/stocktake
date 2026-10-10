@@ -316,6 +316,58 @@ def test_a_sell_that_would_go_negative_is_refused_with_an_explanation(client, se
 
 
 @freeze_time(ref.TODAY)
+def test_a_sale_is_held_to_its_own_holdings_units(client, session_factory):
+    """ACME holds 10; WIDGET's 100 beside it must not cover a sale of 25 ACME.
+    A mutation run took the instrument out of the check and nothing failed."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        acme = fac.make_instrument(s, "ACME")
+        widget = fac.make_instrument(s, "WIDGET")
+        fac.add_trade(s, acme, "2026-01-05", "buy", 10, "4.00")
+        fac.add_trade(s, widget, "2026-01-05", "buy", 100, "1.00")
+        s.commit()
+        acme_id = acme.id
+
+    resp = client.post("/trade/new", headers={"accept": "text/html"}, data={
+        "instrument_id": str(acme_id), "type": "sell", "trade_date": "2026-07-01",
+        "quantity": "25", "unit_price": "5.00", "brokerage": "0",
+        "_csrf": session_csrf(session_factory)})
+
+    assert "10 units of ACME held" in resp.text
+    with reading(session_factory) as s:
+        assert len(s.scalars(select(Trade)).all()) == 2
+
+
+@freeze_time(ref.TODAY)
+@pytest.mark.parametrize("overrides, says", [
+    ({"type": "drp"}, "Choose buy or sell."),
+    ({"brokerage": "-1"}, "Brokerage can"),
+    ({"fx_rate": "0"}, "FX must be positive"),
+    ({"fx_rate": "-0.5"}, "FX must be positive"),
+    ({"set_time": "1", "trade_time": "25:99"}, "That time isn"),
+])
+def test_the_form_refuses_what_a_trade_cannot_be(client, session_factory, overrides, says):
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        acme = fac.make_instrument(s, "ACME")
+        fac.hold(s, acme)
+        s.commit()
+        acme_id = acme.id
+    data = {"instrument_id": str(acme_id), "type": "buy", "trade_date": "2026-07-01",
+            "quantity": "1", "unit_price": "1.00", "brokerage": "0",
+            "_csrf": session_csrf(session_factory)}
+    data.update(overrides)
+
+    resp = client.post("/trade/new", data=data, headers={"accept": "text/html"})
+
+    assert resp.status_code == 200 and says in resp.text
+    with reading(session_factory) as s:
+        assert s.scalars(select(Trade)).all() == []
+
+
+@freeze_time(ref.TODAY)
 def test_a_future_dated_trade_is_refused(client, session_factory):
     make_login(client, session_factory)
     with session_factory() as s:

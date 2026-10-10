@@ -547,3 +547,27 @@ def test_a_plan_step_that_recorded_the_trade_is_released(client, session_factory
         step = s.get(PlannedPurchase, step_id)
         assert step.trade_id is None
         assert step.status == "planned"
+
+
+@freeze_time(TODAY)
+def test_a_dividend_the_dialog_never_offered_is_not_moved(client, session_factory):
+    """The rows posted are user input. Only this holding's rows are offered,
+    so a dividend of another holding posted alongside stays where it is."""
+    make_login(client, session_factory)
+    rows = _furnish(session_factory)
+    target = _second_portfolio(session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        widget = fac.make_instrument(s, "WIDGET")
+        theirs = fac.add_dividend(s, widget, "2026-02-01", "8.00")
+        s.commit()
+        other_dividend = theirs.id
+
+    client.post(f"/trade/{rows['buy']}/move", headers=HTML, follow_redirects=False, data={
+        "target": str(target), "row": [f"trade:{rows['buy']}", f"dividend:{other_dividend}"],
+        "_csrf": session_csrf(session_factory)})
+
+    with session_factory() as s:
+        tenancy.allow_unscoped(s)
+        assert s.get(Dividend, other_dividend).portfolio_id != target
+        assert s.get(Trade, rows["buy"]).portfolio_id == target

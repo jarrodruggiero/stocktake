@@ -332,3 +332,48 @@ def test_after_deleting_all_trades_each_portfolios_chart_is_its_own(
     assert chart() is None, "nothing left to plot here"
     _switch(client, session_factory, two["other"])
     assert chart() == theirs
+
+
+# --------------------------------------------------------------------------- #
+# Removing one holding, beside another
+# --------------------------------------------------------------------------- #
+# A mutation run let removing one holding delete every holding setting in the
+# portfolio, and let a trade and a distribution cancel out in the count that
+# blocks removal; nothing failed.
+
+def test_removing_one_holding_keeps_the_others_settings(client, session_factory):
+    make_login(client, session_factory)
+    with session_factory() as s:
+        portfolio = s.scalar(select(fac.Portfolio))
+        alpha, omega = fac.make_instrument(s, "ALPHA"), fac.make_instrument(s, "OMEGA")
+        s.add(HoldingPref(portfolio_id=portfolio.id, instrument_id=alpha.id))
+        s.add(HoldingPref(portfolio_id=portfolio.id, instrument_id=omega.id,
+                          note="keep this", drp=True))
+        s.commit()
+        alpha_id, omega_id = alpha.id, omega.id
+
+    resp = client.post(f"/holdings/{alpha_id}/remove", headers=HTML, follow_redirects=False,
+                       data={"_csrf": session_csrf(session_factory)})
+
+    assert resp.status_code == 303
+    with session_factory() as s:
+        tenancy.allow_unscoped(s)
+        left = [(p.instrument_id, p.note, p.drp) for p in s.scalars(select(HoldingPref))]
+    assert left == [(omega_id, "keep this", True)]
+
+
+def test_a_trade_and_a_distribution_both_stand_in_the_way(client, session_factory):
+    make_login(client, session_factory)
+    with session_factory() as s:
+        portfolio = s.scalar(select(fac.Portfolio))
+        alpha = fac.make_instrument(s, "ALPHA")
+        fac.add_trade(s, alpha, "2026-01-05", "buy", 10, "5.00", portfolio_id=portfolio.id)
+        fac.add_dividend(s, alpha, "2026-02-05", "3.00", portfolio_id=portfolio.id)
+        s.commit()
+        alpha_id = alpha.id
+
+    resp = client.post(f"/holdings/{alpha_id}/remove", headers=HTML, follow_redirects=False,
+                       data={"_csrf": session_csrf(session_factory)})
+
+    assert resp.status_code == 409
+    assert "2 trade(s) or dividend(s)" in resp.text
