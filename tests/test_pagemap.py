@@ -119,7 +119,20 @@ def test_boxes_are_percentages_of_the_page():
     assert boxes[0].left == pytest.approx(5.0)      # 10 of 200
     assert boxes[0].width == pytest.approx(25.0)    # 50 of 200
     assert boxes[0].top == pytest.approx(10.0)      # 10 of 100
+    assert boxes[0].height == pytest.approx(14.0)   # 24 - 10 of 100
     assert all(0 <= b.left <= 100 and 0 <= b.top <= 100 for b in boxes)
+
+
+def test_words_a_point_apart_in_height_share_a_line():
+    """Characters on one printed line differ slightly in `top`; an exact key
+    made every word its own line, and every label its own value's row."""
+    words = [{"text": "Net", "x0": 10, "top": 12, "x1": 30, "bottom": 22},
+             {"text": "104.70", "x0": 40, "top": 13, "x1": 80, "bottom": 23},
+             {"text": "Paid", "x0": 10, "top": 40, "x1": 30, "bottom": 50}]
+
+    assert pagemap.text_from(words) == "Net 104.70\nPaid"
+    boxes = pagemap.boxes_for(words, page_width=100, page_height=100, first_index=0)
+    assert [b.text for b in boxes] == ["Net", "104.70", "Paid"]
 
 
 def test_a_zero_sized_page_does_not_divide_by_zero():
