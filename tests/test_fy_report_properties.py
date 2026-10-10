@@ -34,22 +34,15 @@ from histories import (
     History,
     booked_rate,
     close_on_or_before,
+    fy_bounds,
+    fy_of,
     histories,
     load,
     stored_rate,
+    worked_disposals,
 )
 
 EXACT = Decimal("0.00000001")
-
-
-@pytest.fixture
-def portfolio(session_factory):
-    """An owner and a portfolio, committed: each case rolls back only its own rows."""
-    with session_factory() as s:
-        user = fac.make_user(s, "owner@example.test")
-        p = fac.make_portfolio(s, "Generated", owner=user)
-        s.commit()
-        return p.id, user.id
 
 
 def _session(session_factory, portfolio):
@@ -62,62 +55,9 @@ def _session(session_factory, portfolio):
 # The working-out
 # --------------------------------------------------------------------------- #
 
-def _bounds(fy: int) -> tuple[dt.date, dt.date]:
-    return dt.date(fy - 1, 7, 1), dt.date(fy, 6, 30)
-
-
-def _fy_of(day: dt.date) -> int:
-    return day.year + (1 if day.month >= 7 else 0)
-
-
-def _over_a_year(acquired: dt.date, sold: dt.date) -> bool:
-    """Held more than twelve months: sold after the anniversary, which for a
-    29 February purchase is 28 February."""
-    try:
-        anniversary = acquired.replace(year=acquired.year + 1)
-    except ValueError:
-        anniversary = dt.date(acquired.year + 1, 2, 28)
-    return sold > anniversary
-
-
-def _disposals(history: History) -> list[dict]:
-    """FIFO, with each parcel's cost and each sale's proceeds billed by running
-    total so the parts add to the whole (decisions.md #7, #93)."""
-    out = []
-    for h in history.holdings:
-        parcels = []        # [acquired, remaining, quantity, cost, billed]
-        for t in h.trades:
-            rate = booked_rate(history, h.currency, t)
-            if t.type != "sell":
-                cost = (t.quantity * t.unit_price + t.brokerage) * rate
-                parcels.append([t.date, t.quantity, t.quantity, cost, ZERO])
-                continue
-            proceeds = ((t.quantity * t.unit_price - t.brokerage) * rate).quantize(CENTS)
-            left, uses = t.quantity, []
-            while left > 0:
-                p = parcels[0]
-                take = min(p[1], left)
-                p[1] -= take
-                owed = (p[3] * (p[2] - p[1]) / p[2]).quantize(CENTS)
-                uses.append({"acquired": p[0], "quantity": take, "cost_base": owed - p[4],
-                             "discountable": _over_a_year(p[0], t.date)})
-                p[4] = owed
-                left -= take
-                if p[1] == 0:
-                    parcels.pop(0)
-            sold = billed = ZERO
-            for use in uses:
-                sold += use["quantity"]
-                owed = (proceeds * sold / t.quantity).quantize(CENTS)
-                use["proceeds"], billed = owed - billed, owed
-            out.append({"ticker": h.ticker, "date": t.date, "quantity": t.quantity,
-                        "proceeds": proceeds, "parcels": uses})
-    return out
-
-
 def _cgt(history: History, fy: int) -> dict:
-    start, end = _bounds(fy)
-    disposals = sorted((d for d in _disposals(history) if start <= d["date"] <= end),
+    start, end = fy_bounds(fy)
+    disposals = sorted((d for d in worked_disposals(history) if start <= d["date"] <= end),
                        key=lambda d: d["date"])
     gains_disc = gains_other = losses = ZERO
     for d in disposals:
@@ -142,7 +82,7 @@ def _cgt(history: History, fy: int) -> dict:
 
 
 def _report(history: History, fy: int) -> dict:
-    start, end = _bounds(fy)
+    start, end = fy_bounds(fy)
     asof = min(end, TODAY)
     snapshot, activity = {}, dict(invested=ZERO, buys=0, sells=0, brokerage=ZERO,
                                   proceeds=ZERO)
@@ -247,7 +187,7 @@ def test_every_financial_year_agrees_with_the_working_out(session_factory, portf
         with freeze_time(TODAY):
             years = fyreport.available_fys(s)
             first = min(t.date for h in history.holdings for t in h.trades)
-            assert years == list(range(_fy_of(TODAY), _fy_of(first) - 1, -1))
+            assert years == list(range(fy_of(TODAY), fy_of(first) - 1, -1))
             for fy in years:
                 report = fyreport.fy_report(s, fy)
                 dates = [d.date for d in report["cgt"].disposals]

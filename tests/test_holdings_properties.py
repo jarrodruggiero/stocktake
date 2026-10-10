@@ -16,88 +16,16 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-import pytest
 from hypothesis import given
 
-import factories as fac
 from app import queries, tenancy
-from histories import ZERO, History, histories, load
+from histories import ZERO, histories, load, worked_holdings
 
 EXACT = Decimal("0.00000001")
 
 
-@pytest.fixture
-def portfolio(session_factory):
-    """An owner and a portfolio, committed: each case rolls back only its own rows."""
-    with session_factory() as s:
-        user = fac.make_user(s, "owner@example.test")
-        p = fac.make_portfolio(s, "Generated", owner=user)
-        s.commit()
-        return p.id, user.id
-
-
 def _q(v):
     return None if v is None else Decimal(v).quantize(EXACT)
-
-
-def _in_aud(amount, currency, rate):
-    if currency == "AUD":
-        return amount
-    return None if rate is None else amount * rate
-
-
-def _sum_aud(parts):
-    parts = list(parts)
-    return None if any(p is None for p in parts) else sum(parts, ZERO)
-
-
-def _expected(history: History) -> dict:
-    latest_rate = history.usd[-1][1] if history.usd else None
-    out = {}
-    for h in history.holdings:
-        rate_now = Decimal(1) if h.currency == "AUD" else latest_rate
-        buys = [t for t in h.trades if t.type == "buy"]
-        acquired = [t for t in h.trades if t.type != "sell"]
-        sells = [t for t in h.trades if t.type == "sell"]
-        units = sum((t.quantity for t in acquired), ZERO) - sum((t.quantity for t in sells), ZERO)
-        cost = sum((t.quantity * t.unit_price + t.brokerage for t in buys), ZERO)
-        acquired_units = sum((t.quantity for t in acquired), ZERO)
-        price = h.closes[-1][1] if h.closes else None
-        value = units * price if price is not None and units else None
-        value_aud = None if value is None or rate_now is None else value * rate_now
-        cost_aud = _sum_aud(_in_aud(t.quantity * t.unit_price + t.brokerage, h.currency,
-                                    t.fx_rate) for t in buys)
-        paid_aud = _sum_aud(_in_aud(t.quantity * t.unit_price, h.currency, t.fx_rate)
-                            for t in acquired)
-        closes = [c for _d, c in reversed(h.closes)][:2]
-        day_pct = day_change = None
-        if units and len(closes) == 2 and closes[1]:
-            day_pct = (closes[0] - closes[1]) / closes[1]
-            if rate_now is not None:
-                day_change = (closes[0] - closes[1]) * units * rate_now
-        dividends = sum((d.cash for d in h.dividends), ZERO)
-        out[h.ticker] = {
-            "units": units, "cost": cost,
-            "avg_price": (sum((t.quantity * t.unit_price for t in acquired), ZERO)
-                          / acquired_units) if acquired_units else None,
-            "price": price, "value": value,
-            "gain": None if value is None else value - cost,
-            "gain_pct": None if value is None or not cost else (value - cost) / cost,
-            "cost_aud": cost_aud, "value_aud": value_aud,
-            "gain_aud": (value_aud - cost_aud
-                         if value_aud is not None and cost_aud is not None else None),
-            "dividends_cash": dividends,
-            "dividends_aud": _sum_aud(_in_aud(d.cash, h.currency, d.fx_rate)
-                                      for d in h.dividends),
-            "avg_price_aud": (paid_aud / acquired_units
-                              if paid_aud is not None and acquired_units else None),
-            "price_aud": None if price is None or rate_now is None else price * rate_now,
-            "day_pct": day_pct, "day_change_aud": day_change,
-            # A sold-out holding is a closed position: what came back for it.
-            "proceeds": (sum((t.quantity * t.unit_price - t.brokerage for t in sells), ZERO)
-                         if sells else None),
-        }
-    return out
 
 
 FIELDS = ("units", "cost", "avg_price", "price", "value", "gain", "gain_pct", "cost_aud",
@@ -111,7 +39,7 @@ def test_every_holding_agrees_with_the_working_out(session_factory, portfolio, h
     tenancy.bind(s, *portfolio)
     try:
         load(s, history)
-        want = _expected(history)
+        want = worked_holdings(history)
         holdings = queries.all_holdings(s)
         assert sorted(h.instrument.ticker for h in holdings) == sorted(want)
         for h in holdings:
