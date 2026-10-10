@@ -211,17 +211,10 @@ def move(preference: list[str], key: str, direction: str) -> list[str]:
 
 def groups() -> list[tuple[str, list[Column]]]:
     """Columns grouped for the chooser, in declaration order within a group."""
-    out: list[tuple[str, list[Column]]] = []
+    by_group: dict[str, list[Column]] = {}
     for column in COLUMNS:
-        if not out or out[-1][0] != column.group:
-            existing = next((g for g in out if g[0] == column.group), None)
-            if existing is None:
-                out.append((column.group, [column]))
-                continue
-            existing[1].append(column)
-        else:
-            out[-1][1].append(column)
-    return out
+        by_group.setdefault(column.group, []).append(column)
+    return list(by_group.items())
 
 
 # Each native-currency money column and its reporting-currency twin: same label,
