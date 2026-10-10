@@ -221,6 +221,59 @@ def test_a_file_with_a_bad_row_stages_nothing_to_commit(client, session_factory,
     assert list(staging_dir.glob("*.json")) == []
 
 
+def test_a_trade_recorded_since_the_preview_is_skipped_at_commit(client, session_factory,
+                                                                 with_acme):
+    """The file is checked against the ledger again when it is committed: a
+    row typed in by hand since the preview is a duplicate by then."""
+    make_login(client, session_factory)
+    uid = staged_id(upload_csv(client, session_factory))
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        acme = s.scalar(select(Instrument).where(Instrument.ticker == "ACME"))
+        fac.add_trade(s, acme, "2025-01-06", "buy", 100, "5.00", brokerage="9.50")
+        s.commit()
+
+    resp = client.post(f"/imports-exports/csv/{uid}/commit",
+                       data={"_csrf": session_csrf(session_factory)},
+                       headers=HTML, follow_redirects=False)
+
+    assert resp.headers["location"].endswith("inserted=1&skipped=1")
+    with reading(session_factory) as s:
+        assert len(s.scalars(select(Trade)).all()) == 2
+
+
+def test_the_commit_button_counts_only_what_it_would_write(client, session_factory,
+                                                           with_acme):
+    _holding_acme(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        acme = s.scalar(select(Instrument).where(Instrument.ticker == "ACME"))
+        fac.add_trade(s, acme, "2025-01-06", "buy", 100, "5.00", brokerage="9.50")
+        s.commit()
+
+    assert "Commit 1 trade(s)" in upload_csv(client, session_factory).text
+
+
+def test_with_creation_allowed_a_new_ticker_is_offered_and_committed(client, session_factory,
+                                                                     monkeypatch):
+    """The setting both pages read: the preview offers the commit, and the
+    commit creates the instrument rather than refusing the file."""
+    from app import main as main_mod
+
+    monkeypatch.setattr(main_mod.settings.imports, "allow_new_instruments", True)
+    make_login(client, session_factory)
+    resp = upload_csv(client, session_factory)          # ACME is in no catalogue
+    assert "Commit 2 trade(s)" in resp.text
+
+    committed = client.post(f"/imports-exports/csv/{staged_id(resp)}/commit",
+                            data={"_csrf": session_csrf(session_factory)},
+                            headers=HTML, follow_redirects=False)
+
+    assert committed.headers["location"].endswith("inserted=2&skipped=0")
+    with reading(session_factory) as s:
+        assert s.scalars(select(Instrument)).one().note == "created by testbroker import"
+
+
 def test_committing_twice_is_refused_rather_than_duplicating(client, session_factory,
                                                              with_acme):
     make_login(client, session_factory)
@@ -390,6 +443,7 @@ def test_committing_a_statement_records_the_dividend(client, session_factory, wi
         dividend = s.scalars(select(Dividend)).one()
     assert dividend.cash_amount == Decimal("123.45")
     assert dividend.franking_credits == Decimal("52.91")
+    assert dividend.note == "from dividend statement"   # nothing added for empty fields
 
 
 def test_a_reinvested_statement_creates_the_drp_trade_too(client, session_factory,
@@ -407,8 +461,8 @@ def test_a_reinvested_statement_creates_the_drp_trade_too(client, session_factor
     with reading(session_factory) as s:
         trade = s.scalars(select(Trade)).one()
         dividend = s.scalars(select(Dividend)).one()
-    assert trade.type == "drp"
-    assert trade.quantity == 10
+    assert (trade.type, trade.quantity, trade.unit_price) == ("drp", 10, Decimal("10.00"))
+    assert trade.brokerage == 0                        # a cost-base figure: none was paid
     assert dividend.reinvest_trade_id == trade.id
 
 
