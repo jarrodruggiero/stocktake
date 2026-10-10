@@ -11,7 +11,7 @@ import datetime as dt
 from decimal import Decimal
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 from sqlalchemy import select
 
@@ -297,15 +297,19 @@ def test_an_unknown_instrument_is_refused_unless_creation_is_allowed(pf):
         brokercsv.commit(pf, candidates, STRICT, "testbroker")
 
 
-def test_with_creation_allowed_the_instrument_is_created(pf):
+@pytest.mark.parametrize("exchange, symbol", [("ASX", "NOVA.AX"), ("NASDAQ", "NOVA")])
+def test_with_creation_allowed_the_instrument_is_created(pf, exchange, symbol):
+    """Only an ASX listing carries Yahoo's suffix: on any other exchange it
+    names a symbol that has no prices. Reinvestment starts off."""
     candidates = [_candidate(ticker="NOVA")]
+    candidates[0].exchange = exchange
     brokercsv.annotate(pf, candidates, PERMISSIVE)
 
     counts = brokercsv.commit(pf, candidates, PERMISSIVE, "testbroker")
 
     assert counts["instruments_created"] == 1
     inst = pf.scalars(select(Instrument).where(Instrument.ticker == "NOVA")).one()
-    assert inst.yahoo_symbol == "NOVA.AX"     # ASX listings carry the suffix
+    assert (inst.exchange, inst.yahoo_symbol, inst.drp) == (exchange, symbol, False)
 
 
 def test_a_non_aud_trade_leaves_the_rate_for_the_feed_to_fill(pf):
@@ -710,6 +714,37 @@ def test_the_recorded_sale_named_is_the_first_left_short(pf):
     assert "leave ACME at -1 units from 2025-07-02" in candidates[0].detail
 
 
+def test_a_sale_already_recorded_is_a_duplicate_not_a_shortfall(pf):
+    """The same export uploaded twice: its sale matches the recorded one and
+    is skipped. Walked as a new row, it would sell the holding a second time
+    and refuse the file."""
+    acme = fac.make_instrument(pf, "ACME")
+    fac.add_trade(pf, acme, "2025-01-06", "buy", 100, "5.00", brokerage="9.50")
+    fac.add_trade(pf, acme, "2025-02-03", "sell", 100, "6.00", brokerage="9.50")
+    pf.commit()
+    candidates = [_candidate(type="sell", date="2025-02-03", price="6.00"),
+                  _candidate(date="2025-03-03", quantity="50")]
+
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    assert [c.status for c in candidates] == ["duplicate", "new"]
+
+
+def test_a_sale_is_judged_against_its_own_holding_only(pf):
+    """ACME's units, alone or added to BETA's, do not cover a BETA sale."""
+    acme = fac.make_instrument(pf, "ACME")
+    beta = fac.make_instrument(pf, "BETA")
+    fac.add_trade(pf, acme, "2025-01-06", "buy", 100, "5.00")
+    fac.add_trade(pf, beta, "2025-01-06", "buy", 50, "5.00")
+    pf.commit()
+    candidates = [_candidate(ticker="BETA", type="sell", date="2025-02-03", quantity="80")]
+
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    assert candidates[0].status == "refused"
+    assert "more than the 50 units of BETA held" in candidates[0].detail
+
+
 def test_a_refused_row_is_never_committed(pf):
     fac.make_instrument(pf, "ACME")
     pf.commit()
@@ -741,6 +776,12 @@ _steps = st.tuples(_moments, st.sampled_from(["buy", "sell", "sell", "drp"]),
 
 
 @given(recorded=st.lists(_steps, max_size=12), file=st.lists(_steps, max_size=12))
+# Sold out and bought back: a recorded sale down to nothing is not short.
+@example(recorded=[((0, None), "buy", 10), ((1, None), "sell", 10)],
+         file=[((2, None), "buy", 5)])
+# A row that sells out ahead of a recorded purchase leaves nothing owed.
+@example(recorded=[((0, None), "buy", 10), ((5, None), "buy", 10)],
+         file=[((2, None), "sell", 10)])
 def test_one_walk_refuses_what_the_form_would_row_by_row(recorded, file):
     """Recorded trades that may already be short, file rows on the same days
     and at the same times as them and each other: the single walk refuses the
