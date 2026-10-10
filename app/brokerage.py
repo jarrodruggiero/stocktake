@@ -18,6 +18,7 @@ from . import money
 from .models import Portfolio
 
 CENT = Decimal("0.01")
+ZERO = Decimal(0)
 
 
 @dataclass(frozen=True)
@@ -32,8 +33,11 @@ class Fee:
         return any(v is not None for v in (self.flat, self.percent, self.minimum))
 
     def on(self, value: Decimal) -> Decimal:
-        charged = (self.flat or 0) + (self.percent or 0) * value / 100
-        return max(self.minimum or 0, charged).quantize(CENT, rounding=ROUND_HALF_UP)
+        # Decimal zeros, not 0: on a tie `max` keeps the first, and a plain 0
+        # has no `quantize` — a free broker, or a percentage with no minimum,
+        # raised on the trade form's starting figure.
+        charged = (self.flat or ZERO) + (self.percent or ZERO) * value / 100
+        return max(self.minimum or ZERO, charged).quantize(CENT, rounding=ROUND_HALF_UP)
 
     def as_json(self) -> dict | None:
         if not self.is_set:
