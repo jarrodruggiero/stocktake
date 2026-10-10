@@ -23,7 +23,7 @@ from sqlalchemy import func, select
 
 import factories as fac
 from app import pricefeed, queries, tenancy
-from app.models import FxRate, Instrument, MarketDividend, Price
+from app.models import FxRate, Instrument, MarketDividend, Price, Trade
 from app.settings import PriceFeedSettings
 
 BACKFILL = dt.date(2019, 1, 1)
@@ -769,3 +769,80 @@ def test_the_badge_names_every_open_exchange(pf):
 
     # Sydney is trading; New York is asleep at midday here.
     assert _live_exchanges(open_positions) == ["ASX"]
+
+
+# --------------------------------------------------------------------------- #
+# With more than one row on file
+# --------------------------------------------------------------------------- #
+# A mutation run found the trade-rate repair's UPDATE could lose its WHERE and
+# write one trade's rate onto every trade in the database, and nothing failed:
+# no test had a second trade. Nor did any check which stored rate the repair
+# picks, that the feed's closes are settled, that a second quote of the day
+# stays live, or which day a US quote belongs to.
+
+def test_the_rate_repair_touches_only_the_trade_it_repairs(feed_session, monkeypatch):
+    nova = fac.make_instrument(feed_session, "NOVA", exchange="NASDAQ", currency="USD")
+    owner = fac.make_user(feed_session, "feed@example.test")
+    portfolio = fac.make_portfolio(feed_session, "Feed", owner=owner)
+    recorded = fac.add_trade(feed_session, nova, "2026-07-01", "buy", 1, "10.00",
+                             fx_rate="0.70", portfolio_id=portfolio.id)
+    blank = fac.add_trade(feed_session, nova, "2026-07-15", "buy", 1, "10.00",
+                          fx_rate=None, portfolio_id=portfolio.id)
+    fac.add_fx_series(feed_session, "USDAUD", [("2026-07-01", "1.50"), ("2026-07-15", "1.55"),
+                                               ("2026-07-16", "1.60")])
+    feed_session.commit()
+    stub_closes(monkeypatch, {"USDAUD=X": [("2026-07-01", "1.50"), ("2026-07-15", "1.55"),
+                                           ("2026-07-16", "1.60")]})
+    stub_yf(monkeypatch)
+
+    pricefeed.run_feed(feed_session, SETTINGS)
+
+    feed_session.expire_all()
+    assert feed_session.get(Trade, blank.id).fx_rate == Decimal("1.55"), \
+        "the rate on or before the trade's own date"
+    assert feed_session.get(Trade, recorded.id).fx_rate == Decimal("0.70")
+
+
+def test_the_feeds_closes_are_settled(feed_session, monkeypatch):
+    fac.make_instrument(feed_session, "ACME", name="Acme")
+    feed_session.commit()
+    stub_closes(monkeypatch, {"ACME.AX": [("2026-08-01", "10.00")]})
+    stub_yf(monkeypatch)
+
+    pricefeed.run_feed(feed_session, SETTINGS)
+
+    assert feed_session.scalars(select(Price.provisional)).all() == [False]
+
+
+@freeze_time("2026-08-12 02:00:00")  # 12:00 Sydney — the ASX is mid-session
+def test_a_second_quote_of_the_day_replaces_the_first_and_stays_live(feed_session,
+                                                                     monkeypatch):
+    acme = fac.make_instrument(feed_session, "ACME", name="Acme")
+    feed_session.flush()
+    seed_dense(feed_session, acme, "2026-08-11")
+    feed_session.commit()
+
+    stub_quotes(monkeypatch, {"ACME.AX": (_syd("2026-08-12 11:00"), Decimal("11.50"))})
+    pricefeed.refresh_quotes(feed_session, SETTINGS)
+    stub_quotes(monkeypatch, {"ACME.AX": (_syd("2026-08-12 12:00"), Decimal("11.75"))})
+    pricefeed.refresh_quotes(feed_session, SETTINGS)
+
+    feed_session.expire_all()
+    row = feed_session.execute(
+        select(Price).where(Price.date == dt.date(2026, 8, 12))).scalar_one()
+    assert (row.close, row.provisional) == (Decimal("11.750000"), True)
+
+
+@freeze_time("2026-08-12 15:00:00")  # 11:00 in New York, already the 13th in Melbourne
+def test_a_us_quote_belongs_to_new_yorks_day(feed_session, monkeypatch):
+    nova = fac.make_instrument(feed_session, "NOVA", exchange="NASDAQ", currency="USD")
+    feed_session.flush()
+    seed_dense(feed_session, nova, "2026-08-11")
+    feed_session.commit()
+
+    when = dt.datetime(2026, 8, 12, 15, 0, tzinfo=dt.timezone.utc)
+    stub_quotes(monkeypatch, {"NOVA": (when, Decimal("20.25"))})
+    assert pricefeed.refresh_quotes(feed_session, SETTINGS) == 1
+
+    live = feed_session.scalars(select(Price.date).where(Price.provisional.is_(True))).all()
+    assert live == [dt.date(2026, 8, 12)]
