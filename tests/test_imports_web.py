@@ -579,3 +579,85 @@ def test_a_statement_that_the_dividend_form_would_refuse_is_not_saved(
     with reading(session_factory) as s:
         assert s.scalars(select(Dividend)).all() == []
         assert s.scalars(select(Trade)).all() == []
+
+
+# --------------------------------------------------------------------------- #
+# Recording a statement: the figures a mutation run found unchecked
+# --------------------------------------------------------------------------- #
+
+def _commit_statement(client, session_factory, **fields):
+    data = {"ticker": "ACME", "payment_date": "2026-03-15", "net_amount": "100.00",
+            "_csrf": session_csrf(session_factory)}
+    data.update(fields)
+    return client.post("/imports-exports/statement/commit", data=data, headers=HTML,
+                       follow_redirects=False)
+
+
+def _recorded(session_factory) -> tuple[list, list]:
+    with reading(session_factory) as s:
+        return list(s.scalars(select(Dividend))), list(s.scalars(select(Trade)))
+
+
+@pytest.mark.parametrize(("fields", "refused"), [
+    ({"net_amount": "0.01"}, False), ({"net_amount": "0"}, True), ({"net_amount": "  "}, True),
+    ({"franking_credits": "0"}, False), ({"franking_credits": "-0.01"}, True),
+    ({"drp_units": "0.5", "drp_price": "10.00"}, False),         # a managed fund's fraction
+    ({"drp_units": "0", "drp_price": "10.00"}, True),
+    ({"drp_units": "10", "drp_price": "0"}, False),             # an allotment at nothing
+    ({"drp_units": "10", "drp_price": "-1"}, True),
+])
+def test_each_figure_is_held_to_its_own_limit(client, session_factory, with_acme, fields,
+                                              refused):
+    _holding_acme(client, session_factory)
+
+    resp = _commit_statement(client, session_factory, **fields)
+
+    dividends, trades = _recorded(session_factory)
+    assert (resp.status_code == 400) is refused, resp.text[:200]
+    assert len(dividends) == (0 if refused else 1)
+    if not refused and "drp_units" in fields:
+        assert [(t.type, t.quantity, t.unit_price) for t in trades] == [
+            ("drp", Decimal(fields["drp_units"]), Decimal(fields["drp_price"]))]
+
+
+def test_drp_units_without_their_price_are_refused_not_dropped(client, session_factory,
+                                                               with_acme):
+    """The units were left out and the cash recorded as paid out: the holding
+    came up short by the allotment, with nothing to say so. A DRP without its
+    price has no cost base to book (decisions.md #100), so it is asked for."""
+    _holding_acme(client, session_factory)
+
+    resp = _commit_statement(client, session_factory, drp_units="10")
+
+    assert resp.status_code == 400
+    assert "price" in resp.text
+    assert _recorded(session_factory) == ([], [])
+
+
+def test_a_lower_case_ticker_and_the_note_are_kept(client, session_factory, with_acme):
+    _holding_acme(client, session_factory)
+
+    resp = _commit_statement(client, session_factory, ticker="acme", franked_amount="80.00",
+                             note_extra="  final distribution  ")
+
+    assert resp.status_code == 303 and resp.headers["location"] == "/holding/ACME"
+    (dividend,), _ = _recorded(session_factory)
+    assert dividend.note == ("from dividend statement; franked amount 80.00; "
+                             "final distribution")
+
+
+@pytest.mark.parametrize(("currency", "rate"), [("AUD", Decimal(1)), ("USD", None)])
+def test_a_foreign_holdings_statement_waits_for_its_rate(client, session_factory, currency,
+                                                        rate):
+    """An AUD payment is 1:1; any other is left for the feed's rate, never
+    taken at 1:1."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        fac.hold(s, fac.make_instrument(s, "ACME", currency=currency))
+        s.commit()
+
+    _commit_statement(client, session_factory, drp_units="10", drp_price="10.00")
+
+    (dividend,), (trade,) = _recorded(session_factory)
+    assert dividend.fx_rate == rate and trade.fx_rate == rate

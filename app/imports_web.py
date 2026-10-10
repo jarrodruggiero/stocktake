@@ -371,6 +371,10 @@ async def statement_commit(
         raise HTTPException(400, "DRP units have to be more than zero.")
     if price is not None and price < 0:
         raise HTTPException(400, "DRP price can't be negative.")
+    # Without its price a DRP has no cost base to book (decisions.md #100).
+    # Recording the cash alone dropped the units, and the holding came up short.
+    if units is not None and price is None:
+        raise HTTPException(400, "DRP units need their allotment price.")
 
     with auth.scoped_session(request) as (ctx, s):
         await auth.verify_csrf(request, s)
@@ -393,7 +397,7 @@ async def statement_commit(
             raise HTTPException(400, str(exc))
 
         reinvest = None
-        if units and price:
+        if units is not None:
             reinvest = tenancy.owned(
                 s,
                 Trade(
