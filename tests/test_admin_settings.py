@@ -141,6 +141,7 @@ def test_a_date_is_written_as_a_plain_string(config_file):
     configfile.save({"price_feed.backfill_start": dt.date(2015, 6, 1)})
 
     assert "2015-06-01" in config_file.read_text()
+    assert str(configfile.load()["price_feed"]["backfill_start"]) == "2015-06-01"
 
 
 def test_the_file_is_replaced_atomically(config_file):
@@ -762,8 +763,10 @@ def test_each_whole_number_takes_its_own_limits_and_nothing_past_them(opt):
 
 
 def test_a_list_is_one_entry_per_line_with_blank_lines_dropped():
+    """Blank between entries, whether empty or spaces: the box is stripped as
+    a whole first, so only a line inside it tests the line's own check."""
     assert configfile.coerce(option("auth.trusted_proxies"),
-                             " 10.0.0.0/8 \n\n  ::1\n \n") == ["10.0.0.0/8", "::1"]
+                             " 10.0.0.0/8 \n\n   \n  ::1\n \n") == ["10.0.0.0/8", "::1"]
 
 
 @pytest.mark.parametrize("opt", [o for o in configfile.OPTIONS if o.kind == "choice"],
