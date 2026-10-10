@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from contextlib import contextmanager
 
 import pytest
@@ -764,3 +765,47 @@ def test_it_still_works_with_javascript_off(client, session_factory):
     assert any("addinst" in block for block in blocks), (
         "no <noscript> mentions the add-instrument dialog, so with scripting off "
         f"there is no way to open it. Found: {blocks!r}")
+
+
+def test_the_login_page_itself_sends_a_first_run_to_setup(client):
+    """/login is public, so the middleware's first-run redirect never sees
+    it; the route's own check is the only thing between a fresh install and a
+    sign-in form for accounts that do not exist."""
+    resp = client.get("/login", headers={"accept": "text/html"}, follow_redirects=False)
+
+    assert resp.status_code == 303 and resp.headers["location"] == "/setup"
+
+
+def test_the_brand_mark_carries_the_apps_name_for_a_screen_reader(client, session_factory):
+    """The mark is a picture; its accessible name is the text beside it.
+    Dropping the template global left an empty span and nothing failed."""
+    from app import branding
+
+    with session_factory() as s:
+        fac.make_user(s, "someone@example.test")
+        s.commit()
+
+    page = client.get("/login", headers={"accept": "text/html"}).text
+
+    assert f'<span class="visually-hidden">{branding.NAME}</span>' in page
+
+
+def test_the_trade_form_marks_only_a_foreign_instrument_and_keeps_fx_for_it(client,
+                                                                            session_factory):
+    """The reporting currency is a template global: without it every
+    instrument read "(AUD)" and the FX box was offered for an AUD trade."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        fac.hold(s, fac.make_instrument(s, "ALPHA"))
+        fac.hold(s, fac.make_instrument(s, "ZULU", exchange="NASDAQ", currency="USD"))
+        s.commit()
+
+    page = client.get("/trade/new", headers={"accept": "text/html"}).text
+
+    texts = [" ".join(t.split()) for t in re.findall(r"<option[^>]*>(.*?)</option>", page, re.S)]
+    alpha = next(t for t in texts if t.startswith("ALPHA — "))
+    zulu = next(t for t in texts if t.startswith("ZULU — "))
+    assert not alpha.endswith(")") and zulu.endswith("(USD)")
+    assert re.search(r'<label id="fxfield"\s+hidden', page)
+    assert "FX rate to AUD" in page

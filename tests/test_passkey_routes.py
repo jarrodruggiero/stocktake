@@ -16,6 +16,7 @@ import pytest
 from sqlalchemy import select
 from test_passkeys import ORIGIN, RP_ID, VerifyingDevice, _as_json, _for_device
 
+import factories as fac
 from app import twofactor
 from app.models import User, WebauthnCredential
 from test_routes import PASSWORD, make_login, pre_auth_csrf, session_csrf
@@ -253,3 +254,26 @@ def test_the_options_endpoints_need_a_csrf_token(secure, session_factory):
                        ).status_code in (400, 403)
     assert secure.post("/login/passkey/options", data={"_csrf": "wrong"}
                        ).status_code in (400, 403)
+
+
+# --------------------------------------------------------------------------- #
+# When the login page offers a passkey
+# --------------------------------------------------------------------------- #
+# Both halves are needed: configured by the deployment, and reached over HTTPS,
+# because a browser refuses the ceremony outside a secure context. Nothing
+# loaded the login page to see which: offering it on plain HTTP passed.
+
+def _offers_passkeys(browser) -> bool:
+    return "/static/passkeys.js" in browser.get("/login", headers=HTML).text
+
+
+def test_the_login_page_offers_a_passkey_only_when_one_can_work(secure, client, session_factory,
+                                                                app_module):
+    with session_factory() as s:
+        fac.make_user(s, "user@example.test")
+        s.commit()
+
+    assert _offers_passkeys(secure) is True                 # configured, over HTTPS
+    assert _offers_passkeys(client) is False                # configured, plain HTTP
+    app_module.settings.auth.webauthn.enabled = False       # restored by `secure`
+    assert _offers_passkeys(secure) is False                # HTTPS, not configured

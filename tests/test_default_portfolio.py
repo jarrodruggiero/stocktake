@@ -272,3 +272,27 @@ def test_a_provider_sign_in_lands_on_the_default(client, session_factory, three,
     assert back.headers["location"] == "/", back.text
     assert _landed(session_factory) == three["shared"]
     assert back.cookies.get(COOKIE) == str(three["shared"])
+
+
+def test_with_nothing_chosen_a_sign_in_lands_on_a_portfolio_they_own(client, session_factory):
+    """No default and nothing remembered. Every fixture above made the
+    person's own portfolio first, so it had the lowest id and the first
+    membership: landing on the lowest id overall, or on the first membership,
+    passed. Here a stranger's portfolio is oldest and a shared one comes
+    before their own."""
+    from app import auth
+
+    with session_factory() as s:
+        stranger = fac.make_user(s, "stranger@example.test")
+        theirs = fac.make_portfolio(s, "Theirs", owner=stranger)
+        user = fac.make_user(s, EMAIL, password_hash=auth.hash_password(PASSWORD))
+        shared = fac.make_portfolio(s, "Shared", owner=stranger)
+        fac.add_member(s, shared, user, role="member")
+        mine = fac.make_portfolio(s, "Mine", owner=user)
+        s.commit()
+        ids = {"theirs": theirs.id, "shared": shared.id, "mine": mine.id}
+    assert ids["theirs"] < ids["shared"] < ids["mine"]
+
+    _sign_in(client)
+
+    assert _landed(session_factory) == ids["mine"]
