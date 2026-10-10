@@ -786,7 +786,8 @@ async def broker_designer(request: Request, file: UploadFile = None,
             result = brokercsv.ParseResult(errors=[currency_error])
         elif read.rows and not first_pass:
             result = brokerdesign.preview(text, exchange=exchange, currency=currency,
-                                          date_format=date_format, columns=chosen)
+                                          date_format=date_format, columns=chosen,
+                                          actions=actions)
 
         return templates.TemplateResponse(
             request,
