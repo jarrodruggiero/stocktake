@@ -17,8 +17,11 @@ from __future__ import annotations
 import io
 import re
 import zipfile
+from decimal import Decimal
 
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 
 from app import contribute
 
@@ -182,6 +185,31 @@ def test_a_shifted_amount_is_not_the_real_one():
     out, _ = contribute.redact("Net amount 1042.75")
 
     assert "1042.75" not in out.text
+
+
+# The tests above look for the original string, and "1042.75" is gone as soon
+# as the cents move: leaving every dollar digit as it was still passed, and so
+# did a shift that turned a digit into "10". The dollars are the figure that
+# matters, so each part is held to it, for amounts of every size.
+@example(cents=150, grouped=False)            # one dollar digit
+@example(cents=7500, grouped=False)           # 7 shifts to a leading 0
+@example(cents=123456789, grouped=True)
+@given(cents=st.integers(1, 10**9), grouped=st.booleans())
+def test_every_amount_changes_in_dollars_and_cents_and_keeps_its_shape(cents, grouped):
+    amount = Decimal(cents) / 100
+    figure = f"{amount:,.2f}" if grouped else f"{amount:.2f}"
+
+    out, _ = contribute.redact(f"Net amount {figure}\nTotal {figure}\n")
+
+    shown = re.findall(r"Net amount (\S+)\nTotal (\S+)", out.text)
+    assert shown and shown[0][0] == shown[0][1], "the same amount twice is the same"
+    changed = shown[0][0]
+    assert len(changed) == len(figure)
+    assert [(i, c) for i, c in enumerate(changed) if not c.isdigit()] == \
+        [(i, c) for i, c in enumerate(figure) if not c.isdigit()]
+    dollars, cents_shown = changed.split(".")
+    assert dollars != figure.split(".")[0] and cents_shown != figure.split(".")[1]
+    assert not (len(dollars.replace(",", "")) > 1 and dollars[0] == "0")
 
 
 # --------------------------------------------------------------------------- #
