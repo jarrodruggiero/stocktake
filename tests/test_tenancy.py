@@ -91,6 +91,46 @@ def test_selecting_personal_data_with_no_portfolio_raises(db, model):
         db.scalars(select(model)).all()
 
 
+# A table with a `portfolio_id` holds something of one portfolio's, so the
+# filter covers it, unless it is listed here saying why not. A new table fails
+# the sweep until somebody decides, the same bargain as the API's
+# published/withheld list (decisions.md #21). PERSONAL_MODELS above catches a
+# model dropped from the registry; this catches one never added to it.
+UNSCOPED_WITH_A_PORTFOLIO = {
+    "portfolio_member": "who may open which portfolio: read to build that list, "
+                        "before any portfolio is chosen",
+    "portfolio_invite": "opened by somebody who is not a member yet",
+    "api_key_portfolio": "which portfolios a key reaches, read before one is bound "
+                         "(auth.key_reach)",
+    "saved_chart": "filtered on its owner instead (USER_SCOPED_MODELS)",
+}
+
+
+def _unaccounted(tables, scoped: set[str], exempt) -> set[str]:
+    return {t.name for t in tables if "portfolio_id" in t.c} - scoped - set(exempt)
+
+
+def test_the_sweep_finds_a_planted_table_nobody_registered():
+    from sqlalchemy import Column, Integer, MetaData, Table
+
+    planted = Table("budget_note", MetaData(), Column("id", Integer, primary_key=True),
+                    Column("portfolio_id", Integer))
+
+    assert _unaccounted([planted], set(), UNSCOPED_WITH_A_PORTFOLIO) == {"budget_note"}
+
+
+def test_every_table_with_a_portfolio_id_is_scoped_or_says_why_not():
+    from app.models import Base
+
+    tables = list(Base.metadata.tables.values())
+    scoped = {model.__table__.name for model in tenancy.SCOPED_MODELS}
+
+    assert _unaccounted(tables, scoped, UNSCOPED_WITH_A_PORTFOLIO) == set(), (
+        "add it to tenancy.SCOPED_MODELS, or to UNSCOPED_WITH_A_PORTFOLIO saying why")
+    stale = set(UNSCOPED_WITH_A_PORTFOLIO) - {t.name for t in tables if "portfolio_id" in t.c}
+    assert not stale, f"listed as unscoped but no longer carrying portfolio_id: {stale}"
+
+
 def test_eager_loading_personal_data_with_no_portfolio_raises(db):
     """The eager path is caught too. `select(Instrument)` on its own is legal,
     so the loader option is the only thing separating this from a price-feed
