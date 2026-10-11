@@ -83,7 +83,7 @@ class ReadCsv:
 
 
 def _norm(value: str) -> str:
-    return " ".join(str(value).split()).strip().lower()
+    return " ".join(str(value).split()).lower()
 
 
 def read_csv(text: str) -> ReadCsv:
@@ -101,7 +101,7 @@ def read_csv(text: str) -> ReadCsv:
     try:
         if not reader.fieldnames:
             return ReadCsv(problem="This file has no header row — is it a CSV?")
-        headers = [h.strip() for h in reader.fieldnames if h is not None]
+        headers = [h.strip() for h in reader.fieldnames]
 
         rows = []
         for row in reader:

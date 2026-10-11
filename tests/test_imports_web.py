@@ -851,3 +851,101 @@ def test_a_correction_to_an_unknown_or_expired_upload_is_refused(client, session
     assert _resolve(client, session_factory, "not-a-uuid").status_code == 400
     assert _resolve(client, session_factory, "0" * 8 + "-0000-0000-0000-" + "0" * 12
                     ).status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# What the last mutation pass found the import routes left unchecked
+# --------------------------------------------------------------------------- #
+
+def _way_back(page: str) -> tuple[str, str]:
+    """The back button's address and its words."""
+    import re
+
+    found = re.search(r'class="backlink" href="([^"]*)">\s*<button[^>]*>\s*&larr;\s*([^<]*?)\s*<',
+                      page)
+    assert found, "no way back on the page"
+    return found.groups()
+
+
+ADVICE = ("Distribution and Reinvestment Advice\nPayment Date: 15 March 2026\n\n"
+          "Fund Price Held PerSec Tax Amount Brought Allotted Carried\n"
+          "ACME 5.00 10 0.50000000 0.00 5.00 0.00 1 0.00\n")
+
+
+def test_every_import_page_reached_from_elsewhere_goes_back_there(client, session_factory,
+                                                                   with_acme, monkeypatch):
+    from app import statements
+
+    _holding_acme(client, session_factory)
+    monkeypatch.setattr(statements, "_pdf_text", lambda data: "ACME\nNet Amount: $10.00\n")
+    uid = resolve_id(upload_csv(client, session_factory, payload=TYPO_CSV))
+
+    pages = {
+        "correction": client.post(f"/imports-exports/csv/{uid}/resolve?return=/holdings",
+                                  data={"_csrf": session_csrf(session_factory)}, headers=HTML),
+        "statement": client.post("/imports-exports/statement?return=/holdings", headers=HTML,
+                                 files={"file": ("a.pdf", b"%PDF-1.4", "application/pdf")},
+                                 data={"_csrf": session_csrf(session_factory)}),
+    }
+    for label, resp in pages.items():
+        assert _way_back(resp.text) == ("/holdings", "Holdings"), label
+
+
+def test_a_combined_advice_previews_as_a_table_of_funds(client, session_factory, with_acme,
+                                                        monkeypatch):
+    from app import statements
+
+    _holding_acme(client, session_factory)
+    monkeypatch.setattr(statements, "_pdf_text", lambda data: ADVICE)
+
+    page = client.post("/imports-exports/statement", headers=HTML,
+                       files={"file": ("advice.pdf", b"%PDF-1.4", "application/pdf")},
+                       data={"_csrf": session_csrf(session_factory)}).text
+
+    assert "Units on statement" in page
+
+
+def test_a_figure_typed_as_spaces_is_left_blank(client, session_factory, with_acme):
+    """A space in a box nobody filled in is not a figure, a franked amount,
+    or a note."""
+    _holding_acme(client, session_factory)
+
+    resp = client.post("/imports-exports/statement/commit", headers=HTML, follow_redirects=False,
+                       data={"ticker": "ACME", "payment_date": "2026-03-15",
+                             "net_amount": "10.00", "franking_credits": "  ",
+                             "franked_amount": "  ", "note_extra": "  ",
+                             "_csrf": session_csrf(session_factory)})
+
+    assert resp.status_code == 303
+    with reading(session_factory) as s:
+        dividend = s.scalars(select(Dividend)).one()
+    assert (dividend.franking_credits, dividend.note) == (None, "from dividend statement")
+
+
+def test_a_file_with_nothing_to_import_stages_nothing(client, session_factory, with_acme,
+                                                      staging_dir):
+    make_login(client, session_factory)
+
+    page = upload_csv(client, session_factory,
+                      b"Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+                      b"06/01/2025,Transfer,ACME,100,5.00,0\n").text
+
+    assert "Transfer" in page and "/commit" not in page
+    assert list(staging_dir.glob("*.json")) == []
+
+
+def test_the_export_filter_lists_instruments_by_class_then_ticker(client, session_factory):
+    import re
+
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        for ticker, kind in (("ZETA", "share"), ("BETA", "etf"), ("ALFA", "etf")):
+            fac.add_trade(s, fac.make_instrument(s, ticker, asset_class=kind),
+                          "2026-01-05", "buy", 1, "1.00")
+        s.commit()
+
+    page = client.get("/imports-exports", headers=HTML).text
+    listed = re.search(r'<option value="">All instruments</option>(.*?)</select>', page, re.S)
+
+    assert re.findall(r'<option value="([A-Z]+)"', listed.group(1)) == ["ALFA", "BETA", "ZETA"]

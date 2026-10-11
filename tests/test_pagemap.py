@@ -679,3 +679,83 @@ def test_the_unraid_template_gives_the_container_a_restart_policy():
     assert "--restart=always" not in extra, (
         "always ignores a stop from the Unraid UI; unless-stopped respects it"
     )
+
+
+# --------------------------------------------------------------------------- #
+# What the last mutation pass found unchecked
+# --------------------------------------------------------------------------- #
+
+def _text_pdf(text: str = "Net 123.45") -> bytes:
+    """A one-page PDF with a real text layer: "Net" set at 36 points in from
+    the left of a page 200 points wide. Offsets computed, so any reader takes it."""
+    stream = f"BT /F1 12 Tf 36 60 Td ({text}) Tj ET".encode()
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Contents 4 0 R "
+        b"/Resources << /Font << /F1 5 0 R >> >> >>",
+        b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out, offsets = bytearray(b"%PDF-1.4\n"), []
+    for n, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{n} 0 obj\n".encode() + body + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode()
+    out += b"".join(f"{o:010d} 00000 n \n".encode() for o in offsets)
+    out += (f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n"
+            .encode())
+    return bytes(out)
+
+
+def test_a_real_page_comes_back_as_a_png_with_its_words_in_its_pixels():
+    """The rasterising is pdfplumber's; turning its points into the image's
+    pixels, once, is ours. At twice 72 dpi the page is 400 pixels wide and
+    "Net" starts 72 pixels in: the same fraction of the page as 36 points."""
+    [page] = pagemap._render(_text_pdf(), 144)
+
+    net = next(w for w in page.words if w["text"] == "Net")
+    assert page.png.startswith(b"\x89PNG") and (page.width, page.from_ocr) == (400, False)
+    assert net["x0"] / page.width == pytest.approx(36 / 200)
+
+
+def test_a_session_folder_without_its_record_is_no_session(store, monkeypatch, app_module):
+    """Half made, or half swept: there is nothing to serve from it."""
+    fake_render(monkeypatch)
+    token = pagemap.create(app_module.settings, user_id=1, data=b"%PDF")
+    (store / token / "session.json").unlink()
+
+    assert pagemap.load(app_module.settings, token, user_id=1) is None
+
+
+def test_a_page_past_the_last_is_not_found(client, session_factory, store, monkeypatch):
+    import re
+
+    fake_render(monkeypatch)
+    make_login(client, session_factory)
+    token = re.search(r"/imports-exports/statement/visual/([0-9a-f-]{36})/page/",
+                      upload(client, session_factory).text).group(1)
+
+    assert client.get(f"/imports-exports/statement/visual/{token}/page/1.png").status_code == 404
+
+
+def test_sweeping_with_no_folder_yet_sweeps_nothing(tmp_path, app_module, monkeypatch):
+    monkeypatch.setattr(app_module.settings.imports, "visual_dir", str(tmp_path / "never-made"))
+
+    assert pagemap.sweep(app_module.settings) == 0
+
+
+@pytest.mark.parametrize("idle", [pagemap.IDLE_MINUTES * 60, pagemap.IDLE_MINUTES * 60 - 10],
+                         ids=["the limit itself", "just inside it"])
+def test_a_session_idle_up_to_the_limit_is_kept(store, monkeypatch, app_module, idle):
+    """Both the lazy sweep and the read keep it: thirty minutes idle is
+    still inside thirty minutes."""
+    fake_render(monkeypatch)
+    start = _REAL_TIME()
+    monkeypatch.setattr(pagemap.time, "time", lambda: start)
+    token = pagemap.create(app_module.settings, user_id=1, data=b"%PDF")
+    monkeypatch.setattr(pagemap.time, "time", lambda: start + idle)
+
+    assert pagemap.sweep(app_module.settings) == 0
+    assert pagemap.load(app_module.settings, token, user_id=1) is not None

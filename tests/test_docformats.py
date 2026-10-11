@@ -967,3 +967,31 @@ def test_a_mismatch_names_what_the_field_expects(expect, article):
     inference = fmt.infer_field(text, index, expect=expect)
 
     assert inference.mismatch == f"that reads as a date and this field expects {article}"
+
+
+# --------------------------------------------------------------------------- #
+# What the last mutation pass found unchecked
+# --------------------------------------------------------------------------- #
+
+def test_the_first_word_of_a_document_can_be_pointed_at():
+    found = fmt.infer_field("123.45 net amount", 0)
+
+    assert (found.type, found.value) == ("money", Decimal("123.45"))
+
+
+def test_a_word_sharing_two_letters_with_a_month_does_not_make_a_date():
+    """Three letters say "Mar"; two would let "Maple" stand for March."""
+    assert fmt.infer_field("Units 15 Maple 2026", 1).type != "date"
+
+
+def test_a_name_in_another_script_is_written_as_typed():
+    """The file is read by people, and contributed: an escaped name is
+    correct and unreadable."""
+    assert 'name: "Société Générale"' in fmt.template_yaml(
+        name="Société Générale", fields={}, match=[])
+
+
+@pytest.mark.parametrize("label, text", [("net amount", "NET AMOUNT 123.45"),
+                                         ("NET AMOUNT", "net amount 123.45")])
+def test_a_typed_label_finds_its_value_whatever_its_case(label, text):
+    assert fmt.read_with(text, label, "money").value == Decimal("123.45")
