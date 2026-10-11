@@ -130,7 +130,8 @@
           </div>
         </details>
         {% else %}
-        <form class="inline" method="post" action="/holdings/{{ i.id }}/remove">
+        <form class="inline" method="post" action="/holdings/{{ i.id }}/remove"
+              data-confirm="Remove {{ i.ticker }} from this portfolio? Its note and reinvest setting go with it.">
           <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
           <button class="danger small" type="submit">Remove</button>
         </form>

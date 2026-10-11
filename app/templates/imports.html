@@ -261,7 +261,8 @@
         <a href="/imports-exports/formats/{{ kind }}/{{ slug }}.yaml">Download</a>
         {% if auth.user.is_admin %}
         <form class="inline" method="post"
-              action="/imports-exports/formats/{{ kind }}/{{ slug }}/delete">
+              action="/imports-exports/formats/{{ kind }}/{{ slug }}/delete"
+              data-confirm="Remove the {{ slug }} template? Imports already made with it stay.">
           <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
           <button class="linkish danger" type="submit">Remove</button>
         </form>
