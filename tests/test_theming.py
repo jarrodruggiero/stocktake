@@ -93,6 +93,19 @@ def test_nothing_chosen_renders_no_style_at_all():
     assert theming.css_variables({}) == ""
 
 
+def test_no_one_colour_is_text_contrast_on_both_cards():
+    """Why the warning floor is 3:1 and not 4.5:1 (decisions.md #89): one
+    value serves both modes, and no colour reaches 4.5:1 against both the
+    light and the dark card. If the cards change so one can, the floor
+    should be revisited."""
+    steps = range(0, 256, 17)
+    best = max(min(theming.contrast(f"#{r:02x}{g:02x}{b:02x}", surface)
+                   for surface in theming.SURFACES.values())
+               for r in steps for g in steps for b in steps)
+
+    assert 3.0 < best < 4.5
+
+
 def test_a_colour_too_close_to_the_card_behind_it_is_flagged():
     """Advice, not a veto — but silence would be worse than either."""
     warnings = theming.warnings({"accent": "#1b2030"})   # the dark panel itself
