@@ -341,3 +341,56 @@ def test_a_holding_setting_edited_reaches_the_cached_holdings(pf):
 
     assert [h.drp for h in queries.cached_holdings(pf)] == [True]
 
+
+
+
+def _counting_builds(monkeypatch) -> list[str]:
+    """The ticker filter of every split series actually built, not served."""
+    built: list[str] = []
+    real = queries.grouped_series
+
+    def counting(session, by, filters=None):
+        built.append(filters["ticker"][0])
+        return real(session, by, filters)
+
+    monkeypatch.setattr(queries, "grouped_series", counting)
+    return built
+
+
+def _ask(session, name: str) -> dict:
+    return queries.cached_grouped_series(session, "ticker", {"ticker": [name]})
+
+
+def test_the_split_cache_keeps_only_the_charts_asked_for_most_recently(pf, monkeypatch):
+    """Every filter tried in the chart builder's preview made a new entry, each
+    a whole series, and none was ever dropped: memory grew for as long as
+    anybody kept dragging. Now the few asked for most recently are kept."""
+    _setup(pf)
+    built = _counting_builds(monkeypatch)
+
+    for n in range(queries.GROUPED_CACHE_SIZE):
+        _ask(pf, f"T{n}")
+    _ask(pf, "T0")                         # asked again, so now the most recent
+    _ask(pf, "ONE-TOO-MANY")               # and the least recent, T1, makes room
+    built.clear()
+    _ask(pf, "T0")
+    _ask(pf, "T1")
+
+    assert len(queries._grouped_cache) == queries.GROUPED_CACHE_SIZE
+    assert built == ["T1"]
+
+
+def test_a_split_chart_rebuilt_after_a_change_counts_as_just_asked_for(pf, monkeypatch):
+    inst, _trade = _setup(pf)
+    built = _counting_builds(monkeypatch)
+
+    for n in range(queries.GROUPED_CACHE_SIZE):
+        _ask(pf, f"T{n}")
+    fac.add_prices(pf, inst, [("2026-03-04", "7.00")])
+    _commit(pf)
+    _ask(pf, "T0")                         # out of date, so rebuilt: now the most recent
+    _ask(pf, "ONE-TOO-MANY")
+    built.clear()
+    _ask(pf, "T0")
+
+    assert built == []
