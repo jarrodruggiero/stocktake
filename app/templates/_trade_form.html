@@ -6,7 +6,7 @@
    in the other would silently record different things depending on which door
    you came through.
 
-   Expects: edit, inst, form, instruments, ticker, today, auth.
+   Expects: edit, inst, form, instruments, ticker (and exchange, when it is held twice), today, auth.
    `edit` is None when recording something new. #}
 {# `data-instrument` is how the price lookup knows what to ask about when there
    is no picker on the page: editing fixes the instrument, so the id has to
@@ -54,7 +54,7 @@
       <option value="{{ i.id }}" data-currency="{{ i.currency }}"
         data-ticker="{{ i.ticker }}" data-exchange="{{ i.exchange }}"
         {% if form.instrument_id and form.instrument_id|string == i.id|string %}selected
-        {% elif ticker and i.ticker == ticker %}selected
+        {% elif ticker and i.ticker == ticker and (not exchange or i.exchange == exchange) %}selected
         {% elif prefill and not form and prefill.instrument_id == i.id %}selected{% endif %}>
         {{ i.ticker }} — {{ i.name or i.asset_class }}{% if i.currency != reporting_ccy %} ({{ i.currency }}){% endif %}
       </option>
@@ -178,7 +178,7 @@
     {% if in_dialog %}
     <button type="button" class="secondary" data-close-dialog>Cancel</button>
     {% else %}
-    <a href="{% if edit %}{{ return_to or '/holding/' ~ inst.ticker }}{% else %}/{% endif %}"><button type="button" class="secondary">Cancel</button></a>
+    <a href="{% if edit %}{{ return_to or holding_href(inst.ticker, inst.exchange) }}{% else %}/{% endif %}"><button type="button" class="secondary">Cancel</button></a>
     {% endif %}
     {% if edit %}
     <button type="submit" form="deletetrade" class="danger apart">Delete</button>

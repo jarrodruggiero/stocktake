@@ -13,10 +13,10 @@
 
 {% block content %}
 
-{# Where a holding link on this page sends its back button. Encoded, because it
-   is a path being carried INSIDE a query string — unencoded, the `?fy=` would
-   terminate the `?return=` value and the button would land on Today. #}
-{% set back = ('/?fy=' ~ fy) | urlencode %}
+{# Where a holding link on this page sends its back button. `holding_href`
+   encodes it, because it is a path carried INSIDE a query string: unencoded,
+   the `?fy=` would end the `?return=` value and the button would land on Today. #}
+{% set back = '/?fy=' ~ fy %}
 
 <div class="fytabs">
   <a href="/">Today</a>
@@ -58,7 +58,7 @@ yet. The next price refresh fills it in.</p>
     <tbody>
       {% for row in r.snapshot %}
       <tr>
-        <td class="tick"><a href="/holding/{{ row.instrument.ticker }}?return={{ back }}">{{ row.instrument.ticker }}</a></td>
+        <td class="tick"><a href="{{ holding_href(row.instrument.ticker, row.instrument.exchange, return=back) }}">{{ row.instrument.ticker }}</a></td>
         <td class="num">{{ row.units | qty }}</td>
         <td class="num">{{ row.price | money }}{% if row.price_date %}<span class="sub">{{ row.price_date }}</span>{% endif %}</td>
         <td class="num">{{ row.invested_cum | money }}</td>
@@ -110,7 +110,7 @@ yet. The next price refresh fills it in.</p>
       <tbody>
         {% for row in r.income %}
         <tr>
-          <td class="tick"><a href="/holding/{{ row.instrument.ticker }}?return={{ back }}">{{ row.instrument.ticker }}</a></td>
+          <td class="tick"><a href="{{ holding_href(row.instrument.ticker, row.instrument.exchange, return=back) }}">{{ row.instrument.ticker }}</a></td>
           <td class="num">{{ row.cash | money }}</td>
         </tr>
         {% endfor %}
@@ -164,7 +164,7 @@ yet. The next price refresh fills it in.</p>
       {% for d in r.cgt.disposals %}
       <tr>
         <td>{{ d.date }}</td>
-        <td class="tick"><a href="/holding/{{ d.instrument.ticker }}?return={{ back }}">{{ d.instrument.ticker }}</a></td>
+        <td class="tick"><a href="{{ holding_href(d.instrument.ticker, d.instrument.exchange, return=back) }}">{{ d.instrument.ticker }}</a></td>
         <td class="num">{{ d.quantity | qty }}</td>
         <td class="num">{{ d.cost_base | money }}</td>
         <td class="num">{{ d.proceeds | money }}</td>

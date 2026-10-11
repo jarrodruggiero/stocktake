@@ -44,6 +44,8 @@ class CalEvent:
     # which is in the reporting currency. None means the reporting one, so
     # this list cannot render a US dividend with an AUD symbol.
     currency: str | None = None
+    # Which listing of the ticker, for a link to its page (decisions.md #139).
+    exchange: str | None = None
 
     @property
     def expected(self) -> bool:
@@ -136,6 +138,7 @@ def projected_dividends(session: Session, until: dt.date) -> list[CalEvent]:
                         date=nxt,
                         kind="dividend-expected",
                         ticker=inst.ticker,
+                        exchange=inst.exchange,
                         detail=(
                             f"expected distribution (~{gap}-day cycle"
                             + (", published history)" if published else ", your history)")
@@ -162,6 +165,7 @@ def recorded_events(session: Session, start: dt.date, end: dt.date) -> list[CalE
                 date=t.date,
                 kind="sell" if t.type == "sell" else "buy",
                 ticker=t.instrument.ticker,
+                exchange=t.instrument.exchange,
                 detail=f"{t.type} {t.quantity.normalize():f} @ {t.unit_price}",
                 amount=t.quantity * t.unit_price,
                 currency=t.instrument.currency,
@@ -178,6 +182,7 @@ def recorded_events(session: Session, start: dt.date, end: dt.date) -> list[CalE
                 date=d.date,
                 kind="dividend",
                 ticker=d.instrument.ticker,
+                exchange=d.instrument.exchange,
                 detail="reinvested" if d.reinvest_trade_id else "paid",
                 amount=d.cash_amount,
                 currency=d.instrument.currency,
@@ -198,6 +203,7 @@ def planned_buys(session: Session, until: dt.date) -> list[CalEvent]:
                 date=buy.due_date,
                 kind="buy-planned",
                 ticker=buy.ticker,
+                exchange=buy.exchange,
                 detail="scheduled buy",
                 amount=buy.amount,
             )

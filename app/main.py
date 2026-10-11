@@ -41,6 +41,7 @@ from fastapi.responses import (
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session as DbSession
+from sqlalchemy.orm import object_session
 
 from appcore import (
     create_app,
@@ -631,6 +632,32 @@ def _redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url, status_code=303)
 
 
+def _listings(ctx) -> dict:
+    """`holding_href` and `listing_ref` for templates. Each names a holding's
+    exchange only where this portfolio holds its ticker on more than one,
+    which is read from the request's session the first time one is used."""
+    session = object_session(ctx.user) if getattr(ctx, "user", None) is not None else None
+    found: list[set[str]] = []
+
+    def ambiguous() -> set[str]:
+        if not found:
+            found.append(queries.ambiguous_tickers(session) if session is not None else set())
+        return found[0]
+
+    return {
+        "holding_href": lambda ticker, exchange=None, **params: queries.holding_path(
+            ticker, exchange, ambiguous(), **params),
+        "listing_ref": lambda ticker, exchange: queries.listing_ref(ticker, exchange, ambiguous()),
+    }
+
+
+def _holding_page(db: DbSession, inst: Instrument, **params) -> str:
+    """Where a change to this holding lands: its page, with the exchange in
+    the address when the ticker is held here on another one too."""
+    return queries.holding_path(inst.ticker, inst.exchange, queries.ambiguous_tickers(db),
+                                **params)
+
+
 def _render(request: Request, ctx, name: str, extra: dict) -> HTMLResponse:
     """Render with what the chrome always needs: auth, the nav list, and which
     entry to highlight (routes pass `active_nav`)."""
@@ -639,6 +666,7 @@ def _render(request: Request, ctx, name: str, extra: dict) -> HTMLResponse:
         name,
         {
             "auth": ctx,
+            **_listings(ctx),
             "nav": navigation.nav_for(ctx, settings),
             # The idle overlay reads this off <body> so the warning lead time is
             # configurable without templating JavaScript.
@@ -4031,6 +4059,26 @@ def _plan_start(raw: str) -> tuple[dt.date | None, str | None]:
     return start, None
 
 
+def _rotation(db: DbSession, tickers: str) -> tuple[list[Instrument], list[str], list[Instrument]]:
+    """The holdings a rotation names, in order; the names that are no holding;
+    and, for a bare ticker held on two exchanges, its listings. Such a ticker
+    names its listing, as BHP:NYSE."""
+    active = queries.portfolio_instruments(db)
+    chosen, unknown = [], []
+    for token in (t.strip().upper() for t in tickers.replace("\n", ",").split(",")):
+        if not token:
+            continue
+        code, _, exchange = token.partition(":")
+        found = [i for i in active if i.ticker == code and (not exchange or i.exchange == exchange)]
+        if len(found) > 1:
+            return [], [], found
+        if found:
+            chosen.append(found[0])
+        else:
+            unknown.append(token)
+    return chosen, unknown, []
+
+
 @app.post("/schedule/preview")
 async def plan_preview(
     request: Request,
@@ -4058,16 +4106,18 @@ async def plan_preview(
         if problem:
             return JSONResponse({"rows": [], "why": problem})
 
-        wanted = [t.strip().upper() for t in tickers.replace("\n", ",").split(",") if t.strip()]
-        known = {i.ticker for i in queries.portfolio_instruments(db) if i.ticker in set(wanted)}
-        # An unknown ticker is refused on save, so the preview says so here
-        # rather than drawing dates for a plan that cannot be saved.
-        unknown = sorted({t for t in wanted if t not in known})
+        # What save would refuse, the preview says, rather than drawing dates
+        # for a plan that cannot be saved.
+        chosen, unknown, twice = _rotation(db, tickers)
         if unknown:
             return JSONResponse(
-                {"rows": [], "why": f"unknown ticker(s): {', '.join(unknown)}"})
+                {"rows": [], "why": f"unknown ticker(s): {', '.join(sorted(set(unknown)))}"})
+        if twice:
+            return JSONResponse({"rows": [], "why": queries.held_twice(twice)})
 
-        rows = plans.preview(db, wanted, interval_days, start)
+        ambiguous = queries.ambiguous_tickers(db)
+        rows = plans.preview(db, [queries.listing_ref(i.ticker, i.exchange, ambiguous)
+                                  for i in chosen], interval_days, start)
         return JSONResponse(
             {"rows": [{"date": due.isoformat(), "ticker": ticker} for due, ticker in rows],
              "why": ""})
@@ -4104,14 +4154,13 @@ async def plan_save(
         if problem:
             raise HTTPException(400, problem)
 
-        wanted = [t.strip().upper() for t in tickers.replace("\n", ",").split(",") if t.strip()]
-        by_ticker = {i.ticker: i for i in queries.portfolio_instruments(db)
-                     if i.ticker in set(wanted)}
-        unknown = [t for t in wanted if t not in by_ticker]
+        chosen, unknown, twice = _rotation(db, tickers)
         if unknown:
             raise HTTPException(
                 400, f"unknown ticker(s): {', '.join(sorted(set(unknown)))} — add them first"
             )
+        if twice:
+            raise HTTPException(400, queries.held_twice(twice))
 
         try:
             plan_name = textfield.fit(name, InvestmentPlan.name, "Name") or "My plan"
@@ -4128,7 +4177,7 @@ async def plan_save(
         plan.amount = amount_val
         plan.brokerage = brokerage_val
         plan.start_date = start
-        plans.set_entries(db, plan, [by_ticker[t].id for t in wanted])
+        plans.set_entries(db, plan, [i.id for i in chosen])
         return _redirect("/schedule")
 
 
@@ -4221,7 +4270,7 @@ async def plan_complete(
                 ),
             )
         )
-        return _redirect(f"/holding/{ticker}")
+        return _redirect(_holding_page(db, inst))
 
 
 @app.post("/schedule/skip")
@@ -4419,7 +4468,7 @@ def _breach(
 
 
 @app.get("/trade/new", response_class=HTMLResponse)
-def trade_form(request: Request, ticker: str = "", error: str = ""):
+def trade_form(request: Request, ticker: str = "", error: str = "", exchange: str = ""):
     with scoped(request) as (ctx, db):
         instruments = queries.portfolio_instruments(db)
         return _render(
@@ -4430,6 +4479,7 @@ def trade_form(request: Request, ticker: str = "", error: str = ""):
                 "active_nav": "trade",
                 "instruments": instruments,
                 "ticker": ticker.upper(),
+                "exchange": exchange.upper(),
                 "today": clock.today().isoformat(),
                 "prefill": _dca_prefill(db),
                 "options": _instrument_options(db, instruments),
@@ -4441,7 +4491,9 @@ def trade_form(request: Request, ticker: str = "", error: str = ""):
                 # holding's ledger. The `?ticker=` in the URL is what tells the
                 # two apart — state, not a guess at the referrer, which is why
                 # the button can name where it lands.
-                "return_to": f"/holding/{ticker.upper()}" if ticker else "/",
+                "return_to": (queries.holding_path(ticker.upper(), exchange.upper(),
+                                                   queries.ambiguous_tickers(db))
+                              if ticker else "/"),
                 "back_label": ticker.upper() if ticker else "Portfolio",
             },
         )
@@ -4619,7 +4671,7 @@ async def trade_create(
             db.flush()
             if adding:
                 _kick_feed()  # its price history arrives with the next run
-            target = f"/holding/{inst.ticker}"
+            target = _holding_page(db, inst)
         if owned:
             submissions.finish(owned, target)
         return _redirect(target)
@@ -4650,9 +4702,10 @@ def _back_to_holding(db: DbSession, inst: Instrument, path: str | None = None) -
     """`path`, by default the holding's page. Once the last row this portfolio
     had for the instrument has gone, that page is another portfolio's or
     nobody's, so the portfolio's own page is where to land instead."""
-    page = f"/holding/{inst.ticker}"
+    page = _holding_page(db, inst)
     path = path or page
-    if path.split("?")[0] == page and inst.id not in queries.portfolio_instrument_ids(db):
+    if (path.split("?")[0] == page.split("?")[0]
+            and inst.id not in queries.portfolio_instrument_ids(db)):
         return "/"
     return path
 
@@ -4720,8 +4773,7 @@ def trade_edit_form(request: Request, trade_id: RowId, error: str = ""):
         # `?return=`, from whatever linked here — the holdings page's "what is
         # blocking this" panel is the first caller. Validated rather than
         # trusted: it ends up in a Location header.
-        back_to = _safe_path(request.query_params.get("return"),
-                             f"/holding/{inst.ticker}")
+        back_to = _safe_path(request.query_params.get("return"), _holding_page(db, inst))
         # The move dialog's contents, prepared here so the page can carry it —
         # `move_targets` empty means the control is not drawn at all.
         move = _move_context(db, ctx, trade, inst)
@@ -4826,7 +4878,7 @@ async def trade_edit(
         trade.note = note_text
         _log_change("trade", trade.id, before, _trade_snapshot(trade))
         db.flush()
-        return _redirect(f"/holding/{inst.ticker}")
+        return _redirect(_holding_page(db, inst))
 
 
 def _release_planned_purchases(db: DbSession, trade_id: int) -> None:
@@ -4913,7 +4965,7 @@ def _move_context(db: DbSession, ctx, trade, inst, *, ticked=None, error=""):
     if not targets:
         return {"active_nav": "holdings", "inst": inst, "edit": trade,
                 "rows": [], "targets": [], "ticked": set(), "pulled_in": 0,
-                "error": error, "return_to": f"/holding/{inst.ticker}"}
+                "error": error, "return_to": _holding_page(db, inst)}
     rows = moves.movable_rows(db, inst.id)
     # `pull_in=True` on purpose, including when re-rendering after a refusal:
     # the form arrives with the fix applied and the message above it saying
@@ -4939,7 +4991,7 @@ def _move_context(db: DbSession, ctx, trade, inst, *, ticked=None, error=""):
         # counting it would announce a row nobody can see — see _move_form.html.
         "pulled_in": sum(1 for kind, _ in chosen.added if kind == "trade"),
         "error": error,
-        "return_to": f"/holding/{inst.ticker}",
+        "return_to": _holding_page(db, inst),
     }
 
 
@@ -5040,11 +5092,11 @@ async def trade_delete(request: Request, trade_id: RowId, return_to: str = Form(
         inst = db.get(Instrument, trade.instrument_id)
         # A path on this site or the instrument's own page — never the
         # dashboard, which is further from where they were than the fallback.
-        back = _safe_path(return_to, f"/holding/{inst.ticker}")
+        back = _safe_path(return_to, _holding_page(db, inst))
         # Removing a buy can strand a sell that depended on its units.
         problem = _breach(db, inst, None, exclude_ids={trade.id})
         if problem:
-            return _redirect(f"/holding/{inst.ticker}?error={quote_plus(problem)}")
+            return _redirect(_holding_page(db, inst, error=problem))
         _release_planned_purchases(db, trade.id)
         log.info("trade %s deleted: %s", trade.id, _trade_snapshot(trade))
         db.delete(trade)
@@ -5178,7 +5230,7 @@ async def dividend_edit(
             },
         )
         db.flush()
-        return _redirect(f"/holding/{inst.ticker}")
+        return _redirect(_holding_page(db, inst))
 
 
 @app.post("/dividend/{dividend_id}/delete")
@@ -5194,7 +5246,7 @@ async def dividend_delete(request: Request, dividend_id: RowId):
             # timeline survives losing them before removing either.
             problem = _breach(db, inst, None, exclude_ids={drp.id})
             if problem:
-                return _redirect(f"/holding/{inst.ticker}?error={quote_plus(problem)}")
+                return _redirect(_holding_page(db, inst, error=problem))
         log.info(
             "dividend %s deleted: %s on %s%s",
             dividend.id,
@@ -5622,12 +5674,14 @@ async def instrument_pref(
 
 
 @app.get("/holding/{ticker}", response_class=HTMLResponse)
-def instrument(request: Request, ticker: str, error: str = ""):
+def instrument(request: Request, ticker: str, error: str = "", exchange: str = ""):
     with scoped(request) as (ctx, db):
-        result = queries.ledger(db, ticker.upper())
+        result = queries.ledger(db, ticker.upper(), exchange or None)
         if result is None:
             raise HTTPException(404, f"unknown instrument {ticker!r}")
         inst, holding, events = result
+        # The same ticker held here on another exchange, a click away.
+        others = [i for i in queries.held_as(db, inst.ticker) if i.id != inst.id]
         series = queries.instrument_series(db, inst)
         back_to = _safe_path(request.query_params.get("return"), "/")
         return _render(
@@ -5637,6 +5691,7 @@ def instrument(request: Request, ticker: str, error: str = ""):
             {
                 "active_nav": "holdings",
                 "inst": inst,
+                "others": others,
                 "holding": holding,
                 "events": events,
                 "series_json": series,

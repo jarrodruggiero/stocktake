@@ -5,7 +5,7 @@
 {# The other editor reached from a holding's ledger, and it gets the same way
    out as the trade editor. There is no `?return=` here — a distribution is
    only ever opened from its own instrument's page. #}
-<a class="backlink" href="/holding/{{ inst.ticker }}"><button type="button"
+<a class="backlink" href="{{ holding_href(inst.ticker, inst.exchange) }}"><button type="button"
    class="secondary">&larr; {{ inst.ticker }}</button></a>
 
 <h1>Edit {{ inst.ticker }} distribution</h1>
@@ -53,7 +53,7 @@ it bought. Both save together or not at all.</p>
 
   <div class="commitbar">
     <button type="submit">Save changes</button>
-    <a href="/holding/{{ inst.ticker }}">Cancel</a>
+    <a href="{{ holding_href(inst.ticker, inst.exchange) }}">Cancel</a>
   </div>
 </form>
 

@@ -49,7 +49,7 @@
           <td class="{{ 'outside' if not day.in_month }} {{ 'today' if day.is_today }}">
             <span class="daynum">{{ day.date.day }}</span>
             {% for e in day.events %}
-            <a class="chip chip-{{ e.kind }}" href="/holding/{{ e.ticker }}?return=/schedule"
+            <a class="chip chip-{{ e.kind }}" href="{{ holding_href(e.ticker, e.exchange, return='/schedule') }}"
                title="{{ e.ticker }} — {{ e.detail }}{% if e.amount %} ({{ e.amount | money_plain }}){% endif %}">
               {{ e.ticker }}
             </a>
@@ -74,7 +74,7 @@
         {% for e in upcoming %}
         <li class="{{ 'due' if e.kind == 'buy-planned' and e.date <= sched.today }}">
           <div class="upmain">
-            <a href="/holding/{{ e.ticker }}?return=/schedule"><strong>{{ e.ticker }}</strong></a>
+            <a href="{{ holding_href(e.ticker, e.exchange, return='/schedule') }}"><strong>{{ e.ticker }}</strong></a>
             <span class="sub">{{ e.date }}</span>
           </div>
           <div class="upside">
@@ -163,7 +163,7 @@
       <label for="tickers">Rotation
         <span class="sub">in buy order; the same ticker more than once is how you weight it</span>
       </label>
-      <textarea name="tickers" id="tickers" rows="4" required>{% if plan %}{% for e in plan.entries %}{{ e.instrument.ticker }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}{{ suggested_rotation | join(", ") }}{% endif %}</textarea>
+      <textarea name="tickers" id="tickers" rows="4" required>{% if plan %}{% for e in plan.entries %}{{ listing_ref(e.instrument.ticker, e.instrument.exchange) }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}{{ suggested_rotation | join(", ") }}{% endif %}</textarea>
 
       <div class="rotation" id="rotation" hidden>
         <div class="rotpanel">
@@ -179,10 +179,11 @@
                  under the cursor or open a gap, so rotation.js drives this
                  with pointer events instead — which also makes it work on
                  touch, where HTML5 drag does not exist. #}
+              {% set ref = listing_ref(i.ticker, i.exchange) %}
               <button type="button" class="rotchip add"
-                      data-ticker="{{ i.ticker }}"
-                      aria-label="Add {{ i.ticker }} to the rotation">
-                {{ i.ticker }}<span class="rotplus" aria-hidden="true">+</span>
+                      data-ticker="{{ ref }}"
+                      aria-label="Add {{ ref }} to the rotation">
+                {{ ref }}<span class="rotplus" aria-hidden="true">+</span>
               </button>
             </li>
             {% endfor %}

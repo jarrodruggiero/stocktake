@@ -39,7 +39,14 @@ trades. Payment date {{ p.payment_date or 'NOT PARSED — set per row' }}.</p>
         {% if r.status == 'new' %}
         <form action="/imports-exports/statement/commit" method="post">
           <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+          {% if r.choices %}
+          <select name="ticker" required aria-label="Listing">
+            <option value="" selected disabled>— select —</option>
+            {% for value, label in r.choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select>
+          {% else %}
           <input type="hidden" name="ticker" value="{{ r.ticker }}">
+          {% endif %}
           <input type="hidden" name="payment_date" value="{{ p.payment_date or '' }}">
           <input type="hidden" name="net_amount" value="{{ r.cash_amount }}">
           {% if r.drp_units != '0' %}

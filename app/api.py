@@ -107,7 +107,8 @@ def get_holdings(request: Request) -> dict:
 
 @router.get("/trades")
 def get_trades(
-    request: Request, since: str | None = None, ticker: str | None = None
+    request: Request, since: str | None = None, ticker: str | None = None,
+    exchange: str | None = None,
 ) -> dict:
     with auth.api_session(request) as (access, db):
         stmt = select(Trade).order_by(Trade.date, Trade.id)
@@ -120,12 +121,16 @@ def get_trades(
         if ticker:
             wanted = ticker.strip().upper()
             rows = [t for t in rows if t.instrument.ticker == wanted]
+        if exchange:
+            wanted = exchange.strip().upper()
+            rows = [t for t in rows if t.instrument.exchange == wanted]
         return {
             "trades": [
                 {
                     "id": t.id,
                     "date": t.date.isoformat(),
                     "ticker": t.instrument.ticker,
+                    "exchange": t.instrument.exchange,
                     "type": t.type,
                     "units": _num(t.quantity),
                     "unit_price": _num(t.unit_price),
@@ -154,6 +159,7 @@ def get_dividends(request: Request, since: str | None = None) -> dict:
                     "id": d.id,
                     "date": d.date.isoformat(),
                     "ticker": d.instrument.ticker,
+                    "exchange": d.instrument.exchange,
                     "cash_amount": _num(d.cash_amount),
                     "currency": d.instrument.currency,
                     "fx_rate": _num(d.fx_rate),
@@ -228,6 +234,7 @@ def get_plan(request: Request) -> dict:
             "upcoming": [
                 {
                     "ticker": b.ticker,
+                    "exchange": b.exchange,
                     "due_date": b.due_date.isoformat(),
                     "amount": _num(b.amount),
                 }
@@ -246,6 +253,8 @@ def get_plan(request: Request) -> dict:
 # refuses it with an overflow. The same rule the forms use, money.parse.
 class TradeIn(BaseModel):
     ticker: str
+    # Needed only for a ticker this portfolio holds on more than one exchange.
+    exchange: str | None = Field(default=None, max_length=Instrument.exchange.type.length)
     type: str = Field(pattern="^(buy|sell|drp)$")
     date: dt.date
     units: Decimal = Field(gt=0, lt=money.limit(Trade.quantity))
@@ -261,6 +270,7 @@ class TradeIn(BaseModel):
 
 class DividendIn(BaseModel):
     ticker: str
+    exchange: str | None = Field(default=None, max_length=Instrument.exchange.type.length)
     date: dt.date
     cash_amount: Decimal = Field(gt=0, lt=money.limit(Dividend.cash_amount))
     franking_credits: Decimal | None = Field(
@@ -269,26 +279,27 @@ class DividendIn(BaseModel):
     note: str | None = Field(default=None, max_length=Dividend.note.type.length)
 
 
-def _instrument(db, ticker: str) -> Instrument:
+def _instrument(db, ticker: str, exchange: str | None = None) -> Instrument:
     problem = ticker_problem(ticker)
     if problem:
         raise HTTPException(400, problem)
-    inst = db.scalar(
-        select(Instrument).where(Instrument.ticker == ticker.strip().upper(),
-                                 Instrument.id.in_(queries.portfolio_instrument_ids(db)))
-        .order_by(Instrument.id)
-    )
-    if inst is None:
+    found = queries.held_as(db, ticker, exchange)
+    if len(found) > 1:
+        # One code on two exchanges here: say which, rather than taking the older.
+        raise HTTPException(409, f"{found[0].ticker} is held on "
+                                 f"{' and '.join(i.exchange for i in found)} — say which in "
+                                 "`exchange`.")
+    if not found:
         raise HTTPException(
             404, f"unknown instrument {ticker!r} — add it in the app first"
         )
-    return inst
+    return found[0]
 
 
 @router.post("/trades", status_code=201)
 def create_trade(request: Request, body: TradeIn) -> dict:
     with auth.api_session(request, write=True) as (access, db):
-        inst = _instrument(db, body.ticker)
+        inst = _instrument(db, body.ticker, body.exchange)
         if body.date > clock.today():
             raise HTTPException(400, "date is in the future")
         trade = owned(
@@ -313,13 +324,14 @@ def create_trade(request: Request, body: TradeIn) -> dict:
             raise HTTPException(409, queries.breach_message(inst.ticker, breach))
         db.add(trade)
         db.flush()
-        return {"id": trade.id, "ticker": inst.ticker, "date": trade.date.isoformat()}
+        return {"id": trade.id, "ticker": inst.ticker, "exchange": inst.exchange,
+                "date": trade.date.isoformat()}
 
 
 @router.post("/dividends", status_code=201)
 def create_dividend(request: Request, body: DividendIn) -> dict:
     with auth.api_session(request, write=True) as (access, db):
-        inst = _instrument(db, body.ticker)
+        inst = _instrument(db, body.ticker, body.exchange)
         existing = db.scalar(
             select(Dividend).where(
                 Dividend.instrument_id == inst.id,
@@ -344,4 +356,5 @@ def create_dividend(request: Request, body: DividendIn) -> dict:
         )
         db.add(dividend)
         db.flush()
-        return {"id": dividend.id, "ticker": inst.ticker, "date": body.date.isoformat()}
+        return {"id": dividend.id, "ticker": inst.ticker, "exchange": inst.exchange,
+                "date": body.date.isoformat()}

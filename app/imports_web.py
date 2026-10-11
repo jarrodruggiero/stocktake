@@ -35,6 +35,7 @@ from . import (
     navigation,
     ofx,
     pagemap,
+    queries,
     statements,
     tenancy,
     textfield,
@@ -310,7 +311,7 @@ async def statement_preview(request: Request, file: UploadFile,
             data, s, settings.imports.user_dir("statement"),
             ocr_enabled=settings.imports.ocr.enabled,
             wanted_template=template or None)
-        tickers = sorted({i.ticker for i in statements.own_instruments(s)})
+        tickers = statements.choices(s)
         template = "statement_rows_preview.html" if parsed.rows else "statement_preview.html"
         return templates.TemplateResponse(
             request,
@@ -379,11 +380,14 @@ async def statement_commit(
     with auth.scoped_session(request) as (ctx, s):
         await auth.verify_csrf(request, s)
         _require_write(ctx)
-        inst = statements.instrument_for(s, ticker)
-        if inst is None:
+        found = queries.held_as(s, ticker)
+        if len(found) > 1:
+            raise HTTPException(400, queries.held_twice(found))
+        if not found:
             raise HTTPException(400, f"unknown instrument {ticker!r}")
+        inst = found[0]
         if statements.duplicate_of(s, inst, date, amount):
-            raise HTTPException(409, f"a {ticker} dividend of {amount} on {date} already exists")
+            raise HTTPException(409, f"a {inst.ticker} dividend of {amount} on {date} already exists")
 
         note = "from dividend statement"
         if franked_amount.strip():
@@ -426,7 +430,8 @@ async def statement_commit(
                 ),
             )
         )
-    return RedirectResponse(f"/holding/{ticker.upper()}", status_code=303)
+        to = queries.holding_path(inst.ticker, inst.exchange, queries.ambiguous_tickers(s))
+    return RedirectResponse(to, status_code=303)
 
 
 # --------------------------------------------------------------------------- #

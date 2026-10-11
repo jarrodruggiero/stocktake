@@ -15,6 +15,7 @@
   {{ inst.exchange }} · {{ inst.asset_class }} · {{ inst.currency }}
   {% if holding.drp %} · DRP{% endif %}
   {% if not inst.active %} · <span class="badge">closed</span>{% endif %}
+  {% for o in others %} · also on <a href="{{ holding_href(o.ticker, o.exchange) }}">{{ o.exchange }}</a>{% endfor %}
 </p>
 {% if holding.note %}<p class="note notecell">{{ holding.note }}</p>{% endif %}
 
@@ -47,7 +48,7 @@
      heading; on a narrow screen `.sectionhead` wraps it onto its own line
      rather than squeezing the title. #}
   <h2 class="sectionhead">Ledger
-    <a href="/trade/new?ticker={{ inst.ticker }}"><button type="button"
+    <a href="/trade/new?ticker={{ inst.ticker }}{% if others %}&amp;exchange={{ inst.exchange }}{% endif %}"><button type="button"
        class="secondary">Record a trade</button></a></h2>
   <div class="tablewrap">
   <table>

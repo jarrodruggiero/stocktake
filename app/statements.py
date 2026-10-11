@@ -19,7 +19,8 @@ from __future__ import annotations
 import datetime as dt
 import io
 import re
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from sqlalchemy import select
@@ -41,6 +42,9 @@ class StatementRow:
     db_units: str | None = None
     carry_note: str = ""
     status: str = "new"  # new / duplicate / unknown-instrument
+    # A fund held here on more than one exchange: which one the advice means,
+    # it does not say, so the row offers each, as (form value, label).
+    choices: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -196,9 +200,17 @@ def own_instruments(session: Session) -> list[Instrument]:
                                 .order_by(Instrument.ticker, Instrument.id)))
 
 
-def instrument_for(session: Session, ticker: str) -> Instrument | None:
-    """This portfolio's instrument with that ticker, or None."""
-    return next((i for i in own_instruments(session) if i.ticker == ticker.upper()), None)
+def choices(session: Session) -> list[tuple[str, str]]:
+    """This portfolio's instruments as a form offers them, as (value, label):
+    the ticker, or each listing of one held on two exchanges, as
+    TICKER:EXCHANGE — the form `queries.held_as` reads."""
+    own = own_instruments(session)
+    twice = {t for t, n in Counter(i.ticker for i in own).items() if n > 1}
+    return [_choice(i) if i.ticker in twice else (i.ticker, i.ticker) for i in own]
+
+
+def _choice(inst: Instrument) -> tuple[str, str]:
+    return f"{inst.ticker}:{inst.exchange}", f"{inst.ticker} ({inst.exchange})"
 
 
 def _rows_from(
@@ -216,9 +228,9 @@ def _rows_from(
 
     from .models import Trade
 
-    own: dict[str, Instrument] = {}
+    own: dict[str, list[Instrument]] = {}
     for inst in own_instruments(session):
-        own.setdefault(inst.ticker, inst)
+        own.setdefault(inst.ticker, []).append(inst)
     rows = []
     for row_values in matches:
         ticker = row_values["ticker"]
@@ -236,10 +248,13 @@ def _rows_from(
             units_held=held.replace(",", ""),
             carry_note=f"DRP carry: brought fwd {brought}, carried fwd {carried}",
         )
-        inst = own.get(ticker)
-        if inst is None:
+        listings = own.get(ticker, [])
+        if not listings:
             row.status = "unknown-instrument"
+        elif len(listings) > 1:
+            row.choices = [_choice(i) for i in listings]
         else:
+            inst = listings[0]
             trades = session.scalars(select(Trade).where(Trade.instrument_id == inst.id)).all()
             units = sum(t.quantity for t in trades if t.type in ("buy", "drp")) - sum(
                 t.quantity for t in trades if t.type == "sell"
