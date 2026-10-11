@@ -1208,6 +1208,79 @@ def test_an_invalid_postgres_form_is_reported_without_connecting(
     assert unconfigured == []
 
 
+def test_a_database_that_never_answers_is_given_up_on(monkeypatch):
+    """A server that takes the connection and says nothing held the probe for
+    as long as the operating system would wait, minutes, before anything."""
+    import socket
+    import threading
+
+    from appcore.config import DatabaseSettings
+
+    silent = socket.socket()
+    silent.bind(("127.0.0.1", 0))
+    silent.listen()
+    monkeypatch.setattr(database, "CONNECT_TIMEOUT", 1)
+    chosen = DatabaseSettings(type="postgres", host="127.0.0.1", port=silent.getsockname()[1],
+                              name="portfolio", user="portfolio", password="x")
+    answers: list = []
+    # In a thread, so a probe with no limit fails this test instead of hanging it.
+    asking = threading.Thread(target=lambda: answers.append(database.probe(chosen)), daemon=True)
+    try:
+        asking.start()
+        asking.join(timeout=5)
+    finally:
+        silent.close()
+
+    assert not asking.is_alive(), "still waiting on a server that will never answer"
+    assert answers and not answers[0].ok
+
+
+@pytest.mark.parametrize("action, slow_step", [
+    ("/setup/database/test", "probe"),
+    ("/setup/database", "probe"),
+    ("/setup/database", "connect"),     # which migrates, and can take as long
+])
+def test_the_database_step_leaves_the_app_answering(app_module, unconfigured, monkeypatch,
+                                                    tmp_path, action, slow_step):
+    """It ran on the event loop: one slow database, typed in by anybody before
+    the first account exists, and /healthz stopped answering, so the liveness
+    probe restarted the pod mid-wizard."""
+    import asyncio
+    import time
+
+    import httpx
+
+    def slow(chosen, **kw):
+        time.sleep(1)
+        return database.Probe(True, "Connected.")
+
+    monkeypatch.setattr(app_module.database, slow_step, slow)
+
+    async def both() -> tuple[float, float]:
+        transport = httpx.ASGITransport(app=app_module.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+            page = await http.get("/setup", headers=HTML)
+            token = re.search(r'name="_csrf" value="([^"]+)"', page.text).group(1)
+            began = time.monotonic()
+
+            async def press():
+                await http.post(action, headers=HTML, data={
+                    "_csrf": token, "kind": "sqlite", "path": str(tmp_path / "p.db")})
+                return time.monotonic() - began
+
+            async def health():
+                await asyncio.sleep(0.1)
+                await http.get("/healthz")
+                return time.monotonic() - began
+
+            return tuple(await asyncio.gather(press(), health()))
+
+    step_took, health_took = asyncio.run(both())
+
+    assert step_took >= 1
+    assert health_took < 0.6, "the health check waited for the probe"
+
+
 def test_a_redrawn_database_form_keeps_what_was_typed_except_the_password(
         client, unconfigured, unresolvable):
     """Losing a password somebody just pasted, on a failed connection test, is
