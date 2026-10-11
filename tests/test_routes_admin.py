@@ -17,6 +17,7 @@ from app.models import (
     HoldingPref,
     Instrument,
     Portfolio,
+    PortfolioInvite,
     PortfolioMember,
     User,
     UserSession,
@@ -574,7 +575,54 @@ def test_the_refresh_button_kicks_the_feed(client, session_factory, monkeypatch)
     resp = client.post("/refresh", data={"_csrf": csrf(session_factory)},
                        headers=HTML, follow_redirects=False)
 
-    assert resp.status_code == 303
+    import time
+    waited = 0.0
+    while not ran and waited < 5:          # fire and forget, on the executor
+        time.sleep(0.05)
+        waited += 0.05
+    assert resp.status_code == 303 and ran == [1]
+
+
+def test_a_quote_run_already_going_is_not_waited_for(monkeypatch):
+    """A second request for live prices while one is fetching returns at
+    once rather than queueing behind it."""
+    import threading
+
+    from app import main as main_mod
+
+    fetched = []
+    monkeypatch.setattr(main_mod.pricefeed, "refresh_quotes",
+                        lambda s, settings: fetched.append(1) or 0)
+    got = []
+    # With a timeout: a run that kept the lock would hang the suite here.
+    assert main_mod._quote_lock.acquire(timeout=2), "the premise: no run is going"
+    try:
+        worker = threading.Thread(target=lambda: got.append(main_mod._run_quotes()),
+                                  daemon=True)
+        worker.start()
+        worker.join(2)
+        assert got == [0] and not worker.is_alive() and fetched == []
+    finally:
+        main_mod._quote_lock.release()
+
+
+def test_the_log_consoles_first_look_starts_at_the_first_line(client, session_factory,
+                                                              monkeypatch):
+    """The page asks for "after" only once it has lines; its first request
+    gets the recent window, not everything after line one."""
+    import collections
+    import logging
+
+    from app import logbuffer
+
+    make_login(client, session_factory)
+    monkeypatch.setattr(logbuffer, "_lines", collections.deque(maxlen=logbuffer.CAPACITY))
+    monkeypatch.setattr(logbuffer, "_next_seq", 0)
+    logging.getLogger("app.test").warning("the first line")
+
+    lines = client.get("/admin/logs.json").json()["lines"]
+
+    assert [(line["seq"], line["message"]) for line in lines][:1] == [(1, "the first line")]
 
 
 def test_a_viewer_cannot_kick_the_feed(client, session_factory):
@@ -612,6 +660,22 @@ def test_every_stored_role_has_a_label_and_a_blurb():
     for role in MEMBER_ROLES:
         assert ROLE_LABELS.get(role), f"{role} has no label"
         assert ROLE_BLURBS.get(role), f"{role} has no description"
+
+
+def test_the_members_page_says_what_each_role_can_do(client, session_factory):
+    """The labels alone don't say what a viewer can't do; the line under the
+    people table does, for each role."""
+    import html
+    import re
+
+    from app.models import MEMBER_ROLES, ROLE_BLURBS, ROLE_LABELS
+
+    make_login(client, session_factory)
+    page = html.unescape(client.get("/members", headers=HTML).text)
+
+    for role in MEMBER_ROLES:
+        said = rf"<strong>{re.escape(ROLE_LABELS[role])}</strong>\s*{re.escape(ROLE_BLURBS[role])}"
+        assert re.search(said, page), role
 
 
 def test_the_two_admin_labels_are_not_the_same_words(client, session_factory):
@@ -668,3 +732,234 @@ def test_a_hostile_referer_cannot_turn_a_redirect_into_an_open_redirect(
 
         assert resp.status_code == 303, (path, referer)
         assert resp.headers["location"] == expected, (path, referer)
+
+
+# --------------------------------------------------------------------------- #
+# What only an instance admin may do, and that what they do takes effect
+# --------------------------------------------------------------------------- #
+# A mutation run removed `_require_admin` from adding, deactivating and
+# resetting accounts and from saving settings, and nothing failed: every test
+# of those routes signed in as an admin. It also removed the line that stores
+# a new password, from both the change and the reset: the tests checked the
+# redirect and the sign-outs, never that the new password works.
+
+def _accounts(session_factory) -> list:
+    with session_factory() as s:
+        return sorted((u.email, u.is_active, u.is_admin, u.password_hash, u.must_change_password)
+                      for u in s.scalars(select(User)))
+
+
+@pytest.mark.parametrize("method, path, data", [
+    ("get", "/users", None),
+    ("get", "/admin/accounts", None),
+    ("post", "/users/add", {"name": "New", "email": "new@example.test",
+                            "password": "a-long-enough-one"}),
+    ("post", "/users/{other}/active", {}),
+    ("post", "/users/{other}/reset", {"password": "a-long-enough-one"}),
+    ("post", "/admin/settings", {"timezone": "UTC"}),
+])
+def test_a_non_admin_cannot_manage_accounts_or_settings(client, session_factory, tmp_path,
+                                                        monkeypatch, method, path, data):
+    from app import configfile
+
+    conf = tmp_path / "config.yaml"
+    conf.write_text("timezone: Australia/Melbourne\n")
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(conf))
+    make_login(client, session_factory, admin=False)
+    token = csrf(session_factory)
+    with session_factory() as s:
+        other_id = fac.make_user(s, "other@example.test").id
+        s.commit()
+    before = _accounts(session_factory)
+    url = path.format(other=other_id)
+
+    resp = (client.get(url, headers=HTML) if method == "get" else
+            client.post(url, data={"_csrf": token, **data}, headers=HTML,
+                        follow_redirects=False))
+
+    assert resp.status_code == 403
+    assert _accounts(session_factory) == before
+    assert conf.read_text() == "timezone: Australia/Melbourne\n"
+
+
+def _signs_in(client, email: str, password: str) -> bool:
+    from test_routes import pre_auth_csrf
+
+    resp = client.post("/login", data={"email": email, "password": password,
+                                       "_csrf": pre_auth_csrf(client)},
+                       headers=HTML, follow_redirects=False)
+    return resp.status_code == 303 and "error" not in resp.headers.get("location", "")
+
+
+def test_a_changed_password_is_the_one_that_works(client, session_factory):
+    from fastapi.testclient import TestClient
+
+    make_login(client, session_factory)
+    client.post("/profile/password",
+                data={"current_password": PASSWORD, "password": "a-longer-new-one",
+                      "confirm": "a-longer-new-one", "_csrf": csrf(session_factory)},
+                headers=HTML, follow_redirects=False)
+
+    fresh = TestClient(client.app)
+    assert not _signs_in(fresh, "user@example.test", PASSWORD)
+    assert _signs_in(fresh, "user@example.test", "a-longer-new-one")
+
+
+def test_a_reset_password_is_the_one_that_works(client, session_factory):
+    from fastapi.testclient import TestClient
+
+    make_login(client, session_factory, admin=True)
+    token = csrf(session_factory)
+    with session_factory() as s:
+        other_id = fac.make_user(s, "other@example.test",
+                                 password_hash=auth_mod.hash_password(PASSWORD)).id
+        s.commit()
+
+    client.post(f"/users/{other_id}/reset",
+                data={"password": "a-fresh-temporary-one", "_csrf": token}, headers=HTML)
+
+    fresh = TestClient(client.app)
+    assert not _signs_in(fresh, "other@example.test", PASSWORD)
+    assert _signs_in(fresh, "other@example.test", "a-fresh-temporary-one")
+
+
+def test_a_new_account_has_recovery_codes_waiting(client, session_factory):
+    from app import twofactor
+
+    make_login(client, session_factory, admin=True)
+    client.post("/users/add", data={"name": "New", "email": "new@example.test",
+                                    "password": "a-long-enough-one",
+                                    "_csrf": csrf(session_factory)}, headers=HTML)
+
+    with session_factory() as s:
+        new = s.scalar(select(User).where(User.email == "new@example.test"))
+        assert twofactor.has_recovery_codes(s, new)
+
+
+# --------------------------------------------------------------------------- #
+# What only an owner may do in a portfolio, and what each page reaches
+# --------------------------------------------------------------------------- #
+# Removing the owner check from adding members, changing a role and
+# withdrawing an invitation failed nothing, nor did removing the admin check
+# from the server log and from portfolio settings: no test signed in as a
+# plain member. Nor did dropping the portfolio filter from the members list,
+# from the last-owner count, or from a new API key's portfolios: no test had a
+# second portfolio for them to reach.
+
+def _as_plain_member(client, session_factory) -> dict:
+    """Signed in as a member (not an owner, not an admin) of a portfolio owned
+    by someone else, with another member and a live invitation in it."""
+    from app import invites
+
+    make_login(client, session_factory, admin=False)
+    with session_factory() as s:
+        me = s.scalar(select(User).where(User.email == "user@example.test"))
+        boss = fac.make_user(s, "boss@example.test")
+        shared = fac.make_portfolio(s, "Shared", owner=boss)
+        mine = fac.add_member(s, shared, me, role="member")
+        other = fac.add_member(s, shared, fac.make_user(s, "other@example.test"), role="viewer")
+        outsider = fac.make_user(s, "outsider@example.test")
+        invite_raw = invites.create(s, portfolio_id=shared.id, role="member",
+                                    created_by=boss.id)
+        invite_id = s.scalar(select(PortfolioInvite.id))
+        s.commit()
+        ids = {"shared": shared.id, "mine": mine.id, "other": other.id,
+               "outsider": outsider.id, "invite": invite_id, "raw": invite_raw}
+    client.post("/portfolio/switch", data={"portfolio_id": str(ids["shared"]),
+                                           "_csrf": csrf(session_factory)}, headers=HTML)
+    return ids
+
+
+def _memberships(session_factory) -> list:
+    with session_factory() as s:
+        return sorted((m.portfolio_id, m.user_id, m.role) for m in s.scalars(select(PortfolioMember)))
+
+
+@pytest.mark.parametrize("path, data", [
+    ("/members/add", {"user_id": "{outsider}", "role": "owner"}),
+    ("/members/{mine}/role", {"role": "owner"}),
+    ("/members/{other}/role", {"role": "owner"}),
+    ("/members/{other}/remove", {}),
+    ("/members/invite/{invite}/revoke", {}),
+])
+def test_a_plain_member_cannot_manage_the_members(client, session_factory, path, data):
+    ids = _as_plain_member(client, session_factory)
+    before = _memberships(session_factory)
+
+    resp = client.post(path.format(**ids), headers=HTML, follow_redirects=False,
+                       data={"_csrf": csrf(session_factory),
+                             **{k: v.format(**ids) for k, v in data.items()}})
+
+    assert resp.status_code == 403
+    assert _memberships(session_factory) == before
+    with session_factory() as s:
+        assert s.get(PortfolioInvite, ids["invite"]).revoked_at is None
+
+
+def test_the_server_log_and_portfolio_settings_are_for_admins(client, session_factory):
+    ids = _as_plain_member(client, session_factory)
+
+    assert client.get("/admin/logs.json").status_code == 403
+    resp = client.post("/portfolio/settings", headers=HTML, follow_redirects=False,
+                       data={"name": "Renamed", "_csrf": csrf(session_factory)})
+    assert resp.status_code == 403
+    with session_factory() as s:
+        assert s.get(Portfolio, ids["shared"]).name == "Shared"
+
+
+def test_the_members_page_lists_this_portfolios_people(client, session_factory):
+    make_login(client, session_factory)
+    with session_factory() as s:
+        stranger = fac.make_user(s, "stranger@example.test", name="Stranger Danger")
+        fac.make_portfolio(s, "Theirs", owner=stranger)
+        s.commit()
+
+    page = client.get("/members", headers=HTML).text
+    # The People table, not the first table on the page (the brokerage fees),
+    # nor the add-someone picker, which lists every account on purpose.
+    people = page.split("<h2>People</h2>", 1)[1].split("</table>", 1)[0]
+
+    assert "user@example.test" in people, "the premise: this is the members table"
+    assert "stranger@example.test" not in people
+
+
+def test_the_last_owner_is_counted_in_this_portfolio_only(client, session_factory):
+    """My portfolio has one owner, me, and a second member; another portfolio
+    has its own owner. I cannot leave mine ownerless."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        mine = s.scalar(select(PortfolioMember).where(PortfolioMember.role == "owner"))
+        friend = fac.make_user(s, "friend@example.test")
+        fac.add_member(s, s.get(Portfolio, mine.portfolio_id), friend, role="member")
+        fac.make_portfolio(s, "Theirs", owner=fac.make_user(s, "stranger@example.test"))
+        s.commit()
+        my_membership = mine.id
+
+    resp = client.post(f"/members/{my_membership}/remove", headers=HTML,
+                       follow_redirects=False, data={"_csrf": csrf(session_factory)})
+
+    assert "error=A+portfolio+needs+an+owner" in resp.headers["location"]
+    with session_factory() as s:
+        assert s.get(PortfolioMember, my_membership) is not None
+
+
+def test_a_new_key_reaches_only_the_portfolios_chosen(client, session_factory):
+    from app.models import ApiKey
+
+    make_login(client, session_factory)
+    with session_factory() as s:
+        me = s.scalar(select(User))
+        mine = s.scalar(select(Portfolio))
+        second = fac.make_portfolio(s, "Second", owner=me)
+        fac.make_portfolio(s, "Theirs", owner=fac.make_user(s, "stranger@example.test"))
+        s.commit()
+        chosen = mine.id
+
+    client.post("/keys/new", headers=HTML, data={
+        "name": "one portfolio", "scopes": "read", "portfolios": [str(chosen)],
+        "_csrf": csrf(session_factory)})
+
+    with session_factory() as s:
+        key = s.scalar(select(ApiKey))
+        assert [p.id for p in key.portfolios] == [chosen]
+        assert second.id != chosen

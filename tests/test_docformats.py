@@ -15,6 +15,7 @@ mostly about the format being *safe* and *expressive enough*:
 from __future__ import annotations
 
 import datetime as dt
+import itertools
 from decimal import Decimal
 from pathlib import Path
 
@@ -246,6 +247,38 @@ def test_the_catch_all_is_used_when_nothing_specific_claims_it():
     assert fmt.pick([generic, specific], SAMPLE).key == "generic"
 
 
+# The two tests above try a marker against the catch-all. The rest of the
+# order was unchecked: a row shape against a marker, and an installed
+# template breaking a tie. Its weights could change, so that an installed
+# template with a marker beat a shipped one with a row shape, and nothing
+# failed. Every pair of the eight kinds, all claiming the same document,
+# each way round in the list.
+TABLE = "Acme Registry\nALPHA 100 $12.50\n"
+KINDS = [(rows, marker, installed) for rows in (True, False) for marker in (True, False)
+         for installed in (True, False)]
+
+
+def _kind(rows: bool, marker: bool, installed: bool) -> fmt.StatementTemplate:
+    return template(
+        key=f"{'rows' if rows else 'no-rows'}-{'marker' if marker else 'no-marker'}-"
+            f"{'installed' if installed else 'shipped'}",
+        match_any=["Acme Registry"] if marker else [],
+        rows=fmt.RowSpec(shape="TICKER INT MONEY", columns=["ticker", "units", "amount"])
+        if rows else None,
+        source="installed" if installed else "builtin")
+
+
+@pytest.mark.parametrize(("first", "second"), list(itertools.combinations(KINDS, 2)))
+def test_more_evidence_wins_and_an_installed_template_breaks_a_tie(first, second):
+    """A row shape before a marker before nothing; at equal evidence, the
+    installed one."""
+    a, b = _kind(*first), _kind(*second)
+    best = a if first > second else b       # (rows, marker, installed), most first
+
+    assert fmt.pick([a, b], TABLE).key == best.key
+    assert fmt.pick([b, a], TABLE).key == best.key
+
+
 def test_no_templates_means_no_match_rather_than_a_crash():
     assert fmt.pick([], SAMPLE) is None
 
@@ -310,6 +343,7 @@ def test_one_broken_template_does_not_stop_the_others(tmp_path, caplog):
 
     assert "fine" in keys
     assert "broken" not in keys
+    assert "ignoring statement template broken.yaml" in caplog.text
 
 
 # --------------------------------------------------------------------------- #
@@ -790,3 +824,174 @@ def test_a_figure_that_is_not_finite_or_does_not_fit_coerces_to_none(raw, type_)
     """`int(Decimal("Infinity"))` raised from outside the old `try`, and
     1E+999999 is finite but is Infinity once SQLite has stored it."""
     assert fmt.coerce(raw, type_) is None
+
+
+# --------------------------------------------------------------------------- #
+# Reading values and templates: edges a mutation run found unchecked
+# --------------------------------------------------------------------------- #
+
+def test_a_text_value_is_trimmed_and_a_blank_one_is_nothing():
+    assert fmt.coerce("  Alpha Index Fund  ", "text") == "Alpha Index Fund"
+    assert fmt.coerce("   ", "text") is None
+
+
+def test_a_date_with_spaces_around_it_still_reads():
+    assert fmt.coerce(" 15/03/2026 ", "date") == dt.date(2026, 3, 15)
+
+
+def test_a_field_given_only_its_labels_reads_text_and_one_without_labels_is_refused():
+    template = fmt.parse_statement_template("mine", (
+        "fields:\n"
+        "  payment_date:\n"
+        "    after: ['paid on']\n"))
+
+    assert template.name == "mine"                      # no name: its key
+    assert template.fields["payment_date"].type == "text"
+    assert template.match_any == [] and template.rows is None
+    with pytest.raises(fmt.TemplateError, match="at least one `after` label"):
+        fmt.parse_statement_template("mine", "fields:\n  net_amount:\n    type: money\n")
+
+
+def test_a_broker_format_without_a_kind_is_passed_over(tmp_path, caplog):
+    """Passed over, and the log says why: it is the only place a format that
+    never reaches the imports page explains itself."""
+    (tmp_path / "nokind.yaml").write_text("name: No kind\nexchange: ASX\n")
+    (tmp_path / "mine.yaml").write_text("name: Mine\nkind: mapped\nexchange: ASX\n")
+
+    formats = fmt.load_broker_formats(extra_dir=tmp_path)
+
+    assert "mine" in formats and "nokind" not in formats
+    assert "name" not in formats["mine"]                # documentation, not format
+    assert "ignoring broker format nokind.yaml: a broker format needs a `kind`" in caplog.text
+
+
+def test_a_label_is_at_most_four_words():
+    tokens = fmt.tokenize("total net cash amount paid 104.70")
+    index = next(t.index for t in tokens if t.text == "104.70")
+
+    labels = fmt.infer_labels(tokens, index)
+
+    assert labels[0] == "net cash amount paid"
+    assert labels == ["net cash amount paid", "cash amount paid", "amount paid", "paid"]
+
+
+def test_a_written_date_never_borrows_a_day_from_the_line_above():
+    """"12" ends one line and "March 2026" starts the next: clicking March is
+    not the 12th of March."""
+    tokens = fmt.tokenize("Reference 12\nMarch 2026 paid")
+    march = next(t.index for t in tokens if t.text == "March")
+
+    start, type_, span = fmt._value_start(tokens, march)
+
+    assert (start, span) == (march, 1) and type_ != "date"
+
+
+def test_an_abbreviated_month_is_one_written_date():
+    tokens = fmt.tokenize("Paid 15 Sep 2026")
+    day = next(t.index for t in tokens if t.text == "15")
+
+    assert fmt.infer_type(tokens, day) == ("date", 3)
+
+
+def test_a_designed_template_with_no_name_or_blank_markers_still_exports(client,
+                                                                          session_factory):
+    """No name is "My registry", and the marker box's blank lines and spaces
+    are not markers: a blank one would have matched every document."""
+    import json
+
+    from ruamel.yaml import YAML
+
+    from test_routes import make_login, session_csrf
+
+    make_login(client, session_factory)
+    mapping = {"net_amount": {"after": ["net amount paid"], "type": "money"}}
+
+    resp = client.post("/imports-exports/statement/design/export",
+                       data={"name": "   ", "mapping": json.dumps(mapping),
+                             "marker": "  ACME REGISTRY \n\n   \n Distribution Advice",
+                             "_csrf": session_csrf(session_factory)})
+
+    loaded = YAML(typ="safe").load(resp.text)
+    assert loaded["name"] == "My registry"
+    assert loaded["match"]["any_of"] == ["ACME REGISTRY", "Distribution Advice"]
+    assert 'filename="template.yaml"' in resp.headers["content-disposition"]
+
+
+@pytest.mark.parametrize("mapping", [
+    {"net_amount": {"after": ["net amount"], "type": "colour"}},
+    {"net_amount": {"after": ["net amount", 7], "type": "money"}},
+])
+def test_a_mapping_the_designer_never_sends_is_refused(client, session_factory, mapping):
+    import json
+
+    from test_routes import make_login, session_csrf
+
+    make_login(client, session_factory)
+
+    resp = client.post("/imports-exports/statement/design/export",
+                       data={"name": "X", "mapping": json.dumps(mapping), "marker": "",
+                             "_csrf": session_csrf(session_factory)})
+
+    assert resp.status_code == 400
+
+
+def test_a_template_that_is_not_a_mapping_is_refused_and_one_with_no_fields_loads():
+    with pytest.raises(fmt.TemplateError, match="expected a mapping"):
+        fmt.parse_statement_template("listy", "- one\n- two\n")
+
+    template = fmt.parse_statement_template("bare", "name: Bare\nmatch:\n  any_of: [ACME]\n")
+    assert template.fields == {} and template.match_any == ["ACME"]
+
+
+def test_a_typed_label_is_trimmed_and_matched_without_case():
+    text = "Net Amount Paid $104.70\n"
+
+    assert fmt.read_with(text, "  NET AMOUNT PAID  ", "money").value == Decimal("104.70")
+    assert fmt.read_with(text, "   ", "money").problem == \
+        "type the words that come before this value"
+
+
+def test_a_written_date_at_the_very_start_of_a_document_is_one_date():
+    """Clicking the month of "15 March 2026" when it opens the document: the
+    day is token zero, which a look-back stopping before zero never reached."""
+    tokens = fmt.tokenize("15 March 2026 net 104.70")
+
+    assert fmt._value_start(tokens, 1) == (0, "date", 3)
+
+
+@pytest.mark.parametrize(("expect", "article"), [("integer", "an integer"), ("money", "a money")])
+def test_a_mismatch_names_what_the_field_expects(expect, article):
+    text = "Paid on 15/03/2026\n"
+    index = next(t.index for t in fmt.tokenize(text) if t.text == "15/03/2026")
+
+    inference = fmt.infer_field(text, index, expect=expect)
+
+    assert inference.mismatch == f"that reads as a date and this field expects {article}"
+
+
+# --------------------------------------------------------------------------- #
+# What the last mutation pass found unchecked
+# --------------------------------------------------------------------------- #
+
+def test_the_first_word_of_a_document_can_be_pointed_at():
+    found = fmt.infer_field("123.45 net amount", 0)
+
+    assert (found.type, found.value) == ("money", Decimal("123.45"))
+
+
+def test_a_word_sharing_two_letters_with_a_month_does_not_make_a_date():
+    """Three letters say "Mar"; two would let "Maple" stand for March."""
+    assert fmt.infer_field("Units 15 Maple 2026", 1).type != "date"
+
+
+def test_a_name_in_another_script_is_written_as_typed():
+    """The file is read by people, and contributed: an escaped name is
+    correct and unreadable."""
+    assert 'name: "Société Générale"' in fmt.template_yaml(
+        name="Société Générale", fields={}, match=[])
+
+
+@pytest.mark.parametrize("label, text", [("net amount", "NET AMOUNT 123.45"),
+                                         ("NET AMOUNT", "net amount 123.45")])
+def test_a_typed_label_finds_its_value_whatever_its_case(label, text):
+    assert fmt.read_with(text, label, "money").value == Decimal("123.45")

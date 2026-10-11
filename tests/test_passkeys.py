@@ -349,3 +349,98 @@ def test_an_authenticator_that_did_not_verify_the_user_is_refused(
 
         with pytest.raises(passkeys.PasskeyError):
             passkeys.verify_authentication(db, credential, token, settings)
+
+
+# --------------------------------------------------------------------------- #
+# With more than one on file
+# --------------------------------------------------------------------------- #
+# Each test above holds one credential and one challenge, so a lookup that
+# dropped its `where` found the right row anyway; a mutation run removed the
+# credential match from sign-in, the challenge match from both ceremonies and
+# the owner filter from the account page's list, and nothing failed.
+
+def test_each_key_signs_in_as_its_own_account(session_factory, user, settings):
+    with session_factory() as db:
+        first = db.get(User, user.id)
+        second = User(email="second@example.test", name="Second", password_hash="x")
+        db.add(second)
+        db.flush()
+        first_device = _enrol(db, first, settings)
+        second_device = _enrol(db, second, settings)
+
+        credential, token = _assert(db, second_device, settings)
+        assert passkeys.verify_authentication(db, credential, token, settings).id == second.id
+        credential, token = _assert(db, first_device, settings)
+        assert passkeys.verify_authentication(db, credential, token, settings).id == first.id
+
+
+def test_two_ceremonies_in_flight_each_take_their_own_challenge(session_factory, user, settings):
+    with session_factory() as db:
+        u = db.get(User, user.id)
+        device = _enrol(db, u, settings)
+        first_options, first_token = passkeys.authentication_options(db, settings)
+        second_options, second_token = passkeys.authentication_options(db, settings)
+
+        assertion = device.get(_for_device(second_options), ORIGIN)
+        signed_in = passkeys.verify_authentication(db, _as_json(assertion), second_token,
+                                                   settings)
+        assert signed_in.id == user.id
+        assertion = device.get(_for_device(first_options), ORIGIN)
+        assert passkeys.verify_authentication(db, _as_json(assertion), first_token,
+                                              settings).id == user.id
+
+
+def test_signing_in_records_the_counter_and_when(session_factory, user, settings):
+    """The counter is what refuses an assertion from a cloned authenticator,
+    so it has to be the one the last sign-in reported."""
+    with session_factory() as db:
+        u = db.get(User, user.id)
+        device = _enrol(db, u, settings)
+        credential, token = _assert(db, device, settings)
+        passkeys.verify_authentication(db, credential, token, settings)
+        row = db.scalar(select(WebauthnCredential))
+
+        assert row.sign_count == device.sign_count > 0
+        assert row.last_used_at is not None
+
+
+def test_a_counter_gone_backwards_is_refused(session_factory, user, settings):
+    """An authenticator that counts never reports less than last time; a copy
+    of the key made before the last use does. Refused only if the count from
+    that use was kept."""
+    with session_factory() as db:
+        u = db.get(User, user.id)
+        device = _enrol(db, u, settings)
+        credential, token = _assert(db, device, settings)
+        passkeys.verify_authentication(db, credential, token, settings)
+        device.sign_count -= 1                    # the copy, one use behind
+
+        credential, token = _assert(db, device, settings)
+        with pytest.raises(passkeys.PasskeyError):
+            passkeys.verify_authentication(db, credential, token, settings)
+
+
+def test_the_account_lists_only_its_own_keys(session_factory, user, settings):
+    with session_factory() as db:
+        first = db.get(User, user.id)
+        second = User(email="second@example.test", name="Second", password_hash="x")
+        db.add(second)
+        db.flush()
+        _enrol(db, first, settings)
+        _enrol(db, second, settings)
+
+        assert [k.user_id for k in passkeys.for_user(db, first)] == [first.id]
+
+
+@pytest.mark.parametrize("typed, stored", [("  ", "Passkey"), ("", "Passkey"),
+                                           ("  Phone  ", "Phone"), ("x" * 90, "x" * 80)])
+def test_a_key_is_named_as_typed_or_called_passkey(session_factory, user, settings, typed,
+                                                   stored):
+    with session_factory() as db:
+        u = db.get(User, user.id)
+        device = VerifyingDevice()
+        raw_options, token = passkeys.registration_options(db, u, settings)
+        attestation = device.create(_for_device(raw_options), ORIGIN)
+        row = passkeys.verify_registration(db, u, _as_json(attestation), token, settings,
+                                           name=typed)
+        assert row.name == stored

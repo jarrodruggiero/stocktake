@@ -32,7 +32,7 @@ class Option:
     kind: str                  # text | int | bool | date | choice | list
     blurb: str
     restart: bool = False      # does a change wait for a restart?
-    optional: bool = False     # may be left empty, and is then written as unset
+    optional: bool = False     # a text field that may be left empty, written as unset (a list may always be)
     # An authoritative reference, where one exists and beats explaining. The
     # blurb is escaped in the template, so a link cannot live inside it.
     link: str = ""
@@ -92,46 +92,43 @@ OPTIONS: tuple[Option, ...] = (
            "screen.", minimum=0, maximum=3600),
     Option(("auth", "trusted_proxies"), "Trusted proxies", "list",
            "Addresses or ranges whose X-Forwarded-For and X-Forwarded-Proto "
-           "headers are believed. One per line.",
-           optional=True, restart=True),
+           "headers are believed. One per line."),
 
     Option(("auth", "webauthn", "enabled"), "Passkeys", "bool",
            "Whether passkeys can be added and used to sign in. Needs HTTPS and "
-           "the two settings below.", restart=True),
+           "the two settings below."),
     Option(("auth", "webauthn", "rp_id"), "Passkey domain", "text",
            "The domain passkeys are bound to. Change it and every existing passkey "
            "stops working.",
-           optional=True, restart=True),
+           optional=True),
     Option(("auth", "webauthn", "rp_name"), "Passkey prompt name", "text",
            "What the browser's passkey prompt calls this site.",
-           optional=True, restart=True),
+           optional=True),
     Option(("auth", "webauthn", "origins"), "Passkey origins", "list",
-           "The full URLs passkeys may be used from. One per line.",
-           optional=True, restart=True),
+           "The full URLs passkeys may be used from. One per line."),
 
     Option(("auth", "oidc", "enabled"), "Single sign-on", "bool",
-           "Whether sign-in can be handed to an external identity provider.",
-           restart=True),
+           "Whether sign-in can be handed to an external identity provider."),
     Option(("auth", "oidc", "issuer"), "Provider URL", "text",
            "The provider's issuer URL. Its configuration is read from here.",
-           optional=True, restart=True),
+           optional=True),
     Option(("auth", "oidc", "client_id"), "Client ID", "text",
            "The client ID the provider issued for Stocktake.",
-           optional=True, restart=True),
+           optional=True),
     Option(("auth", "oidc", "client_auth"), "Client authentication", "choice",
            "How the token request proves who it is. Basic sends the client "
            "secret; none is a public client, which has no secret and relies on "
-           "PKCE alone.", choices=("basic", "none"), restart=True),
+           "PKCE alone.", choices=("basic", "none")),
     Option(("auth", "oidc", "redirect_uri"), "Redirect URL", "text",
            "Where the provider sends people back to. Must match what it has "
-           "registered.", optional=True, restart=True),
+           "registered.", optional=True),
     Option(("auth", "oidc", "button_label"), "Sign-in button", "text",
            "What the button on the login page says.", optional=True),
     Option(("auth", "oidc", "provisioning"), "Who may sign in", "choice",
            "Linked accounts only, holders of an invite, or anyone the provider "
-           "authenticates.", choices=("off", "invite", "open"), restart=True),
+           "authenticates.", choices=("off", "invite", "open")),
     Option(("auth", "oidc", "scopes"), "Scopes", "list",
-           "Requested at sign-in. One per line.", restart=True),
+           "Requested at sign-in. One per line."),
 
     Option(("price_feed", "quotes_enabled"), "Live quotes", "bool",
            "Whether prices refresh while a market is open, as well as at the "
@@ -148,9 +145,9 @@ OPTIONS: tuple[Option, ...] = (
            "attempts, half-finished imports.", restart=True),
     Option(("maintenance", "hour"), "Housekeeping hour", "int",
            "Hour of the nightly sweep.",
-           minimum=0, maximum=23, restart=True),
+           minimum=0, maximum=23),
     Option(("maintenance", "minute"), "Housekeeping minute", "int",
-           "Minute of the nightly sweep.", minimum=0, maximum=59, restart=True),
+           "Minute of the nightly sweep.", minimum=0, maximum=59),
     Option(("maintenance", "attempt_retention_days"), "Keep sign-in attempts (days)",
            "int", "How long failed sign-ins are kept. They drive lockout; they "
            "are not an audit log.", minimum=1, maximum=365),
@@ -160,14 +157,13 @@ OPTIONS: tuple[Option, ...] = (
 
     Option(("metrics", "enabled"), "Prometheus metrics", "bool",
            "Whether /metrics is served. It publishes machine health only — no "
-           "holdings, no values.", restart=True),
+           "holdings, no values."),
 
     Option(("imports", "max_upload_mb"), "Maximum upload (MB)", "int",
            "The largest file an import will accept.", minimum=1, maximum=200),
     Option(("imports", "ocr", "enabled"), "Read scanned PDFs", "bool",
            "Whether image-only PDFs are put through local OCR. Nothing is sent "
-           "anywhere.",
-           restart=True),
+           "anywhere."),
 
     Option(("imports", "allow_new_instruments"), "Create instruments on import", "bool",
            "Whether an import may create instruments it doesn't recognise. Off "
@@ -287,6 +283,25 @@ def effective(settings, option: Option) -> Any:
     for key in option.path:
         value = getattr(value, key)
     return value
+
+
+def shown(settings, option: Option) -> Any:
+    """The value the settings form shows: the one in use, except a feed
+    timezone nothing sets, which shows as the empty box that means "follow
+    the timezone above".
+
+    Shown filled, it was posted back with the rest of the form: the first save
+    of anything wrote the zone it was following into the file, and a new
+    timezone after that left the daily run in the old one.
+    """
+    if option.path == ("price_feed", "timezone") and not overridden_by_environment(option):
+        try:
+            follows = _dig(load(), option.path) is None
+        except OSError:
+            follows = False     # unreadable: show what is in use, as before
+        if follows:
+            return None
+    return effective(settings, option)
 
 
 def overridden_by_environment(option: Option) -> bool:
@@ -518,10 +533,20 @@ _AMBIGUOUS = frozenset({
 
 
 def _quoted(value: Any) -> Any:
-    """A string that YAML 1.1 would misread, wrapped so it cannot be."""
+    """A string that YAML 1.1 would misread, wrapped so it cannot be.
+
+    The words above, and anything else PyYAML's own resolver takes for
+    something other than text: base 60 above all, where `12:30` is 750 and an
+    IPv6 address written out in full is a number, which a text setting then
+    refuses at boot.
+    """
     if not isinstance(value, str):
         return value
-    if value.strip().lower() in _AMBIGUOUS:
+    from yaml.nodes import ScalarNode  # noqa: PLC0415 - writer only
+    from yaml.resolver import Resolver  # noqa: PLC0415 - writer only
+
+    as_read = Resolver().resolve(ScalarNode, value, (True, False))
+    if value.strip().lower() in _AMBIGUOUS or as_read != "tag:yaml.org,2002:str":
         from ruamel.yaml.scalarstring import (  # noqa: PLC0415 - writer only
             SingleQuotedScalarString,
         )

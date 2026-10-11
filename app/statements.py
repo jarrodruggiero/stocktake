@@ -19,13 +19,14 @@ from __future__ import annotations
 import datetime as dt
 import io
 import re
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import docformats, ocr
+from . import docformats, ocr, queries
 from .models import Dividend, Instrument
 
 
@@ -41,6 +42,9 @@ class StatementRow:
     db_units: str | None = None
     carry_note: str = ""
     status: str = "new"  # new / duplicate / unknown-instrument
+    # A fund held here on more than one exchange: which one the advice means,
+    # it does not say, so the row offers each, as (form value, label).
+    choices: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -186,6 +190,29 @@ def extract_text(data: bytes) -> str:
     return extract(data).text
 
 
+def own_instruments(session: Session) -> list[Instrument]:
+    """This portfolio's instruments, in ticker order. A statement is for
+    something it holds or held (decisions.md #139): another portfolio's is not
+    it, nor the same ticker on another exchange, and the catalogue's own order
+    is no order at all."""
+    ids = queries.portfolio_instrument_ids(session)
+    return list(session.scalars(select(Instrument).where(Instrument.id.in_(ids))
+                                .order_by(Instrument.ticker, Instrument.id)))
+
+
+def choices(session: Session) -> list[tuple[str, str]]:
+    """This portfolio's instruments as a form offers them, as (value, label):
+    the ticker, or each listing of one held on two exchanges, as
+    TICKER:EXCHANGE — the form `queries.held_as` reads."""
+    own = own_instruments(session)
+    twice = {t for t, n in Counter(i.ticker for i in own).items() if n > 1}
+    return [_choice(i) if i.ticker in twice else (i.ticker, i.ticker) for i in own]
+
+
+def _choice(inst: Instrument) -> tuple[str, str]:
+    return f"{inst.ticker}:{inst.exchange}", f"{inst.ticker} ({inst.exchange})"
+
+
 def _rows_from(
     values: dict, payment_date: dt.date | None, session: Session
 ) -> list[StatementRow] | None:
@@ -201,6 +228,9 @@ def _rows_from(
 
     from .models import Trade
 
+    own: dict[str, list[Instrument]] = {}
+    for inst in own_instruments(session):
+        own.setdefault(inst.ticker, []).append(inst)
     rows = []
     for row_values in matches:
         ticker = row_values["ticker"]
@@ -218,10 +248,13 @@ def _rows_from(
             units_held=held.replace(",", ""),
             carry_note=f"DRP carry: brought fwd {brought}, carried fwd {carried}",
         )
-        inst = session.scalars(select(Instrument).where(Instrument.ticker == ticker)).first()
-        if inst is None:
+        listings = own.get(ticker, [])
+        if not listings:
             row.status = "unknown-instrument"
+        elif len(listings) > 1:
+            row.choices = [_choice(i) for i in listings]
         else:
+            inst = listings[0]
             trades = session.scalars(select(Trade).where(Trade.instrument_id == inst.id)).all()
             units = sum(t.quantity for t in trades if t.type in ("buy", "drp")) - sum(
                 t.quantity for t in trades if t.type == "sell"
@@ -244,7 +277,7 @@ def parse_statement(data: bytes, session: Session,
                              problem=read.problem)
 
     # Instrument: match against what we track — ticker first, then name words.
-    instruments = session.scalars(select(Instrument)).all()
+    instruments = own_instruments(session)
     upper = f" {text.upper()} "
     for inst in instruments:
         if re.search(rf"\b{re.escape(inst.ticker)}\b", upper):

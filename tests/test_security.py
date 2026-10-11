@@ -36,6 +36,45 @@ def test_every_response_carries_the_hardening_headers(client, session_factory,
     assert client.get("/", headers={"accept": "text/html"}).headers[header] == expected
 
 
+def _cookie(response, name: str) -> dict:
+    """One Set-Cookie header, as {attribute (lower case): value}."""
+    for header in response.headers.get_list("set-cookie"):
+        first, *attrs = [part.strip() for part in header.split(";")]
+        if first.startswith(name + "="):
+            return {a.split("=", 1)[0].lower(): (a.split("=", 1)[1] if "=" in a else True)
+                    for a in attrs}
+    raise AssertionError(f"no {name} cookie set")
+
+
+@pytest.mark.parametrize("secure", [False, True])
+def test_the_session_cookie_cannot_be_read_by_a_script(client, session_factory, app_module,
+                                                       monkeypatch, secure):
+    """HttpOnly is what keeps a script that slips past the escaping from
+    reading the session; nothing checked it. Secure follows the setting."""
+    from fastapi.testclient import TestClient
+
+    from app.auth import hash_password
+    from test_routes import PASSWORD, pre_auth_csrf
+
+    monkeypatch.setattr(app_module.settings.auth, "cookie_secure", secure)
+    with session_factory() as s:
+        fac.make_user(s, "user@example.test", password_hash=hash_password(PASSWORD))
+        s.commit()
+    # A secure cookie is set only over HTTPS (decisions.md #55); `client` has
+    # already pointed the app at this test's database.
+    browser = TestClient(app_module.app, base_url="https://testserver") if secure else client
+    resp = browser.post("/login", follow_redirects=False, headers={"accept": "text/html"},
+                        data={"email": "user@example.test", "password": PASSWORD,
+                              "_csrf": pre_auth_csrf(browser)})
+
+    cookie = _cookie(resp, app_module.settings.auth.cookie_name)
+    assert cookie.get("httponly") is True
+    assert cookie.get("samesite", "").lower() == "lax"
+    assert cookie.get("path") == "/"
+    assert int(cookie["max-age"]) == app_module.settings.auth.session_ttl_days * 86400
+    assert (cookie.get("secure") is True) is secure
+
+
 def test_the_headers_are_on_unauthenticated_responses_too(client):
     """The login page is the one an attacker reaches first."""
     assert client.get("/login", headers={"accept": "text/html"}
@@ -244,3 +283,187 @@ def test_reordering_charts_survives_rubbish_ids(client, session_factory):
                        headers={"X-CSRF-Token": session_csrf(session_factory)})
 
     assert resp.status_code == 200
+
+
+# --------------------------------------------------------------------------- #
+# Signing in with a password: what a mutation run found unchecked
+# --------------------------------------------------------------------------- #
+
+def _seed_failures(session_factory, email: str, count: int = 8) -> None:
+    """The configured allowance of failures, from a different address each."""
+    import datetime as dt
+
+    from app.models import LoginAttempt
+
+    with session_factory() as s:
+        for n in range(count):
+            s.add(LoginAttempt(email=email, ip=f"192.0.2.{n + 1}", success=False,
+                               created_at=dt.datetime.now(dt.timezone.utc)))
+        s.commit()
+
+
+def test_a_locked_account_refuses_even_the_right_password(client, session_factory, app_module):
+    """`auth.is_locked` has its own tests; nothing signed in while locked, so
+    the check in the route could go and passwords be guessed without limit."""
+    from test_routes import PASSWORD, make_login, pre_auth_csrf
+
+    email = make_login(client, session_factory)
+    client.cookies.clear()
+    _seed_failures(session_factory, email)
+
+    resp = client.post("/login", follow_redirects=False, headers={"accept": "text/html"},
+                       data={"email": email, "password": PASSWORD,
+                             "_csrf": pre_auth_csrf(client)})
+
+    assert resp.status_code == 200 and "Too many attempts" in resp.text
+    assert app_module.settings.auth.cookie_name not in resp.cookies
+
+
+def test_an_email_is_matched_however_it_is_typed(client, session_factory, app_module):
+    from test_routes import PASSWORD, make_login, pre_auth_csrf
+
+    make_login(client, session_factory, email="user@example.test")
+    client.cookies.clear()
+
+    resp = client.post("/login", follow_redirects=False, headers={"accept": "text/html"},
+                       data={"email": "  User@Example.TEST ", "password": PASSWORD,
+                             "_csrf": pre_auth_csrf(client)})
+
+    assert resp.status_code == 303
+    assert app_module.settings.auth.cookie_name in resp.cookies
+
+
+def test_a_password_hashed_to_an_older_standard_is_rehashed_at_sign_in(client, session_factory):
+    from argon2 import PasswordHasher
+
+    from app import auth
+    from app.models import User
+    from test_routes import PASSWORD, pre_auth_csrf
+
+    old = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1).hash(PASSWORD)
+    with session_factory() as s:
+        fac.make_user(s, "user@example.test", password_hash=old)
+        s.commit()
+    assert auth.needs_rehash(old)
+
+    client.post("/login", follow_redirects=False, headers={"accept": "text/html"},
+                data={"email": "user@example.test", "password": PASSWORD,
+                      "_csrf": pre_auth_csrf(client)})
+
+    with session_factory() as s:
+        stored = s.query(User).one().password_hash
+    assert stored != old and not auth.needs_rehash(stored)
+    assert auth.verify_password(stored, PASSWORD)
+
+
+def test_a_password_hash_that_is_current_is_left_alone_at_sign_in(client, session_factory):
+    """Rehashing is for an older standard; doing it every time would rewrite
+    the stored hash on every sign-in for nothing."""
+    from app import auth
+    from app.models import User
+    from test_routes import PASSWORD, pre_auth_csrf
+
+    current = auth.hash_password(PASSWORD)
+    with session_factory() as s:
+        fac.make_user(s, "user@example.test", password_hash=current)
+        s.commit()
+
+    resp = client.post("/login", follow_redirects=False, headers={"accept": "text/html"},
+                       data={"email": "user@example.test", "password": PASSWORD,
+                             "_csrf": pre_auth_csrf(client)})
+
+    assert resp.status_code == 303, "the premise: the sign-in went through"
+    with session_factory() as s:
+        assert s.query(User).one().password_hash == current
+
+
+@pytest.mark.parametrize("secure", [False, True])
+def test_the_remembered_portfolio_cookie_is_httponly_and_kept_a_year(client, session_factory,
+                                                                     app_module, monkeypatch,
+                                                                     secure):
+    from fastapi.testclient import TestClient
+
+    from app.auth import hash_password
+    from test_routes import PASSWORD, pre_auth_csrf
+
+    monkeypatch.setattr(app_module.settings.auth, "cookie_secure", secure)
+    with session_factory() as s:
+        user = fac.make_user(s, "user@example.test", password_hash=hash_password(PASSWORD))
+        fac.make_portfolio(s, "Mine", owner=user)
+        s.commit()
+    browser = TestClient(app_module.app, base_url="https://testserver") if secure else client
+    resp = browser.post("/login", follow_redirects=False, headers={"accept": "text/html"},
+                        data={"email": "user@example.test", "password": PASSWORD,
+                              "_csrf": pre_auth_csrf(browser)})
+
+    cookie = _cookie(resp, app_module.settings.auth.cookie_name + "_portfolio")
+    assert cookie.get("httponly") is True
+    assert cookie.get("samesite", "").lower() == "lax"
+    assert cookie.get("path") == "/"
+    assert int(cookie["max-age"]) == 365 * 86400
+    assert (cookie.get("secure") is True) is secure
+
+
+def test_a_sign_in_with_no_portfolio_to_open_remembers_none(client, session_factory,
+                                                            app_module):
+    """Nothing to remember is no cookie, not one holding the word "None"."""
+    from app.auth import hash_password
+    from test_routes import PASSWORD, pre_auth_csrf
+
+    with session_factory() as s:
+        fac.make_user(s, "user@example.test", password_hash=hash_password(PASSWORD))
+        s.commit()
+    resp = client.post("/login", follow_redirects=False, headers={"accept": "text/html"},
+                       data={"email": "user@example.test", "password": PASSWORD,
+                             "_csrf": pre_auth_csrf(client)})
+
+    assert resp.status_code == 303, "the premise: the sign-in went through"
+    remembered = app_module.settings.auth.cookie_name + "_portfolio="
+    assert not [c for c in resp.headers.get_list("set-cookie") if c.startswith(remembered)]
+
+
+def test_signing_in_asks_for_live_prices(client, session_factory, app_module, monkeypatch):
+    """The one line every way in shares: without it the first page shows
+    yesterday's close for up to a whole polling interval."""
+    from test_routes import make_login
+
+    asked = []
+    monkeypatch.setattr(app_module, "refresh_quotes_soon", lambda: asked.append(True))
+
+    make_login(client, session_factory)
+
+    assert asked == [True]
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_live_prices_are_fetched_only_while_they_are_on(app_module, monkeypatch, enabled):
+    """Turned off, an install makes no quote requests at all."""
+    import asyncio
+    import threading
+
+    ran = threading.Event()
+    monkeypatch.setattr(app_module.settings.price_feed, "quotes_enabled", enabled)
+    monkeypatch.setattr(app_module, "_run_quotes", lambda: ran.set() or 0)
+
+    async def sign_in_moment():
+        app_module.refresh_quotes_soon()
+        await asyncio.sleep(0)
+
+    asyncio.run(sign_in_moment())
+
+    assert ran.wait(2 if enabled else 0.3) is enabled
+
+
+def test_a_reason_sent_back_to_the_sign_in_page_is_shown(client, session_factory):
+    """A provider sign-in happens off-site; when it fails, the sign-in page
+    is the only place the reason can be said."""
+    import re
+
+    with session_factory() as s:
+        fac.make_user(s, "user@example.test")            # past the first-run wizard
+        s.commit()
+
+    page = client.get("/login", params={"error": "The provider refused the sign-in."},
+                      headers={"accept": "text/html"}).text
+
+    assert re.search(r'class="panel error">\s*The provider refused the sign-in\.', page)

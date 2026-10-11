@@ -20,6 +20,8 @@ observable.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from pydantic import ValidationError
 from pydantic_settings import SettingsConfigDict
@@ -36,7 +38,7 @@ def _isolate_database_env(monkeypatch) -> None:
     file or default layers has to remove them all, not just the one it happens
     to remember.
     """
-    for name in [k for k in __import__("os").environ if k.startswith("APP_DATABASE__")]:
+    for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
         monkeypatch.delenv(name, raising=False)
 
 
@@ -304,3 +306,93 @@ def test_the_annotated_default_config_ships_for_the_wizard_to_write_from():
     # be valid YAML that loads to a mapping or to nothing.
     parsed = YAML(typ="safe").load(default.read_text())
     assert parsed is None or isinstance(parsed, dict)
+
+
+# --------------------------------------------------------------------------- #
+# A section whose every line is commented out
+# --------------------------------------------------------------------------- #
+# YAML reads a heading with nothing under it as null, and settings.py treats a
+# null section as "use the defaults" rather than refusing to start — a config
+# file must not break by being tidied. The rule was applied to six sections
+# by name and missed four: `oidc:` beside `webauthn:`, `imports.ocr`,
+# `imports.brokers` and `database`. Each is now walked from the model.
+
+def _sections(model, prefix=()):
+    """Every field holding a settings block or a dict of them, by path."""
+    from pydantic import BaseModel
+
+    for name, field in model.model_fields.items():
+        annotation = field.annotation
+        args = getattr(annotation, "__args__", ())
+        nested = annotation if isinstance(annotation, type) and issubclass(annotation, BaseModel) \
+            else next((a for a in args if isinstance(a, type) and issubclass(a, BaseModel)), None)
+        mapping = getattr(annotation, "__origin__", None) is dict
+        if nested is not None or mapping:
+            yield prefix + (name,)
+        if nested is not None and not mapping:
+            yield from _sections(nested, prefix + (name,))
+
+
+@pytest.mark.parametrize("path", list(_sections(PortfolioSettings)), ids=".".join)
+def test_a_section_left_empty_means_its_defaults(path, tmp_path, monkeypatch):
+    """A real file, the heading kept and every line under it commented out,
+    read with nothing else in play: the suite's own environment and config
+    file would otherwise answer for `database` and `imports.brokers`."""
+    _isolate_database_env(monkeypatch)
+    lines = ["  " * depth + key + ":" for depth, key in enumerate(path)]
+    lines.append("  " * len(path) + "# enabled: true")
+    config = tmp_path / "config.yaml"
+    config.write_text("\n".join(lines) + "\n")
+
+    class Tidied(PortfolioSettings):
+        model_config = SettingsConfigDict(yaml_file=str(config))
+
+    loaded, expected = Tidied(), _NoFileSettings()
+    for key in path:
+        loaded, expected = getattr(loaded, key), getattr(expected, key)
+    assert loaded == expected
+
+
+def test_the_sections_walked_are_the_ones_there_are():
+    walked = {".".join(p) for p in _sections(PortfolioSettings)}
+    assert {"database", "auth.oidc", "auth.webauthn", "imports.ocr",
+            "imports.brokers", "price_feed"} <= walked
+
+
+# --------------------------------------------------------------------------- #
+# What the last mutation pass found unchecked
+# --------------------------------------------------------------------------- #
+
+def test_a_broker_formats_currency_is_taken_however_it_is_typed():
+    from app.settings import BrokerFormat
+
+    assert BrokerFormat(kind="mapped", currency=" usd ").currency == "USD"
+
+
+def test_an_imports_block_written_down_is_kept(tmp_path, monkeypatch):
+    """The other half of an emptied section meaning its defaults: a section
+    with something in it is not emptied."""
+    _isolate_database_env(monkeypatch)
+    path = tmp_path / "config.yaml"
+    path.write_text("imports:\n  ocr:\n    enabled: false\n")
+
+    class Written(PortfolioSettings):
+        model_config = SettingsConfigDict(yaml_file=str(path))
+
+    assert Written().imports.ocr.enabled is False
+
+
+def test_an_installed_broker_format_the_model_refuses_is_skipped_and_named(tmp_path, caplog):
+    import logging
+
+    from app.settings import ImportSettings
+
+    (tmp_path / "brokers").mkdir()
+    (tmp_path / "brokers" / "bad.yaml").write_text(
+        "kind: mapped\nexchange: ASX\ncurrency: AUSD\ncolumns: {}\n")
+    caplog.set_level(logging.WARNING, logger="app.settings")
+
+    formats = ImportSettings(templates_dir=str(tmp_path)).brokers_available()
+
+    assert "bad" not in formats
+    assert any(r.getMessage().startswith("ignoring broker format bad: ") for r in caplog.records)

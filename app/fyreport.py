@@ -53,20 +53,6 @@ def regime_warning(fy_end_year: int) -> str | None:
     )
 
 
-def spans_regime_change(disposals) -> bool:
-    """Whether any disposal here is of an asset held across 1 July 2027.
-
-    Those need the transitional apportionment — a market valuation at the
-    changeover — which cannot be computed until the method is published. Worth
-    flagging even in a year this module still calculates, because the parcel is
-    already straddling the boundary.
-    """
-    return any(
-        p.acquired < CGT_INDEXATION_START <= d.date
-        for d in disposals for p in d.parcels
-    )
-
-
 def fy_bounds(fy_end_year: int) -> tuple[dt.date, dt.date]:
     """FY2026 = 1 Jul 2025 → 30 Jun 2026."""
     return dt.date(fy_end_year - 1, 7, 1), dt.date(fy_end_year, 6, 30)
@@ -85,22 +71,19 @@ def fy_label(fy_end_year: int) -> str:
     return f"FY{str(fy_end_year - 1)[-2:]}/{str(fy_end_year)[-2:]}"
 
 
-def _rate(obj, inst: Instrument, fx_book) -> Decimal:
-    """AUD per 1 unit for a trade or dividend, resolved as honestly as we can.
+def _rate(obj, inst: Instrument, fx_book) -> Decimal | None:
+    """AUD per 1 unit for a trade or dividend, or None when none is known.
 
-    Order: the rate captured on the row, then the stored FX series at its date,
-    then 1. That last step is a real fallback rather than a lie only because
-    the ATO figures here are cost bases denominated at transaction date — a
-    parcel with no rate anywhere is an AUD parcel or a data gap, and the FY
-    report flags gaps rather than dropping rows a tax return needs to see.
+    The rate captured on the row, then the stored FX series at its date. An
+    AUD row needs neither (decisions.md #6). A foreign one with no rate
+    anywhere is left out of every total and named on the page — never booked
+    at 1:1, which counts a US dollar as an Australian one (#5).
     """
     if obj.fx_rate is not None:
         return obj.fx_rate
-    if fx_book is not None:
-        resolved = fx_book.rate(inst.currency, obj.date)
-        if resolved is not None:
-            return resolved
-    return Decimal(1)
+    if inst.currency == queries.REPORTING_CURRENCY:
+        return Decimal(1)
+    return fx_book.rate(inst.currency, obj.date) if fx_book is not None else None
 
 
 def _one_year_after(d: dt.date) -> dt.date:
@@ -117,12 +100,14 @@ def _one_year_after(d: dt.date) -> dt.date:
 class ParcelUse:
     acquired: dt.date
     quantity: Decimal
-    cost_base: Decimal  # AUD
-    proceeds: Decimal  # AUD
+    cost_base: Decimal | None  # AUD; None when the parcel's purchase had no rate
+    proceeds: Decimal | None  # AUD; None when the sale had no rate
     discountable: bool  # held > 12 months at disposal
 
     @property
-    def gain(self) -> Decimal:
+    def gain(self) -> Decimal | None:
+        if self.cost_base is None or self.proceeds is None:
+            return None
         return self.proceeds - self.cost_base
 
 
@@ -131,16 +116,24 @@ class Disposal:
     instrument: Instrument
     date: dt.date
     quantity: Decimal
-    proceeds: Decimal  # AUD, net of sale brokerage
+    proceeds: Decimal | None  # AUD, net of sale brokerage; None without a rate
     parcels: list[ParcelUse]
 
     @property
-    def cost_base(self) -> Decimal:
+    def known(self) -> bool:
+        """Whether every figure converts: the sale and each parcel it used had
+        a rate. One that does not is listed but left out of the totals."""
+        return self.proceeds is not None and all(p.cost_base is not None for p in self.parcels)
+
+    @property
+    def cost_base(self) -> Decimal | None:
+        if any(p.cost_base is None for p in self.parcels):
+            return None
         return sum((p.cost_base for p in self.parcels), ZERO)
 
     @property
-    def gain(self) -> Decimal:
-        return self.proceeds - self.cost_base
+    def gain(self) -> Decimal | None:
+        return self.proceeds - self.cost_base if self.known else None
 
 
 @dataclass
@@ -162,12 +155,15 @@ class _Parcel:
     acquired: dt.date
     remaining: Decimal
     quantity: Decimal          # as acquired; never changes
-    cost: Decimal              # exact AUD outlay for `quantity`, unrounded
+    cost: Decimal | None       # exact AUD outlay for `quantity`, unrounded; None without a rate
     cost_allotted: Decimal = ZERO
 
-    def take(self, units: Decimal) -> Decimal:
-        """Consume `units` from this parcel and return their cost base."""
+    def take(self, units: Decimal) -> Decimal | None:
+        """Consume `units` from this parcel and return their cost base, or None
+        when the parcel's cost is not known."""
         self.remaining -= units
+        if self.cost is None:
+            return None
         consumed = self.quantity - self.remaining
         owed = (self.cost * consumed / self.quantity).quantize(CENTS)
         billed = owed - self.cost_allotted
@@ -179,9 +175,10 @@ def instrument_disposals(inst: Instrument, fx_book=None) -> list[Disposal]:
     """FIFO-match this instrument's sells against its acquisition parcels.
 
     `fx_book` is a `queries.FxBook` used to resolve a trade whose own
-    `fx_rate` was never captured. Without one — the direct call in a test,
-    or an all-AUD portfolio — such a trade falls back to 1:1, which is only
-    right for AUD. Every session-taking entry point here passes one.
+    `fx_rate` was never captured. Without one — the direct call in a test —
+    only the rates captured on the trades are known. A parcel or a sale with
+    no rate keeps its units in the matching, and its AUD figures are None.
+    Every session-taking entry point here passes one.
     """
     fifo: list[_Parcel] = []
     disposals: list[Disposal] = []
@@ -196,7 +193,7 @@ def instrument_disposals(inst: Instrument, fx_book=None) -> list[Disposal]:
                     acquired=t.date,
                     remaining=t.quantity,
                     quantity=t.quantity,
-                    cost=(t.quantity * t.unit_price + t.brokerage) * fx,
+                    cost=None if fx is None else (t.quantity * t.unit_price + t.brokerage) * fx,
                 )
             )
             continue
@@ -204,7 +201,8 @@ def instrument_disposals(inst: Instrument, fx_book=None) -> list[Disposal]:
         # sell: oldest parcels consumed first. Both sides of a parcel use are
         # apportioned rather than rounded on their own — see `_Parcel.take` for
         # the cost base, and the loop below for the proceeds.
-        net_proceeds = ((t.quantity * t.unit_price - t.brokerage) * fx).quantize(CENTS)
+        net_proceeds = (None if fx is None else
+                        ((t.quantity * t.unit_price - t.brokerage) * fx).quantize(CENTS))
         remaining = t.quantity
         uses: list[ParcelUse] = []
         while remaining > 0 and fifo:
@@ -233,6 +231,9 @@ def instrument_disposals(inst: Instrument, fx_book=None) -> list[Disposal]:
         allotted = ZERO
         for use in uses:
             sold += use.quantity
+            if net_proceeds is None:
+                use.proceeds = None
+                continue
             owed = (net_proceeds * sold / t.quantity).quantize(CENTS)
             use.proceeds = owed - allotted
             allotted = owed
@@ -266,6 +267,9 @@ class CgtSummary:
     # set for a whole year, every figure above is zero — the report refuses
     # rather than guessing.
     regime_warning: str | None = None
+    # Holdings with a sale this year that has no exchange rate behind it: the
+    # sale is listed, and every figure above leaves it out (decisions.md #5).
+    withheld: list[str] = field(default_factory=list)
 
 
 def fy_cgt(session: Session, fy_end_year: int) -> CgtSummary:
@@ -288,6 +292,10 @@ def fy_cgt(session: Session, fy_end_year: int) -> CgtSummary:
             if not (start <= d.date <= end):
                 continue
             out.disposals.append(d)
+            if not d.known:
+                if inst.ticker not in out.withheld:
+                    out.withheld.append(inst.ticker)
+                continue
             for p in d.parcels:
                 if p.gain >= 0:
                     if p.discountable:
@@ -308,14 +316,7 @@ def fy_cgt(session: Session, fy_end_year: int) -> CgtSummary:
     else:
         out.net_capital_gain = (out.gains_other - out.losses_applied_other) + disc_after - out.discount
     out.disposals.sort(key=lambda d: d.date)
-    if spans_regime_change(out.disposals):
-        out.regime_warning = (
-            "One or more parcels here were acquired before 1 July 2027 and "
-            "sold after it. From that date the CGT rules change, and such a "
-            "parcel is apportioned using its market value at the changeover — "
-            "a method that is not yet published. These figures use the earlier "
-            "rules for the whole gain. Check for an update before lodging."
-        )
+    out.withheld.sort()
     return out
 
 
@@ -325,13 +326,13 @@ def fy_cgt(session: Session, fy_end_year: int) -> CgtSummary:
 @dataclass
 class IncomeRow:
     instrument: Instrument
-    cash: Decimal
+    cash: Decimal | None  # None when a dividend this FY has no exchange rate
     franking: Decimal
     franking_missing: int  # dividends this FY with no franking data yet
 
     @property
-    def grossed_up(self) -> Decimal:
-        return self.cash + self.franking
+    def grossed_up(self) -> Decimal | None:
+        return None if self.cash is None else self.cash + self.franking
 
 
 def fy_income(session: Session, fy_end_year: int) -> list[IncomeRow]:
@@ -345,7 +346,9 @@ def fy_income(session: Session, fy_end_year: int) -> list[IncomeRow]:
         divs = [d for d in inst.dividends if start <= d.date <= end]
         if not divs:
             continue
-        cash = sum((d.cash_amount * _rate(d, inst, fx_book) for d in divs), ZERO)
+        rates = [_rate(d, inst, fx_book) for d in divs]
+        cash = (None if None in rates else
+                sum((d.cash_amount * rate for d, rate in zip(divs, rates)), ZERO))
         franking = sum((d.franking_credits or ZERO for d in divs), ZERO)
         rows.append(
             IncomeRow(
@@ -366,7 +369,7 @@ def fy_income(session: Session, fy_end_year: int) -> list[IncomeRow]:
 class SnapshotRow:
     instrument: Instrument
     units: Decimal
-    invested_cum: Decimal  # AUD, buys to date net of nothing (sheet semantics)
+    invested_cum: Decimal | None  # AUD, buys to date (sheet semantics); None if one had no rate
     price: Decimal | None  # native, close on/before the as-of date
     price_date: dt.date | None
     value_aud: Decimal | None
@@ -391,8 +394,9 @@ class SnapshotRow:
 
     @property
     def percentage_applies(self) -> bool:
-        """Whether a gain percentage is a meaningful thing to ask for here."""
-        return bool(self.invested_cum)
+        """Whether a gain percentage is a meaningful thing to ask for here.
+        An amount invested that is unknown for want of a rate still has one."""
+        return self.invested_cum is None or bool(self.invested_cum)
 
 
 def _price_at(session: Session, instrument_id: int, asof: dt.date):
@@ -402,20 +406,6 @@ def _price_at(session: Session, instrument_id: int, asof: dt.date):
         .order_by(Price.date.desc())
         .limit(1)
     ).first()
-
-
-def _fx_at(session: Session, currency: str, asof: dt.date) -> Decimal:
-    if currency == "AUD":
-        return Decimal(1)
-    from .models import FxRate
-
-    rate = session.execute(
-        select(FxRate.rate)
-        .where(FxRate.pair == f"{currency}AUD", FxRate.date <= asof)
-        .order_by(FxRate.date.desc())
-        .limit(1)
-    ).scalar()
-    return rate if rate is not None else Decimal(1)
 
 
 @dataclass
@@ -438,8 +428,12 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
     snapshot: list[SnapshotRow] = []
     activity = FyActivity()
     fx_book = queries.FxBook(session)
+    # Holdings some AUD figure on this page leaves out for want of a rate,
+    # named once at the top of the page (decisions.md #5).
+    withheld: set[str] = set()
     for inst in instruments:
-        units = invested = ZERO
+        units = ZERO
+        invested: Decimal | None = ZERO
         for t in sorted(inst.trades, key=trade_order):
             fx = _rate(t, inst, fx_book)
             in_fy = start <= t.date <= end
@@ -448,40 +442,59 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
             if t.type in ("buy", "drp"):
                 units += t.quantity
                 if t.type == "buy":
-                    invested += (t.quantity * t.unit_price + t.brokerage) * fx
+                    outlay = t.quantity * t.unit_price + t.brokerage
+                    if fx is None:
+                        invested = None
+                    elif invested is not None:
+                        invested += outlay * fx
                     if in_fy:
-                        activity.invested += (t.quantity * t.unit_price + t.brokerage) * fx
                         activity.buys += 1
-                        activity.brokerage += t.brokerage * fx
+                        if fx is None:
+                            withheld.add(inst.ticker)
+                        else:
+                            activity.invested += outlay * fx
+                            activity.brokerage += t.brokerage * fx
             else:
                 units -= t.quantity
                 if in_fy:
                     activity.sells += 1
-                    activity.proceeds += (t.quantity * t.unit_price - t.brokerage) * fx
-                    activity.brokerage += t.brokerage * fx
-        if units <= 0 and invested == ZERO:
+                    if fx is None:
+                        withheld.add(inst.ticker)
+                    else:
+                        activity.proceeds += (t.quantity * t.unit_price - t.brokerage) * fx
+                        activity.brokerage += t.brokerage * fx
+        if units <= 0:
             continue
         price_row = _price_at(session, inst.id, asof)
         price, price_date = (price_row.close, price_row.date) if price_row else (None, None)
+        # The stored rate nearest the date, and no value at all for a currency
+        # with none: never 1:1 (decisions.md #5).
+        rate = fx_book.rate(inst.currency, asof)
+        if invested is None or (price is not None and rate is None):
+            withheld.add(inst.ticker)
         value = gain = None
-        if price is not None and units > 0:
-            value = units * price * _fx_at(session, inst.currency, asof)
+        if price is not None and rate is not None:
+            # `invested` is never None here: it is None only for a currency
+            # with no rate stored at all, and FxBook gives every date a rate
+            # once a currency has one.
+            value = units * price * rate
             gain = value - invested
-        if units > 0:
-            snapshot.append(
-                SnapshotRow(
-                    instrument=inst,
-                    units=units,
-                    invested_cum=invested,
-                    price=price,
-                    price_date=price_date,
-                    value_aud=value,
-                    gain_aud=gain,
-                )
+        snapshot.append(
+            SnapshotRow(
+                instrument=inst,
+                units=units,
+                invested_cum=invested,
+                price=price,
+                price_date=price_date,
+                value_aud=value,
+                gain_aud=gain,
             )
+        )
 
     income = fy_income(session, fy_end_year)
     cgt = fy_cgt(session, fy_end_year)
+    withheld.update(r.instrument.ticker for r in income if r.cash is None)
+    withheld.update(cgt.withheld)
     return {
         "fy_end_year": fy_end_year,
         "label": fy_label(fy_end_year),
@@ -491,13 +504,15 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
         "is_current": end >= today,
         "snapshot": snapshot,
         "total_value": sum((r.value_aud for r in snapshot if r.value_aud is not None), ZERO),
-        "total_invested": sum((r.invested_cum for r in snapshot), ZERO),
+        "total_invested": sum((r.invested_cum for r in snapshot
+                               if r.invested_cum is not None), ZERO),
         "activity": activity,
         "income": income,
-        "income_cash": sum((r.cash for r in income), ZERO),
+        "income_cash": sum((r.cash for r in income if r.cash is not None), ZERO),
         "income_franking": sum((r.franking for r in income), ZERO),
         "franking_missing": sum(r.franking_missing for r in income),
         "cgt": cgt,
+        "withheld": sorted(withheld),
     }
 
 
@@ -505,10 +520,7 @@ def available_fys(session: Session) -> list[int]:
     first = session.execute(select(Trade.date).order_by(Trade.date.asc()).limit(1)).scalar()
     if first is None:
         return []
-    first_fy = first.year + (0 if first.month <= 6 else 1)
-    today = clock.today()
-    current_fy = today.year + (0 if today.month <= 6 else 1)
-    return list(range(current_fy, first_fy - 1, -1))
+    return list(range(current_fy(clock.today()), current_fy(first) - 1, -1))
 
 
 # --------------------------------------------------------------------------- #

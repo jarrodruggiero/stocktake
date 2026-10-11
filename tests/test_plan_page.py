@@ -458,3 +458,11 @@ def test_a_failed_quote_run_never_marks_the_feed_unhealthy(session_factory, monk
 
     assert main._run_quotes() == 0
     assert main.feed_status["ok"] is True
+
+
+@freeze_time(TODAY)
+def test_the_plan_dialog_opens_only_when_asked(client, session_factory):
+    make_login(client, session_factory)
+
+    assert '<dialog id="plandialog" >' in client.get("/schedule", headers=HTML).text
+    assert '<dialog id="plandialog" open>' in client.get("/schedule?edit=1", headers=HTML).text

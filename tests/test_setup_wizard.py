@@ -18,6 +18,7 @@ from this suite, because conftest builds a configured database before
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -68,7 +69,7 @@ def test_an_environment_variable_is_reported_as_the_source(monkeypatch, app_modu
 
 def test_a_config_file_entry_is_reported_as_the_source(monkeypatch, tmp_path, app_module):
     settings = app_module.settings
-    for name in [k for k in __import__("os").environ if k.startswith("APP_DATABASE__")]:
+    for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
         monkeypatch.delenv(name, raising=False)
     path = tmp_path / "config.yaml"
     path.write_text("app_name: portfolio\ndatabase:\n  type: sqlite\n  path: /data/x.db\n")
@@ -85,7 +86,7 @@ def test_nothing_anywhere_reads_as_not_configured(monkeypatch, tmp_path, app_mod
     the settings object alone cannot tell you this — only the two places a
     human could have written it down can."""
     settings = app_module.settings
-    for name in [k for k in __import__("os").environ if k.startswith("APP_DATABASE__")]:
+    for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(tmp_path / "absent.yaml"))
 
@@ -100,7 +101,7 @@ def test_a_config_file_without_a_database_block_is_not_configured(
     """A file can exist and still not choose a database — the shipped default
     is exactly that, with every line commented out."""
     settings = app_module.settings
-    for name in [k for k in __import__("os").environ if k.startswith("APP_DATABASE__")]:
+    for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
         monkeypatch.delenv(name, raising=False)
     path = tmp_path / "config.yaml"
     path.write_text("app_name: portfolio\ntimezone: Australia/Perth\n")
@@ -288,7 +289,7 @@ def test_a_malformed_config_file_does_not_stop_the_wizard_starting(
         monkeypatch, tmp_path, app_module):
     """A broken config is the admin page's problem to report. Here it must not
     prevent the one page that could fix it from rendering."""
-    for name in [k for k in __import__("os").environ if k.startswith("APP_DATABASE__")]:
+    for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
         monkeypatch.delenv(name, raising=False)
     path = tmp_path / "config.yaml"
     path.write_text("auth: [this is not\n  valid: yaml\n")
@@ -743,7 +744,10 @@ def test_the_privacy_promise_is_made_where_the_choice_is(client):
 
     assert 'name="price_feed"' in page, "no market-data choice to explain"
     assert "public market data" in page
-    assert "/guides/market-data/" in page
+    # The full address: a bare path would pass with `docs_url` gone, and the
+    # link would then lead to a page Stocktake itself doesn't serve.
+    from app.main import DOCS_URL
+    assert f'href="{DOCS_URL}/guides/market-data/"' in page
 
     guide = (APP_ROOT / "docs" / "guides" / "market-data.md").read_text()
     assert "ticker symbols and nothing else" in guide
@@ -1418,6 +1422,35 @@ def test_a_completely_unconfigured_install_boots_into_the_wizard(tmp_path):
 
 
 @pytest.mark.slow
+def test_the_zone_the_log_level_and_the_console_are_set_as_the_app_starts(tmp_path):
+    """Three lines at import every test inherits already run, with a zone and
+    a level the defaults happen to match: removing any of them left the suite
+    green. Here the configuration differs from every default."""
+    (tmp_path / "config.yaml").write_text("timezone: Asia/Tokyo\nlog_level: ERROR\n")
+    script = textwrap.dedent(f"""
+        import logging, os, sys
+        for name in [k for k in os.environ if k.startswith("APP_")]:
+            del os.environ[name]
+        os.environ.pop("STOCKTAKE_TEST_DB", None)
+        os.environ["APP_CONFIG_FILE"] = {str(tmp_path / "config.yaml")!r}
+        sys.path[:0] = [{str(APP_ROOT)!r},
+                        {str(APP_ROOT.parent.parent / "libs" / "appcore")!r}]
+
+        from app import clock, logbuffer, main  # noqa: F401 - importing is the test
+
+        root = logging.getLogger()
+        print(clock.zone().key, logging.getLevelName(root.level),
+              any(isinstance(h, logbuffer.BufferHandler) for h in root.handlers))
+    """)
+
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                            text=True, timeout=180)
+
+    assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+    assert result.stdout.split() == ["Asia/Tokyo", "ERROR", "True"]
+
+
+@pytest.mark.slow
 def test_the_database_step_probes_before_it_connects_and_connects_before_it_writes(
         tmp_path):
     """The database step, walked for real — the one part of the wizard this
@@ -1915,3 +1948,155 @@ def test_a_read_only_config_asks_only_for_what_is_missing(
     assert "price_feed" in page
     # The one it already has is not repeated back at them.
     assert "Australia/Melbourne" not in page.split("<pre")[1]
+
+
+# --------------------------------------------------------------------------- #
+# The forms' edges, found unchecked by a mutation run
+# --------------------------------------------------------------------------- #
+# The test above raised for a missing name or user, but any ValueError passed —
+# and DatabaseSettings raises its own for an empty field, so dropping the
+# wizard's sentence left a pydantic dump on the page and nothing failed.
+
+@pytest.mark.parametrize(("missing", "message"), [
+    ({"host": "  "}, "Enter the database server's hostname or address."),
+    ({"name": "  "}, "Enter the name of the database to use."),
+    ({"user": "  "}, "Enter the username to connect as."),
+])
+def test_each_missing_postgres_field_is_named(missing, message):
+    fields = {"host": "pg", "port": "5432", "name": "portfolio", "user": "portfolio",
+              "password": "x", **missing}
+    with pytest.raises(ValueError) as caught:
+        setupwizard.postgres_settings(**fields)
+
+    assert str(caught.value) == message
+
+
+@pytest.mark.parametrize(("port", "ok"), [("1", True), ("65535", True), (" 5433 ", True),
+                                          ("0", False), ("65536", False)])
+def test_the_postgres_port_is_held_to_the_ports_there_are(port, ok):
+    def build():
+        return setupwizard.postgres_settings(host="pg", port=port, name="portfolio",
+                                             user="portfolio", password="x")
+
+    if ok:
+        assert build().port == int(port)
+    else:
+        with pytest.raises(ValueError, match="between 1 and 65535"):
+            build()
+
+
+def test_a_port_of_only_spaces_is_the_default():
+    assert setupwizard.postgres_settings(host="pg", port="   ", name="portfolio",
+                                         user="portfolio", password="x").port == 5432
+
+
+def test_the_postgres_fields_lose_the_spaces_around_them():
+    chosen = setupwizard.postgres_settings(host=" pg.local ", port="5432", name=" portfolio ",
+                                           user=" app ", password=" kept as typed ")
+
+    assert (chosen.host, chosen.name, chosen.user, chosen.password) == (
+        "pg.local", "portfolio", "app", " kept as typed ")
+
+
+def test_an_sqlite_path_loses_its_spaces_and_a_blank_one_is_the_default():
+    assert setupwizard.sqlite_settings("  /data/mine.db  ").path == "/data/mine.db"
+    assert setupwizard.sqlite_settings("   ").path == "/data/portfolio.db"
+
+
+def test_a_proxy_range_written_with_its_host_bits_is_accepted():
+    """10.1.2.3/16 is how a lot of people write the network a proxy is on."""
+    assert setupwizard.parse_proxies("10.1.2.3/16,\n172.18.0.5") == ["10.1.2.3/16",
+                                                                    "172.18.0.5"]
+
+
+def test_an_external_url_loses_its_trailing_slash_and_needs_a_host():
+    assert setupwizard.parse_external_url(" https://portfolio.example.com/ ").url == \
+        "https://portfolio.example.com"
+    with pytest.raises(ValueError, match="no hostname"):
+        setupwizard.parse_external_url("https://:8443")
+
+
+def test_what_is_written_is_only_what_was_chosen_proxies_and_all():
+    draft = setupwizard.Draft(trusted_proxies=["10.0.0.0/8"], external_url="",
+                              price_feed=False)
+
+    assert setupwizard.config_values(draft) == {
+        "price_feed": {"enabled": False}, "auth": {"trusted_proxies": ["10.0.0.0/8"]}}
+
+
+def test_the_restart_list_names_the_database_and_the_feed_turned_off():
+    draft = setupwizard.Draft(database=DatabaseSettings(type="sqlite", path="/data/p.db"),
+                              price_feed=False, external_url="")
+
+    pending = setupwizard.needs_restart(draft)
+
+    assert len(pending) == 2
+    assert pending[0].startswith("the database connection")
+    assert pending[1] == "turning the market-data feed off"
+
+
+def test_with_every_step_done_the_next_step_is_finish():
+    setupwizard.discard()
+    try:
+        current = setupwizard.draft()
+        for key in setupwizard.STEP_KEYS:
+            current.completed(key)
+
+        assert setupwizard.next_step(database_configured=True, account_exists=True) == "finish"
+    finally:
+        setupwizard.discard()
+
+
+def test_a_postgres_choice_is_written_as_postgres():
+    chosen = setupwizard.postgres_settings(host="pg.local", port="5433", name="stocktake",
+                                           user="app", password="secret")
+
+    assert setupwizard.database_config(chosen) == {
+        "type": "postgres", "host": "pg.local", "port": 5433, "name": "stocktake",
+        "user": "app", "password": "secret"}
+
+
+def test_a_timezone_is_trimmed_and_a_blank_one_asked_for():
+    assert setupwizard.timezone_problem("  ") == "Choose a timezone."
+    assert setupwizard.timezone_problem(" Europe/Dublin ") is None
+
+
+def test_nothing_typed_is_nothing_rather_than_an_error():
+    assert setupwizard.parse_proxies(None) == []
+    assert setupwizard.parse_external_url(None) is None
+    assert setupwizard.tls_note(None) == ""
+
+
+def test_a_plain_http_address_has_no_https_cookies_waiting_on_a_restart():
+    pending = setupwizard.needs_restart(setupwizard.Draft(external_url="http://192.168.1.5:8000"))
+
+    assert not any("HTTPS" in item for item in pending)
+
+
+def test_the_wizard_writes_auth_into_the_shipped_files_commented_block(tmp_path, monkeypatch):
+    """The shipped default's `auth:` has every line under it commented out,
+    so YAML reads it as nothing: the merge has to make it a block before it
+    can write into it, and a proxy written out in full has to stay text. The
+    file must then load as the app loads it."""
+    import yaml as pyyaml
+    from pydantic_settings import SettingsConfigDict
+
+    from app.settings import PortfolioSettings
+
+    target = tmp_path / "config.yaml"
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(target))
+    for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
+        monkeypatch.delenv(name, raising=False)
+
+    configfile.write_tree({"auth": {"cookie_secure": True,
+                                    "trusted_proxies": ["10.0.0.0/8", "2001:0:0:0:0:0:0:1"]}})
+
+    read = pyyaml.safe_load(target.read_text())
+    assert read["auth"]["cookie_secure"] is True
+    assert read["auth"]["trusted_proxies"] == ["10.0.0.0/8", "2001:0:0:0:0:0:0:1"]
+
+    class Written(PortfolioSettings):
+        model_config = SettingsConfigDict(yaml_file=str(target))
+
+    loaded = Written()
+    assert loaded.auth.trusted_proxies == ["10.0.0.0/8", "2001:0:0:0:0:0:0:1"]

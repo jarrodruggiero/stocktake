@@ -39,18 +39,22 @@ def aware(date: dt.date, clock: dt.time | None, exchange: str) -> dt.datetime | 
     return dt.datetime.combine(date, clock or MARKET_OPEN, tzinfo=zone)
 
 
-def to_market(clock: dt.time, date: dt.date, from_zone: str, exchange: str) -> dt.time:
-    """A wall-clock time somewhere else, read on the exchange's clock.
+def to_market(clock: dt.time, date: dt.date, from_zone: str,
+              exchange: str) -> tuple[dt.date, dt.time]:
+    """A wall-clock date and time somewhere else, read on the exchange's clock.
 
     For an export that stamps trades in the account holder's own timezone
-    rather than the market's. Returns the time unchanged when either zone is
-    unknown, because a half-applied conversion is worse than none.
+    rather than the market's. The date comes too: US hours are the small hours
+    of the next day in Sydney, and a converted time on the unconverted date is
+    a day out. Returns both unchanged when either zone is unknown, because a
+    half-applied conversion is worse than none.
     """
     zone = market_zone(exchange)
     if zone is None or not from_zone:
-        return clock
+        return date, clock
     try:
         origin = ZoneInfo(from_zone)
     except Exception:  # noqa: BLE001 - an unknown zone name is user input
-        return clock
-    return dt.datetime.combine(date, clock, tzinfo=origin).astimezone(zone).time()
+        return date, clock
+    moment = dt.datetime.combine(date, clock, tzinfo=origin).astimezone(zone)
+    return moment.date(), moment.time()

@@ -31,7 +31,7 @@ from freezegun import freeze_time
 from sqlalchemy import select
 
 import factories as fac
-from app import queries
+from app import queries, tenancy
 from app.models import Dividend, Instrument, PlannedPurchase, PortfolioMember, Trade
 from test_routes import bind_to_only_portfolio, make_login, reading, session_csrf
 
@@ -41,11 +41,13 @@ TODAY = "2026-08-02"
 
 @pytest.fixture
 def ledger(client, session_factory):
-    """A signed-in owner holding 100 ACME bought in March."""
+    """A signed-in owner holding 100 ACME bought in March, added as "+ Add an
+    instrument" adds it, so deleting the trade leaves the holding on the list."""
     make_login(client, session_factory)
     with session_factory() as s:
         bind_to_only_portfolio(s)
         acme = fac.make_instrument(s, "ACME", name="Acme Industries")
+        fac.hold(s, acme)
         buy = fac.add_trade(s, acme, "2026-03-02", "buy", 100, "5.00", brokerage="9.50")
         s.commit()
         return {"acme_id": acme.id, "buy_id": buy.id}
@@ -752,3 +754,89 @@ def test_a_hostile_return_target_is_refused(client, session_factory, ledger, hos
 
     assert resp.headers["location"].startswith("/holding/"), (
         f"{hostile!r} was honoured as a redirect target")
+
+
+# --------------------------------------------------------------------------- #
+# Every field an edit carries is saved, and only the row named is touched
+# --------------------------------------------------------------------------- #
+# A mutation run removed the lines that save an edited trade's date, type,
+# brokerage, rate and note, and an edited dividend's note and reinvestment
+# price, and nothing failed: the edit tests changed the units or the cash. It
+# also let the "edit it through its dividend" check find any dividend at all,
+# and let deleting one trade unlink every planned purchase.
+
+@freeze_time(TODAY)
+def test_an_edited_trade_keeps_every_field(client, session_factory):
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        nova = fac.make_instrument(s, "NOVA", exchange="NASDAQ", currency="USD")
+        fac.hold(s, nova)
+        fac.add_trade(s, nova, "2026-03-02", "buy", 100, "5.00", fx_rate="1.50")
+        second = fac.add_trade(s, nova, "2026-03-05", "buy", 10, "5.00", fx_rate="1.50")
+        s.commit()
+        trade_id = second.id
+
+    resp = client.post(f"/trade/{trade_id}/edit", headers=HTML, follow_redirects=False, data={
+        "type": "sell", "trade_date": "2026-03-06", "set_time": "1", "trade_time": "14:30",
+        "quantity": "10", "unit_price": "7.00", "brokerage": "4.95", "fx_rate": "1.6",
+        "note": "edited", "_csrf": session_csrf(session_factory)})
+
+    assert resp.status_code == 303, resp.text
+    with reading(session_factory) as s:
+        t = s.get(Trade, trade_id)
+        assert (t.type, t.date.isoformat(), t.time.strftime("%H:%M"), t.quantity,
+                t.unit_price, t.brokerage, t.fx_rate, t.note) == (
+            "sell", "2026-03-06", "14:30", Decimal(10), Decimal(7), Decimal("4.95"),
+            Decimal("1.6"), "edited")
+
+
+@freeze_time(TODAY)
+def test_an_edited_reinvestment_keeps_its_price_and_note(client, session_factory, with_drp):
+    client.post(f"/dividend/{with_drp['dividend_id']}/edit", headers=HTML,
+                follow_redirects=False, data={
+                    "div_date": "2026-04-15", "cash_amount": "24.00", "franking_credits": "",
+                    "quantity": "4", "unit_price": "6.10", "note": "registry corrected",
+                    "_csrf": session_csrf(session_factory)})
+
+    with reading(session_factory) as s:
+        assert s.get(Trade, with_drp["drp_id"]).unit_price == Decimal("6.10")
+        assert s.get(Dividend, with_drp["dividend_id"]).note == "registry corrected"
+
+
+@freeze_time(TODAY)
+def test_a_trade_edits_while_the_holding_has_cash_dividends(client, session_factory, ledger):
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        fac.add_dividend(s, s.get(Trade, ledger["buy_id"]).instrument, "2026-04-15", "40.00")
+        s.commit()
+
+    resp = edit_trade(client, session_factory, ledger["buy_id"], quantity="120")
+
+    assert resp.status_code == 303
+    with reading(session_factory) as s:
+        assert s.get(Trade, ledger["buy_id"]).quantity == 120
+
+
+@freeze_time(TODAY)
+def test_deleting_a_planned_buy_unlinks_only_that_purchase(client, session_factory, ledger):
+    from app.models import InvestmentPlan, PlannedPurchase
+
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        acme = s.get(Trade, ledger["buy_id"]).instrument
+        plan = tenancy.owned(s, InvestmentPlan(name="Plan", interval_days=28))
+        s.add(plan)
+        s.flush()
+        other = fac.add_trade(s, acme, "2026-03-09", "buy", 10, "5.00")
+        for trade in (s.get(Trade, ledger["buy_id"]), other):
+            s.add(tenancy.owned(s, PlannedPurchase(due_date=trade.date, instrument_id=acme.id,
+                                                   status="done", trade_id=trade.id)))
+        s.commit()
+        other_id = other.id
+
+    delete_trade(client, session_factory, ledger["buy_id"])
+
+    with reading(session_factory) as s:
+        links = sorted((p.trade_id or 0) for p in s.scalars(select(PlannedPurchase)))
+    assert links == [0, other_id]

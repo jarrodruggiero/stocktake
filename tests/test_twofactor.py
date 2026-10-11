@@ -90,22 +90,20 @@ def test_no_secret_means_no_code_is_ever_valid():
     assert twofactor.matching_step("", "000000") is None
 
 
-def test_one_step_of_clock_drift_is_tolerated():
-    """Phones drift. A 30-second window either side is the standard trade-off:
-    stricter generates support requests, looser widens replay for no gain."""
+@pytest.mark.parametrize("offset, accepted", [(-2, False), (-1, True), (0, True), (1, True),
+                                              (2, False)])
+def test_a_code_is_good_for_its_own_step_and_one_either_side(offset, accepted):
+    """Phones drift either way. A 30-second window either side is the standard
+    trade-off: stricter generates support requests, looser widens replay for
+    no gain. Built from step numbers rather than from "now minus 90 seconds",
+    which is three steps back, not two."""
     secret = twofactor.new_secret()
     totp = pyotp.TOTP(secret)
-    previous = totp.at(dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=30))
+    with freeze_time("2026-08-02 12:00:10"):  # one clock for both sides
+        now = totp.timecode(dt.datetime.now(dt.timezone.utc))
+        step = twofactor.matching_step(secret, totp.generate_otp(now + offset))
 
-    assert twofactor.matching_step(secret, previous) is not None
-
-
-def test_a_code_two_steps_old_is_refused():
-    secret = twofactor.new_secret()
-    totp = pyotp.TOTP(secret)
-    stale = totp.at(dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=90))
-
-    assert twofactor.matching_step(secret, stale) is None
+    assert (step == now + offset) if accepted else step is None
 
 
 # --------------------------------------------------------------------------- #
@@ -316,6 +314,27 @@ def test_reissuing_replaces_the_old_set(pf):
     twofactor.generate_recovery_codes(pf, user)
 
     assert not twofactor.consume_recovery_code(pf, user, first[0])
+
+
+def test_new_codes_for_one_account_leave_anothers_alone(pf):
+    """Issuing a set clears the old one, and only that account's: one person
+    asking for new codes must not take everybody else's way back in."""
+    mine = fac.make_user(pf, "mine@example.test")
+    theirs = fac.make_user(pf, "theirs@example.test")
+    their_codes = twofactor.generate_recovery_codes(pf, theirs)
+
+    twofactor.generate_recovery_codes(pf, mine)
+
+    assert twofactor.consume_recovery_code(pf, theirs, their_codes[0])
+
+
+def test_whether_an_account_has_codes_is_its_own(pf):
+    mine = fac.make_user(pf, "mine@example.test")
+    theirs = fac.make_user(pf, "theirs@example.test")
+    twofactor.generate_recovery_codes(pf, theirs)
+
+    assert twofactor.has_recovery_codes(pf, mine) is False
+    assert len(twofactor.ensure_recovery_codes(pf, mine)) == twofactor.RECOVERY_CODE_COUNT
 
 
 def test_disabling_keeps_the_recovery_codes(pf):
@@ -656,6 +675,11 @@ def test_an_admin_can_clear_someone_elses_2fa(client, session_factory):
         s.commit()
         other_id = other.id
     token = session_csrf(session_factory)
+    with session_factory() as s:
+        # A session to end: without one, "their sessions went" was true anyway.
+        from app.settings import PortfolioSettings
+        auth_mod.create_session(s, s.get(User, other_id), PortfolioSettings())
+        s.commit()
 
     resp = client.post(f"/users/{other_id}/2fa/clear", data={"_csrf": token},
                        headers=HTML, follow_redirects=False)

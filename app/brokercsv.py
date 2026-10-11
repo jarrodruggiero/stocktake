@@ -18,13 +18,14 @@ import io
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal
+from itertools import accumulate
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import money
+from . import money, queries
 from .markettime import to_market
-from .models import Instrument, Trade, exchange_problem, ticker_problem
+from .models import Instrument, Trade, exchange_problem, ticker_problem, trade_order
 from .pricefeed import MARKETS
 from .settings import BrokerFormat, ImportSettings
 from .tenancy import owned
@@ -110,7 +111,7 @@ class CandidateTrade:
     currency: str
     exchange: str
     time: dt.time | None = None  # only when the export carried a real one
-    status: str = "new"  # new / duplicate / unknown-instrument
+    status: str = "new"  # new / duplicate / unknown-instrument / refused
     detail: str = ""
 
     def as_dict(self) -> dict:
@@ -173,10 +174,27 @@ def _check_trade_figures(units: Decimal, price: Decimal, brokerage: Decimal) -> 
 
 
 def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
-    reader = csv.DictReader(io.StringIO(text))
+    """Every trade in an export, with an account of what was skipped.
+
+    A field past the csv module's size limit (128 KiB: a file that is not a
+    CSV at all, or one runaway quote) raises inside the reader, and was a
+    server error rather than a sentence about the file."""
+    try:
+        return _parse_csv(text, broker, fmt)
+    except csv.Error as exc:
+        return ParseResult(errors=[f"the file could not be read as a CSV ({exc})"])
+
+
+def _parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
+    # `restval`: a row shorter than the header (an export's one-line footer)
+    # reads as blanks, and is skipped by line like any other, instead of
+    # handing None to the first `.strip()`.
+    reader = csv.DictReader(io.StringIO(text), restval="")
     if reader.fieldnames is None:
         return ParseResult(errors=["empty file"])
-    headers = [h.strip() for h in reader.fieldnames]
+    # "Date, Code" names its columns with the spaces. The rows are read by
+    # the names the header check and the broker designer use: without them.
+    reader.fieldnames = headers = [h.strip() for h in reader.fieldnames]
     result = ParseResult()
 
     if fmt.kind == "mapped":
@@ -206,7 +224,7 @@ def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
                     continue
                 when, clock = parse_when(row[col["date"]], fmt.date_format)
                 if clock and fmt.times_zone:
-                    clock = to_market(clock, when, fmt.times_zone, fmt.exchange)
+                    when, clock = to_market(clock, when, fmt.times_zone, fmt.exchange)
                 clock, moved = in_trading_hours(clock, fmt.exchange)
                 result.adjusted += moved
                 units = _num(row[col["units"]], Trade.quantity, "Units")
@@ -367,10 +385,102 @@ def annotate(session: Session, candidates: list[CandidateTrade], imports: Import
         if dupe is not None:
             c.status = "duplicate"
             c.detail = f"matches trade #{dupe.id}"
+    _refuse_shortfalls(session, candidates)
+
+
+def _refuse_shortfalls(session: Session, candidates: list[CandidateTrade]) -> None:
+    """Refuse a row that would sell more than is held, as the trade form
+    refuses one typed in. Each holding's rows are walked in date order against
+    what is already recorded and the rows accepted before them; a refused row
+    is left out of the walk, so the rest are judged without it.
+    """
+    by_holding: dict[tuple[str, str], list[CandidateTrade]] = {}
+    for c in candidates:
+        if c.status in ("new", "unknown-instrument"):
+            by_holding.setdefault((c.ticker, c.exchange), []).append(c)
+    for (ticker, exchange), rows in by_holding.items():
+        inst = session.scalars(
+            select(Instrument).where(Instrument.ticker == ticker, Instrument.exchange == exchange)
+        ).first()
+        held = (list(session.scalars(select(Trade).where(Trade.instrument_id == inst.id)))
+                if inst is not None else [])
+        for c, breach in _shortfalls(held, rows):
+            c.status, c.detail = "refused", queries.breach_message(ticker, breach)
+
+
+def _shortfalls(held: list[Trade], rows: list[CandidateTrade]) -> list[tuple[CandidateTrade, queries.Breach]]:
+    """Each row the trade form would refuse, with the breach it would name.
+
+    The form walks the whole timeline for its one row; done for each row of a
+    file, that took minutes over a 40,000-row export. So the timeline is
+    walked once: a row is checked against the units held at its place, and
+    against what the recorded trades after it need. Only recorded trades come
+    after it: the rows accepted so far all sort before it, and the rest are
+    judged later.
+    """
+    timeline = sorted(
+        [(t, None) for t in held]
+        + [(Trade(date=c.date, time=c.time, type=c.type, quantity=c.quantity), c) for c in rows],
+        key=lambda pair: trade_order(pair[0]))
+    change = [t.quantity if t.type in ("buy", "drp") else -t.quantity for t, _ in timeline]
+    # The recorded trades alone: their running total at each place, and
+    # `need`, the most those from a place on take from what is held there.
+    recorded = list(accumulate(Decimal(0) if c else step for (_t, c), step in zip(timeline, change)))
+    need = [Decimal(0)] * (len(timeline) + 1)
+    for i in reversed(range(len(timeline))):
+        need[i] = need[i + 1] if timeline[i][1] else max(Decimal(0), need[i + 1] - change[i])
+    first_below = _first_below(recorded)
+
+    refused, units, broken = [], Decimal(0), None
+    for i, (t, c) in enumerate(timeline):
+        after = units + change[i]
+        if c is None:
+            # Recorded trades the file never touched can already be short;
+            # the form names the first, before any row of its own.
+            if after < 0 and broken is None:
+                broken = queries.Breach(trade=t, balance=after, held_before=units,
+                                        is_candidate=False)
+            units = after
+        elif broken is not None:
+            refused.append((c, broken))
+        elif after < 0:
+            refused.append((c, queries.Breach(trade=t, balance=after, held_before=units,
+                                              is_candidate=True)))
+        elif after < need[i + 1]:
+            k = first_below(i + 1, recorded[i] - after)
+            left = after + recorded[k] - recorded[i]
+            refused.append((c, queries.Breach(trade=timeline[k][0], balance=left,
+                                              held_before=left - change[k], is_candidate=False)))
+        else:
+            units = after
+    return refused
+
+
+def _first_below(values: list[Decimal]):
+    """`find(start, limit)`: the first index from `start` whose value is below
+    `limit`, in a handful of steps rather than a scan. `levels[k][i]` is the
+    least of `values[i : i + 2**k]`, so whole runs that stay at or above the
+    limit are stepped over, longest first."""
+    levels = [values]
+    while 2 ** len(levels) <= len(values):
+        last, run = levels[-1], 2 ** (len(levels) - 1)
+        levels.append([min(a, b) for a, b in zip(last, last[run:])])
+
+    def find(start: int, limit: Decimal) -> int:
+        i = start
+        for k in reversed(range(len(levels))):
+            if i < len(levels[k]) and levels[k][i] >= limit:
+                i += 2 ** k
+        return i
+
+    return find
 
 
 def commit(session: Session, candidates: list[CandidateTrade], imports: ImportSettings, source: str) -> dict[str, int]:
     counts = {"inserted": 0, "duplicates_skipped": 0, "instruments_created": 0}
+    refused = [c for c in candidates if c.status == "refused"]
+    if refused:
+        raise ValueError(refused[0].detail)
     for c in candidates:
         if c.status == "duplicate":
             counts["duplicates_skipped"] += 1
@@ -397,6 +507,8 @@ def commit(session: Session, candidates: list[CandidateTrade], imports: ImportSe
             session.add(inst)
             session.flush()
             counts["instruments_created"] += 1
+        # A removed one comes back, as it does when a trade is typed in.
+        inst.active = True
         session.add(
             owned(
                 session,

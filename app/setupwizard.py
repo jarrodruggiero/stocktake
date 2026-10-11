@@ -257,7 +257,7 @@ def parse_proxies(raw: str) -> list[str]:
     an unparseable entry would simply never match, and the app would go on
     reading `X-Forwarded-For` from nobody while looking configured.
     """
-    entries = [part.strip() for part in re.split(r"[,\s]+", raw or "") if part.strip()]
+    entries = [part for part in re.split(r"[,\s]+", raw or "") if part]
     out: list[str] = []
     for entry in entries:
         try:
@@ -289,7 +289,7 @@ class ExternalUrl:
         return self.url
 
 
-def parse_external_url(raw: str) -> ExternalUrl | None:
+def parse_external_url(raw: str | None) -> ExternalUrl | None:
     """The address people will type, checked for the things that break silently.
 
     Only http and https: the app is reached over one of those, and accepting
@@ -326,7 +326,7 @@ def tls_note(url: ExternalUrl | None) -> str:
     if url is None or not url.secure:
         return ""
     return (
-        "This app does not terminate TLS itself — a reverse proxy (Caddy, "
+        "This app does not terminate TLS itself — a reverse proxy (Traefik, "
         "Caddy, nginx, or your ingress) does, and forwards to this container "
         "over plain HTTP. Setting an https:// URL here marks the session cookie "
         "secure, which means the browser will only send it over HTTPS: reach "
@@ -356,10 +356,9 @@ def config_values(current: Draft) -> dict:
     auth: dict = {}
     if current.trusted_proxies:
         auth["trusted_proxies"] = list(current.trusted_proxies)
-    if current.external_url is not None:
-        url = parse_external_url(current.external_url)
-        if url is not None and url.secure:
-            auth["cookie_secure"] = True
+    url = parse_external_url(current.external_url)
+    if url is not None and url.secure:
+        auth["cookie_secure"] = True
     if auth:
         values["auth"] = auth
     # Only what was switched OFF. Writing `dca_schedule: true` would put a line
@@ -386,7 +385,7 @@ def needs_restart(current: Draft) -> list[str]:
         pending.append("turning the market-data feed off")
     if current.trusted_proxies:
         pending.append("trusted proxies")
-    url = parse_external_url(current.external_url or "")
+    url = parse_external_url(current.external_url)
     if url is not None and url.secure:
         pending.append("HTTPS-only session cookies")
     return pending

@@ -84,6 +84,17 @@
      correction is worse than not helping. What the lookup itself filled in is
      replaced by its next answer: the exchange often changes after the ticker,
      and the first answer, the ASX guess, is then wrong. */
+  /* Only the newest question's answer is used. The exchange is usually
+     changed straight after the ticker, so two lookups are in flight, and the
+     first can come back last: answering a question nobody is asking any more
+     put GOOG.AX back on a NASDAQ stock. */
+  var asked = {};
+  function ask(kind) {
+    asked[kind] = (asked[kind] || 0) + 1;
+    var mine = asked[kind];
+    return function () { return asked[kind] === mine; };
+  }
+
   function autofill(prefix) {
     var ticker = byName(prefix + "ticker");
     var exchange = byName(prefix + "exchange");
@@ -93,9 +104,11 @@
 
     var url = "/holdings/lookup?ticker=" + encodeURIComponent(ticker.value) +
               "&exchange=" + encodeURIComponent(exchange ? exchange.value : "ASX");
+    var newest = ask("lookup" + prefix);
     fetch(url)
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
+        if (!newest()) { return; }
         if (!d) { if (status) { status.textContent = ""; } return; }
         var fill = function (name, value) {
           var el = byName(prefix + name);
@@ -105,9 +118,12 @@
         };
         fill("name", d.name);
         /* Not `fill`: the field starts at AUD, so it was never empty and a USD
-           stock stayed AUD. Replaced unless somebody typed it. */
+           stock stayed AUD. Replaced unless somebody typed it, and back to AUD
+           when the answer has none. */
         var currency = byName(prefix + "currency");
-        if (currency && d.currency && !currency.dataset.typed) { currency.value = d.currency; }
+        if (currency && !currency.dataset.typed) {
+          currency.value = d.currency || currency.defaultValue;
+        }
         fill("yahoo", d.symbol);
         fill("yahoo_symbol", d.symbol);
         showClass(d.asset_class);
@@ -119,8 +135,9 @@
         /* Now that the symbol is known, the price for the date can be. Here
            rather than beside the ticker's own handler because the symbol
            arrives with this response — asking any earlier has nothing to ask
-           about. */
-        if (d.found) { priceForDate(); }
+           about. Asked when nothing was found too: the last answer's price
+           has to go, and a symbol typed by hand may still have one. */
+        priceForDate();
       })
       .catch(function () { if (status) { status.textContent = ""; } });
   }
@@ -161,10 +178,11 @@
     var fx = document.getElementById("fx_rate");
     var url = "/holdings/price?" + query +
               "&date=" + encodeURIComponent(date.value);
+    var newest = ask("price");
     fetch(url)
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
-        if (!d) { return; }
+        if (!d || !newest()) { return; }
         if (price && !price.dataset.typed) { price.value = d.price || ""; }
         if (fx && !fx.dataset.typed) { fx.value = d.fx || ""; }
         suggestBrokerage();
@@ -218,14 +236,13 @@
     var option = picker.options[picker.selectedIndex];
     if (!option) { return; }
 
-    var currency = option.dataset.currency || "";
-    var field = document.getElementById("fxfield");
-    var fx = document.getElementById("fx_rate");
-    var foreign = currency && currency !== (window.reportingCurrency || "AUD");
-    if (field) { field.hidden = !foreign; }
     /* Cleared, not filled: an AUD instrument has nothing to convert, and for a
        foreign one `priceForDate` supplies the rate for the trade's own date. */
-    if (fx && !foreign) { fx.value = ""; }
+    var fx = document.getElementById("fx_rate");
+    if (fx && !showFx()) {
+      fx.value = "";
+      delete fx.dataset.typed;
+    }
 
     var units = document.getElementById("quantity");
     if (units) {
@@ -236,6 +253,20 @@
         units.value = "";
       }
     }
+  }
+
+  /* The FX field, for an instrument in another currency: the one picked, or on
+     an edit the trade's own. Returns whether it applies. */
+  function showFx() {
+    var picker = document.getElementById("instpick");
+    var form = document.querySelector("form[data-instrument]");
+    var option = picker ? picker.options[picker.selectedIndex] : null;
+    var currency = picker ? (option && option.dataset.currency) || ""
+                          : (form && form.dataset.currency) || "";
+    var foreign = !!currency && currency !== (window.reportingCurrency || "AUD");
+    var field = document.getElementById("fxfield");
+    if (field) { field.hidden = !foreign; }
+    return foreign;
   }
 
   /* Anything typed by hand is protected from the clearing above, and from the
@@ -258,7 +289,7 @@
     if (target.id === "instpick") {
       toggleNew(); instrumentChosen(); priceForDate(); suggestBrokerage();
     }
-    if (target.id === "tradedate") { priceForDate(); }
+    if (target.id === "tradedate" || target.name === "new_yahoo") { priceForDate(); }
     if (target.id === "settime") { toggleTime(); }
     if (target.dataset && target.dataset.autofill && !switchToListed()) {
       autofill(target.dataset.autofill);
@@ -332,6 +363,7 @@
   window.syncTradeForm = function () {
     toggleNew();
     toggleTime();
+    showFx();
     /* Remember the prefilled quantity before anything can clear it, so
        returning to that instrument can put it back. */
     var units = document.getElementById("quantity");

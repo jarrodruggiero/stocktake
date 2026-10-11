@@ -301,6 +301,52 @@ def test_coingecko_ignores_junk_prices(monkeypatch):
     assert out == [(dt.date(2026, 3, 4), Decimal("95000"))]
 
 
+# Every price above was over one, so a check that kept only prices over one
+# passed: it would drop every yen rate (about 0.0098 AUD) and every coin
+# worth less than a dollar. Nor did any have more places than are kept.
+
+def test_a_rate_below_one_is_kept_to_six_places(monkeypatch):
+    canned(monkeypatch, {"rates": {"2026-03-02": {"AUD": 0.009812345}}})
+
+    assert providers.frankfurter_fx("JPYAUD", START, END) == [
+        (dt.date(2026, 3, 2), Decimal("0.009812"))]
+
+
+def test_a_coin_worth_less_than_a_dollar_is_kept_to_six_places(monkeypatch):
+    canned(monkeypatch, {"prices": [[_ms(2026, 3, 2), 0.123456789],
+                                    [_ms(2026, 3, 3), 101234.123456789]]})
+
+    assert providers.coingecko_closes("DOGE-AUD", START, END) == [
+        (dt.date(2026, 3, 2), Decimal("0.123457")),
+        (dt.date(2026, 3, 3), Decimal("101234.123457"))]
+
+
+@pytest.mark.parametrize(("end", "days"), [(START, 1), (END, 5)])
+def test_coingecko_is_asked_back_to_the_first_day_wanted(monkeypatch, end, days):
+    """It takes a lookback in days, not dates: one short, and the first day
+    asked for never arrives."""
+    seen = []
+    canned(monkeypatch, {"prices": []}, capture=seen)
+
+    providers.coingecko_closes("BTC-AUD", START, end)
+
+    assert seen[0][1]["days"] == days
+
+
+def test_an_error_body_from_coingecko_is_no_prices(monkeypatch):
+    canned(monkeypatch, {"error": "rate limited"})
+
+    assert providers.coingecko_closes("BTC-AUD", START, END) == []
+
+
+def test_no_symbols_asks_nothing(monkeypatch):
+    seen = []
+    canned(monkeypatch, {}, capture=seen)
+
+    assert providers.yahoo_quotes([]) == {}
+    assert seen == []
+
+
 # --------------------------------------------------------------------------- #
 # FX symbol shapes
 # --------------------------------------------------------------------------- #

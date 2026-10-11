@@ -13,10 +13,10 @@
 
 {% block content %}
 
-{# Where a holding link on this page sends its back button. Encoded, because it
-   is a path being carried INSIDE a query string — unencoded, the `?fy=` would
-   terminate the `?return=` value and the button would land on Today. #}
-{% set back = ('/?fy=' ~ fy) | urlencode %}
+{# Where a holding link on this page sends its back button. `holding_href`
+   encodes it, because it is a path carried INSIDE a query string: unencoded,
+   the `?fy=` would end the `?return=` value and the button would land on Today. #}
+{% set back = '/?fy=' ~ fy %}
 
 <div class="fytabs">
   <a href="/">Today</a>
@@ -35,6 +35,10 @@
     <span class="label">Net capital gain</span><span class="big"><span class="dir" aria-hidden="true">{{ '▲' if r.cgt.net_capital_gain >= 0 else '▼' }}</span>{{ r.cgt.net_capital_gain | cash }}</span>
     {% if r.cgt.net_capital_loss %}<span class="sub">loss carried: {{ r.cgt.net_capital_loss | money_plain }}</span>{% endif %}</div>
 </section>
+{% if r.withheld %}
+<p class="note">Totals exclude {{ r.withheld | join(', ') }} — no exchange rate stored
+yet. The next price refresh fills it in.</p>
+{% endif %}
 
 <section>
   <h2>Holdings at {{ r.asof }}</h2>
@@ -54,7 +58,7 @@
     <tbody>
       {% for row in r.snapshot %}
       <tr>
-        <td class="tick"><a href="/holding/{{ row.instrument.ticker }}?return={{ back }}">{{ row.instrument.ticker }}</a></td>
+        <td class="tick"><a href="{{ holding_href(row.instrument.ticker, row.instrument.exchange, return=back) }}">{{ row.instrument.ticker }}</a></td>
         <td class="num">{{ row.units | qty }}</td>
         <td class="num">{{ row.price | money }}{% if row.price_date %}<span class="sub">{{ row.price_date }}</span>{% endif %}</td>
         <td class="num">{{ row.invested_cum | money }}</td>
@@ -106,7 +110,7 @@
       <tbody>
         {% for row in r.income %}
         <tr>
-          <td class="tick"><a href="/holding/{{ row.instrument.ticker }}?return={{ back }}">{{ row.instrument.ticker }}</a></td>
+          <td class="tick"><a href="{{ holding_href(row.instrument.ticker, row.instrument.exchange, return=back) }}">{{ row.instrument.ticker }}</a></td>
           <td class="num">{{ row.cash | money }}</td>
         </tr>
         {% endfor %}
@@ -160,11 +164,11 @@
       {% for d in r.cgt.disposals %}
       <tr>
         <td>{{ d.date }}</td>
-        <td class="tick"><a href="/holding/{{ d.instrument.ticker }}?return={{ back }}">{{ d.instrument.ticker }}</a></td>
+        <td class="tick"><a href="{{ holding_href(d.instrument.ticker, d.instrument.exchange, return=back) }}">{{ d.instrument.ticker }}</a></td>
         <td class="num">{{ d.quantity | qty }}</td>
         <td class="num">{{ d.cost_base | money }}</td>
         <td class="num">{{ d.proceeds | money }}</td>
-        <td class="num {{ 'up' if d.gain >= 0 else 'down' }}">{{ d.gain | money }}</td>
+        <td class="num {{ 'up' if d.gain is not none and d.gain >= 0 else 'down' if d.gain is not none }}">{{ d.gain | money }}</td>
         <td class="sub">{% for p in d.parcels %}{{ p.acquired }}{% if p.discountable %} ✓{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</td>
       </tr>
       {% endfor %}

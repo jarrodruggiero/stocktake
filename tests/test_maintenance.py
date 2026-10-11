@@ -254,3 +254,20 @@ def test_the_cap_is_configurable(client, session_factory, monkeypatch):
                        data={"broker": "testbroker", "_csrf": session_csrf(session_factory)})
 
     assert resp.status_code == 200
+
+
+@pytest.mark.parametrize(("size", "refused"), [(1024 * 1024, False), (1024 * 1024 + 1, True)])
+def test_the_cap_is_exactly_the_configured_megabytes(client, session_factory, monkeypatch,
+                                                     size, refused):
+    """A file of exactly the limit is under it; one byte more is not."""
+    from test_routes import make_login, session_csrf
+
+    make_login(client, session_factory)
+    from app import main as main_mod
+    monkeypatch.setattr(main_mod.settings.imports, "max_upload_mb", 1)
+
+    resp = client.post("/imports-exports/csv",
+                       files={"file": ("trades.csv", b"a" * size, "text/csv")},
+                       data={"broker": "testbroker", "_csrf": session_csrf(session_factory)})
+
+    assert (resp.status_code == 413) is refused

@@ -116,6 +116,7 @@ def test_a_trade_dated_today_is_not_rejected_as_being_in_the_future(client,
     with session_factory() as s:
         bind_to_only_portfolio(s)
         acme = fac.make_instrument(s, "ACME", name="Acme Industries")
+        fac.hold(s, acme)
         s.commit()
         acme_id = acme.id
 

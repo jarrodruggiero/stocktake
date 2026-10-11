@@ -336,6 +336,7 @@ select:focus-visible, textarea:focus-visible {
 .badge-new { background: var(--up); }
 .badge-duplicate { background: var(--muted); }
 .badge-unknown-instrument { background: var(--accent); }
+.badge-refused { background: var(--down); }
 tr.muted td { opacity: 0.55; }
 pre.note { overflow-x: auto; background: var(--sunken); border-radius: 8px; padding: 0.8rem; }
 

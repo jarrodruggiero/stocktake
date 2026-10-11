@@ -107,9 +107,16 @@ def test_statements_loads_pdfplumber_only_when_parsing():
 # --------------------------------------------------------------------------- #
 
 def test_release_collects_and_reports_what_it_did():
+    # Cycles only the collector can free, so "collected" has something to count;
+    # `>= 0` alone could not fail.
+    for _ in range(50):
+        cycle: dict = {}
+        cycle["self"] = cycle
+    del cycle
+
     result = memory.release("a test")
 
-    assert result["collected"] >= 0
+    assert result["collected"] >= 50
     assert isinstance(result["trimmed"], bool)
     # rss/freed are None off Linux; the shape must be stable either way so the
     # log line and any future dashboard can rely on it.

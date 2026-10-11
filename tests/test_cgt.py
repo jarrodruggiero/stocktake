@@ -590,38 +590,17 @@ def test_the_same_disposal_a_year_earlier_is_calculated_normally(pf):
     assert summary.discount > 0            # the 50% discount still applies
 
 
-def test_a_parcel_held_across_the_change_is_flagged_even_in_a_year_we_compute(pf):
-    """A parcel bought before and sold after 1 July 2027 needs the transitional
-    apportionment — a market valuation at the changeover, whose method is not
-    published. Worth saying even where the year itself is calculable."""
-    alpha = make_instrument(pf, "ALPHA")
-    add_trade(pf, alpha, "2020-01-06", "buy", 100, "10.00")
-    disposals = [
-        fyreport.Disposal(
-            instrument=alpha, date=dt.date(2027, 9, 1), quantity=Decimal(100),
-            proceeds=Decimal(3000),
-            parcels=[fyreport.ParcelUse(
-                acquired=dt.date(2020, 1, 6), quantity=Decimal(100),
-                cost_base=Decimal(1000), proceeds=Decimal(3000), discountable=True)],
-        )
-    ]
-
-    assert fyreport.spans_regime_change(disposals) is True
-
-
-def test_a_parcel_wholly_before_the_change_is_not_flagged(pf):
-    alpha = make_instrument(pf, "ALPHA")
-    disposals = [
-        fyreport.Disposal(
-            instrument=alpha, date=dt.date(2026, 9, 1), quantity=Decimal(100),
-            proceeds=Decimal(3000),
-            parcels=[fyreport.ParcelUse(
-                acquired=dt.date(2020, 1, 6), quantity=Decimal(100),
-                cost_base=Decimal(1000), proceeds=Decimal(3000), discountable=True)],
-        )
-    ]
-
-    assert fyreport.spans_regime_change(disposals) is False
+def test_no_year_that_is_calculated_can_hold_a_sale_after_the_change():
+    """Why there is no warning for a parcel held across 1 July 2027. Sold after
+    that date, it is sold in FY2028 or later, and those years are refused
+    outright (decisions.md #26). Every year that IS calculated ends first, so a
+    straddling sale cannot appear in one. There used to be such a warning, and
+    no test could make it show."""
+    for fy in range(2000, 2100):
+        if fyreport.regime_warning(fy) is None:
+            assert fyreport.fy_bounds(fy)[1] < fyreport.CGT_INDEXATION_START, fy
+        else:
+            assert fyreport.fy_bounds(fy)[0] >= fyreport.CGT_INDEXATION_START, fy
 
 
 @freeze_time("2027-09-15")
@@ -649,3 +628,169 @@ def test_the_fy_page_shows_the_refusal(client, session_factory):
 
     assert "not calculated for FY27/28" in page
     assert "cost-base indexation" in page
+
+
+# --------------------------------------------------------------------------- #
+# A foreign row with no exchange rate anywhere: withheld and named, not 1:1
+# --------------------------------------------------------------------------- #
+
+def _usd(pf, ticker="NOVA"):
+    return make_instrument(pf, ticker, asset_class="share", exchange="NASDAQ", currency="USD")
+
+
+def test_a_sale_with_no_rate_anywhere_is_listed_but_left_out_of_the_totals(pf):
+    """Booked at 1:1, this US$200 gain went into the net capital gain as A$200.
+    With no rate it is a question, not a number (decisions.md #5)."""
+    inst = _usd(pf)
+    add_trade(pf, inst, "2025-08-01", "buy", 100, "10.00")
+    add_trade(pf, inst, "2025-09-01", "sell", 100, "12.00")
+
+    out = fyreport.fy_cgt(pf, 2026)
+
+    [sale] = out.disposals
+    assert (sale.proceeds, sale.cost_base, sale.gain, sale.known) == (None, None, None, False)
+    assert (out.gains_other, out.net_capital_gain, out.withheld) == (0, 0, ["NOVA"])
+
+
+def test_only_the_sale_that_used_a_rateless_parcel_is_withheld(pf):
+    inst = _usd(pf)
+    add_trade(pf, inst, "2025-08-01", "buy", 10, "10.00", fx_rate="1.50")
+    add_trade(pf, inst, "2025-08-02", "buy", 10, "10.00")                  # no rate anywhere
+    add_trade(pf, inst, "2025-09-01", "sell", 10, "12.00", fx_rate="1.60")  # FIFO: the first
+    add_trade(pf, inst, "2025-10-01", "sell", 10, "12.00", fx_rate="1.60")  # the second
+
+    first, second = fyreport.fy_cgt(pf, 2026).disposals
+
+    assert (first.known, first.cost_base, first.proceeds) == (True, Decimal("150.00"),
+                                                              Decimal("192.00"))
+    assert (second.known, second.cost_base, second.proceeds) == (False, None, Decimal("192.00"))
+    assert fyreport.fy_cgt(pf, 2026).gains_other == Decimal("42.00")
+
+
+@freeze_time("2026-07-15")
+def test_a_dividend_with_no_rate_leaves_its_holding_out_of_income(pf):
+    nova = _usd(pf)
+    add_trade(pf, nova, "2025-08-01", "buy", 100, "10.00", fx_rate="1.50")
+    add_dividend(pf, nova, "2025-12-01", "50.00")
+    acme = make_instrument(pf, "ACME", asset_class="share")
+    add_trade(pf, acme, "2025-08-01", "buy", 100, "10.00")
+    add_dividend(pf, acme, "2025-12-01", "30.00")           # AUD needs no rate (#6)
+
+    report = fyreport.fy_report(pf, 2026)
+
+    assert {r.instrument.ticker: r.cash for r in report["income"]} == {
+        "ACME": Decimal("30.00"), "NOVA": None}
+    assert (report["income_cash"], report["withheld"]) == (Decimal("30.00"), ["NOVA"])
+    assert [r.grossed_up for r in report["income"] if r.cash is None] == [None]
+
+
+@freeze_time("2026-07-15")
+def test_a_sale_whose_parcel_had_no_rate_still_names_its_holding(pf):
+    """Bought the year before with no rate, sold this year with one: the sale
+    is the only figure the gap reaches, and the page still names it."""
+    inst = _usd(pf)
+    add_trade(pf, inst, "2025-05-01", "buy", 10, "10.00")
+    add_trade(pf, inst, "2025-09-01", "sell", 10, "12.00", fx_rate="1.60")
+
+    assert fyreport.fy_report(pf, 2026)["withheld"] == ["NOVA"]
+
+
+@freeze_time("2026-07-15")
+def test_a_purchase_with_no_rate_leaves_the_amount_invested_unknown(pf):
+    """Each AUD figure the purchase feeds is blank or short of it, and the
+    holding is named. The year's activity still counts the trade."""
+    inst = _usd(pf)
+    add_trade(pf, inst, "2025-08-01", "buy", 10, "10.00", fx_rate="1.50")
+    add_trade(pf, inst, "2025-08-02", "buy", 10, "10.00")
+    add_prices(pf, inst, [("2025-12-31", "11.00")])
+
+    report = fyreport.fy_report(pf, 2026)
+
+    [row] = report["snapshot"]
+    assert (row.invested_cum, row.gain_aud, row.gain_pct, row.percentage_applies) == (
+        None, None, None, True)                      # unknown, not "nothing invested"
+    assert (report["activity"].buys, report["activity"].invested) == (2, Decimal("150.00"))
+    assert (report["total_invested"], report["withheld"]) == (0, ["NOVA"])
+
+
+@freeze_time("2028-07-15")
+@pytest.mark.parametrize("bought, sold, invested, proceeds", [
+    (None, "1.60", Decimal("0"), Decimal("192.00")),
+    ("1.50", None, Decimal("150.00"), Decimal("0")),
+], ids=["rateless-purchase", "rateless-sale"])
+def test_a_year_without_a_cgt_schedule_still_names_a_rateless_trade(pf, bought, sold,
+                                                                     invested, proceeds):
+    """From FY2028 the schedule is refused (decisions.md #26), so it names
+    nobody. Bought and sold inside the year, the holding has no snapshot row
+    either: the year's activity is the only figure the gap reaches."""
+    inst = _usd(pf)
+    add_trade(pf, inst, "2027-08-01", "buy", 10, "10.00", fx_rate=bought)
+    add_trade(pf, inst, "2027-09-01", "sell", 10, "12.00", fx_rate=sold)
+
+    report = fyreport.fy_report(pf, 2028)
+
+    assert report["cgt"].regime_warning and report["snapshot"] == [], "the premise"
+    assert (report["activity"].invested, report["activity"].proceeds) == (invested, proceeds)
+    assert report["withheld"] == ["NOVA"]
+
+
+def test_without_an_fx_book_aud_needs_no_rate_and_a_foreign_row_is_withheld(pf):
+    """The direct call, as a test makes it: only the rates on the rows are
+    known, and an AUD row needs none (decisions.md #6)."""
+    aud = make_instrument(pf, "ACME", asset_class="share")
+    add_trade(pf, aud, "2025-08-01", "buy", 10, "10.00", fx_rate=None)
+    add_trade(pf, aud, "2025-09-01", "sell", 10, "12.00", fx_rate=None)
+    usd = _usd(pf)
+    add_trade(pf, usd, "2025-08-01", "buy", 10, "10.00")
+    add_trade(pf, usd, "2025-09-01", "sell", 10, "12.00")
+
+    [aud_sale] = fyreport.instrument_disposals(aud)
+    [usd_sale] = fyreport.instrument_disposals(usd)
+
+    assert (aud_sale.known, aud_sale.gain) == (True, Decimal("20.00"))
+    assert (usd_sale.known, usd_sale.proceeds) == (False, None)
+
+
+def test_a_sale_spanning_a_rated_parcel_and_a_rateless_one_is_withheld(pf):
+    inst = _usd(pf)
+    add_trade(pf, inst, "2025-08-01", "buy", 10, "10.00", fx_rate="1.50")
+    add_trade(pf, inst, "2025-08-02", "buy", 10, "10.00")
+    add_trade(pf, inst, "2025-09-01", "sell", 20, "12.00", fx_rate="1.60")
+
+    [sale] = fyreport.fy_cgt(pf, 2026).disposals
+
+    assert (sale.known, sale.cost_base, sale.gain) == (False, None, None)
+    assert [p.cost_base for p in sale.parcels] == [Decimal("150.00"), None]
+
+
+def test_each_holding_withheld_is_named_once_in_ticker_order(pf):
+    for ticker in ("ZETA", "NOVA"):
+        inst = _usd(pf, ticker)
+        add_trade(pf, inst, "2025-08-01", "buy", 20, "10.00")
+        add_trade(pf, inst, "2025-09-01", "sell", 10, "12.00")
+        add_trade(pf, inst, "2025-10-01", "sell", 10, "12.00")
+
+    assert fyreport.fy_cgt(pf, 2026).withheld == ["NOVA", "ZETA"]
+
+
+@freeze_time("2026-07-15")
+def test_income_reads_in_ticker_order_whatever_order_the_holdings_came_in(pf):
+    for ticker in ("ZETA", "ALFA"):
+        inst = make_instrument(pf, ticker, asset_class="share")
+        add_trade(pf, inst, "2025-08-01", "buy", 10, "10.00")
+        add_dividend(pf, inst, "2025-12-01", "5.00")
+
+    assert [r.instrument.ticker for r in fyreport.fy_report(pf, 2026)["income"]] == [
+        "ALFA", "ZETA"]
+
+
+@freeze_time("2026-07-15")
+def test_a_priced_holding_with_no_rate_to_value_it_is_named(pf):
+    """Its purchases carried their rates; today's value needs one too."""
+    inst = _usd(pf)
+    add_trade(pf, inst, "2025-08-01", "buy", 10, "10.00", fx_rate="1.50")
+    add_prices(pf, inst, [("2025-12-31", "11.00")])
+
+    report = fyreport.fy_report(pf, 2026)
+
+    assert (report["snapshot"][0].value_aud, report["withheld"]) == (None, ["NOVA"])

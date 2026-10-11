@@ -153,6 +153,7 @@ def test_the_endpoint_answers_with_the_price_and_the_date_it_is_for(
     make_login(client, session_factory)
     with session_factory() as s:
         inst = fac.make_instrument(s, "ACME", asset_class="share")
+        fac.hold(s, inst)
         fac.add_prices(s, inst, [("2026-09-18", "4.00")])
         s.commit()
         instrument_id = inst.id
@@ -173,6 +174,7 @@ def test_the_endpoint_answers_with_fx_for_a_foreign_instrument(
     with session_factory() as s:
         inst = fac.make_instrument(s, "VERTEX", exchange="NASDAQ",
                                    asset_class="share", currency="USD")
+        fac.hold(s, inst)
         fac.add_prices(s, inst, [("2026-09-18", "10.00")])
         fac.add_fx(s, "USDAUD", "2026-09-18", "1.50")
         s.commit()
@@ -192,6 +194,7 @@ def test_the_endpoint_says_nothing_rather_than_guessing(client, session_factory)
     make_login(client, session_factory)
     with session_factory() as s:
         inst = fac.make_instrument(s, "ACME", asset_class="share")
+        fac.hold(s, inst)
         fac.add_prices(s, inst, [("2026-09-18", "4.00")])
         s.commit()
         instrument_id = inst.id
@@ -371,6 +374,7 @@ def test_a_free_parcel_can_be_recorded(client, session_factory):
     with session_factory() as s:
         bind_to_only_portfolio(s)
         inst = fac.make_instrument(s, "ACME", asset_class="share")
+        fac.hold(s, inst)
         s.commit()
         instrument_id = inst.id
 

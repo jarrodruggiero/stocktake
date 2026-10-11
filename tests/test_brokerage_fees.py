@@ -122,6 +122,23 @@ def test_a_minimum_is_what_the_form_starts_at(owner, session_factory):
     assert _field(owner.get("/trade/new", headers=HTML).text)["value"] == "14.95"
 
 
+@pytest.mark.parametrize("fees", [
+    {"brokerage_percent": "0.1"},                                    # no minimum
+    {"brokerage_flat": "0", "brokerage_percent": "0", "brokerage_minimum": "0"},   # free
+])
+def test_a_fee_that_comes_to_nothing_on_nothing_still_opens_the_forms(owner, session_factory,
+                                                                     fees):
+    """The form starts at the fee on nothing. A percentage with no minimum,
+    or a broker that charges nothing, comes to zero, and the sum handed back
+    the plain 0 `max` found first: the trade form and the plan form raised."""
+    _settings(owner, session_factory, **fees)
+
+    for path in ("/trade/new", "/schedule?edit=1"):
+        page = owner.get(path, headers=HTML)
+        assert page.status_code == 200, path
+    assert _field(owner.get("/trade/new", headers=HTML).text)["value"] == "0.00"
+
+
 def test_without_a_fee_the_last_trade_still_decides(owner, session_factory):
     _trade(session_factory, "ACME", "AUD", "9.50")
     assert _field(owner.get("/trade/new", headers=HTML).text)["value"] == "9.50"
@@ -184,3 +201,27 @@ def test_a_planned_buy_keeps_the_plans_brokerage(owner, session_factory):
         _planned(session_factory, brokerage="9.50")
         field = _field(owner.get("/trade/new", headers=HTML).text)
     assert field == {"value": "9.5", "fees": None}
+
+
+# The server only ever asked for the fee on nothing, the form's starting
+# figure; the percentage is summed in tradeform.js as units and price are
+# typed. So the sum itself went unchecked here: a percentage of a thousand
+# dollars read as a thousand percent, or the minimum's blank read as a dollar,
+# passed. Each shape the module's docstring names, on both sides of a minimum.
+@pytest.mark.parametrize(("fee", "value", "due"), [
+    ({"flat": "9.50"}, "1000", "9.50"),
+    ({"flat": "5", "percent": "0.1"}, "10000", "15.00"),
+    ({"percent": "0.1"}, "12345", "12.35"),                 # 12.345, half up
+    ({"percent": "0.1"}, "12335", "12.34"),                 # 12.335, half up too
+    ({"percent": "0.11", "minimum": "14.95"}, "1000", "14.95"),
+    ({"percent": "0.11", "minimum": "14.95"}, "20000", "22.00"),
+    ({"percent": "0.1"}, "100", "0.10"),                    # no minimum is no minimum
+    ({"flat": "0", "percent": "0", "minimum": "0"}, "5000", "0.00"),
+    ({}, "5000", "0.00"),
+])
+def test_the_fee_is_flat_plus_the_percentage_or_the_minimum(fee, value, due):
+    from app import brokerage
+
+    charged = brokerage.Fee(**{k: Decimal(v) for k, v in fee.items()}).on(Decimal(value))
+
+    assert str(charged) == due

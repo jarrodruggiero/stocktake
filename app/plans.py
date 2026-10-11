@@ -41,6 +41,7 @@ class UpcomingBuy:
     entry_id: int | None
     instrument_id: int | None
     amount: Decimal | None = None
+    exchange: str | None = None
 
     @property
     def is_due(self) -> bool:
@@ -83,13 +84,14 @@ def suggested_rotation(session: Session) -> list[str]:
     person's holdings as its default — and could not be changed without a
     redeploy.
     """
-    from .queries import all_holdings, split_positions
+    from .queries import all_holdings, ambiguous_tickers, listing_ref, split_positions
 
     open_positions, _closed = split_positions(all_holdings(session))
     ordered = sorted(
         open_positions, key=lambda h: (h.instrument.asset_class, h.instrument.ticker)
     )
-    return [h.instrument.ticker for h in ordered]
+    twice = ambiguous_tickers(session)
+    return [listing_ref(h.instrument.ticker, h.instrument.exchange, twice) for h in ordered]
 
 
 def history(session: Session) -> list[PlannedPurchase]:
@@ -206,6 +208,7 @@ def schedule(session: Session, upcoming: int = 3) -> dict:
             entry_id=plan.entries[(position + i) % size].id,
             instrument_id=plan.entries[(position + i) % size].instrument_id,
             amount=plan.amount,
+            exchange=plan.entries[(position + i) % size].instrument.exchange,
         )
         for i, (due, ticker) in enumerate(dates)
     ]
@@ -224,32 +227,32 @@ def next_buy(session: Session) -> UpcomingBuy | None:
 def set_entries(session: Session, plan: InvestmentPlan, instrument_ids: list[int]) -> None:
     """Replace the rotation with this exact ordered list.
 
-    A slot keeps its row (and therefore its id) when the instrument at that
-    position is unchanged, so history recorded against it still resolves. The
-    rest are created/deleted.
+    A slot keeps its row (and therefore its id) while its instrument stays in
+    the rotation, wherever it moves to, so history recorded against it still
+    resolves and the next buy is still the one after the last. An instrument in
+    the rotation twice keeps its rows in order. The rest are created/deleted.
     """
-    before = {e.position: e for e in plan.entries}
     # (plan_id, position) is unique and checked per-statement, so park every row
     # beyond the new range before renumbering into it.
     offset = 1000 + max((e.position for e in plan.entries), default=0)
-    for entry in plan.entries:
+    unused: dict[int, list[InvestmentPlanEntry]] = {}
+    for entry in sorted(plan.entries, key=lambda e: e.position):
         entry.position += offset
+        unused.setdefault(entry.instrument_id, []).append(entry)
     session.flush()
 
-    keep: set[int] = set()
     for position, instrument_id in enumerate(instrument_ids):
-        reusable = before.get(position)
-        if reusable is not None and reusable.instrument_id == instrument_id:
-            reusable.position = position
-            keep.add(id(reusable))
+        rows = unused.get(instrument_id)
+        if rows:
+            rows.pop(0).position = position
         else:
             session.add(
                 InvestmentPlanEntry(
                     plan_id=plan.id, position=position, instrument_id=instrument_id
                 )
             )
-    for entry in list(before.values()):
-        if id(entry) not in keep:
+    for rows in unused.values():
+        for entry in rows:
             session.delete(entry)
     session.flush()
     session.expire(plan, ["entries"])

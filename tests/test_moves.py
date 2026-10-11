@@ -398,3 +398,87 @@ def test_the_instrument_is_not_touched(home):
     db.flush()
 
     assert db.get(Trade, buy.id).instrument_id == before
+
+
+# --------------------------------------------------------------------------- #
+# With another holding in the same portfolio
+# --------------------------------------------------------------------------- #
+# Every test above holds ACME alone, so a query that dropped its instrument
+# filter saw only ACME anyway. A mutation run took that filter out of the rows
+# offered, both timeline checks and the move itself, and nothing failed. Here
+# WIDGET sits beside it, holding what mixing the two up would get wrong.
+
+@pytest.fixture
+def beside(home):
+    db, _user, _source, _target, acme = home
+    widget = fac.make_instrument(db, "WIDGET", asset_class="share")
+    fac.add_trade(db, widget, "2026-02-01", "buy", 500, "1.00")
+    fac.add_dividend(db, widget, "2026-05-01", "30.00")
+    fac.add_drp(db, widget, "2026-06-01", "6.00", 5, "1.20")
+    db.flush()
+    return home, widget
+
+
+def test_another_holdings_rows_are_not_offered(beside):
+    (db, _user, _source, _target, acme), widget = beside
+    buy = fac.add_trade(db, acme, "2026-01-05", "buy", 100, "4.00")
+    cash = fac.add_dividend(db, acme, "2026-07-01", "25.00")
+    db.flush()
+
+    offered = moves.movable_rows(db, acme.id)
+
+    assert {(r.is_trade, r.row_id) for r in offered} == {(True, buy.id), (False, cash.id)}
+
+
+def test_another_holdings_reinvestment_is_not_pulled_in(beside):
+    (db, _user, _source, _target, acme), widget = beside
+    buy = fac.add_trade(db, acme, "2026-01-05", "buy", 100, "4.00")
+    db.flush()
+
+    chosen = moves.expand(db, acme.id, trades={buy.id}, dividends=set())
+
+    assert (chosen.trades, chosen.dividends) == ({buy.id}, set())
+
+
+def test_another_holdings_units_do_not_cover_a_stranded_sell(beside):
+    (db, _user, _source, _target, acme), _widget = beside
+    buy = fac.add_trade(db, acme, "2026-01-05", "buy", 100, "4.00")
+    fac.add_trade(db, acme, "2026-03-02", "sell", 100, "5.00")
+    db.flush()
+
+    assert moves.source_problem(db, acme.id, trades={buy.id}) is not None
+
+
+def test_the_targets_other_holdings_do_not_absorb_a_sell(beside):
+    (db, user, source, target, acme), widget = beside
+    fac.add_trade(db, acme, "2026-01-05", "buy", 100, "4.00")
+    sell = fac.add_trade(db, acme, "2026-03-02", "sell", 40, "5.00")
+    tenancy.bind(db, target.id, user.id)
+    fac.add_trade(db, widget, "2026-01-02", "buy", 500, "1.00")
+    tenancy.bind(db, source.id, user.id)
+    db.flush()
+
+    problem = moves.target_problem(db, acme.id, target.id, user_id=user.id,
+                                   trades={sell.id}, dividends=set())
+
+    assert problem is not None and "ACME" in problem
+
+
+def test_the_move_takes_only_what_was_chosen(beside):
+    (db, user, source, target, acme), widget = beside
+    from app.models import Dividend
+
+    buy = fac.add_trade(db, acme, "2026-01-05", "buy", 100, "4.00")
+    cash = fac.add_dividend(db, acme, "2026-07-01", "25.00")
+    db.flush()
+
+    moves.perform(db, target.id, user_id=user.id, trades={buy.id}, dividends={cash.id})
+    db.flush()
+
+    tenancy.allow_unscoped(db)
+    moved = {(type(r).__name__, r.instrument_id) for model in (Trade, Dividend)
+             for r in db.query(model).filter(model.portfolio_id == target.id)}
+    stayed = {(type(r).__name__, r.instrument_id) for model in (Trade, Dividend)
+              for r in db.query(model).filter(model.portfolio_id == source.id)}
+    assert moved == {("Trade", acme.id), ("Dividend", acme.id)}
+    assert stayed == {("Trade", widget.id), ("Dividend", widget.id)}

@@ -18,7 +18,7 @@ import factories as fac
 import fixture_portfolio as ref
 from app import auth as auth_mod
 from app import queries, tenancy
-from app.models import ApiKey, Dividend, Trade
+from app.models import ApiKey, Dividend, Instrument, Trade
 
 READ_ENDPOINTS = ["/api/v1/portfolio", "/api/v1/holdings", "/api/v1/trades",
                   "/api/v1/dividends", "/api/v1/schedule"]
@@ -534,6 +534,25 @@ def test_the_fy_endpoint_agrees_with_the_report(client, session_factory, furnish
         assert fyreport.fy_cgt(s, ref.FY2024).net_capital_gain == ref.FY2024_NET_CAPITAL_GAIN
 
 
+@freeze_time(ref.TODAY)
+def test_the_fy_endpoint_names_what_its_totals_leave_out(client, session_factory, furnished):
+    """A sale in a currency with no exchange rate anywhere stays out of the
+    gain and is named, rather than counted as if a pound were a dollar."""
+    portfolio_id, user_id = furnished
+    with bound(session_factory, portfolio_id, user_id) as s:
+        nova = fac.make_instrument(s, "NOVA", exchange="LSE", currency="GBP",
+                                   asset_class="share")
+        fac.add_trade(s, nova, "2023-08-01", "buy", 100, "10.00")
+        fac.add_trade(s, nova, "2023-09-01", "sell", 100, "12.00")
+        s.commit()
+    raw = issue_key(session_factory, portfolio_id, created_by=user_id)
+
+    payload = client.get(f"/api/v1/fy/{ref.FY2024}", headers=bearer(raw)).json()
+
+    assert payload["withheld"] == ["NOVA"]
+    assert Decimal(str(payload["cgt"]["net_capital_gain"])) == ref.FY2024_NET_CAPITAL_GAIN
+
+
 @pytest.mark.parametrize("year", [1999, 2101])
 def test_a_year_outside_the_supported_range_is_rejected(client, session_factory, furnished,
                                                         year):
@@ -571,8 +590,8 @@ def test_the_plan_endpoint_returns_the_rotation_and_what_is_next(client, session
     assert payload["plan"]["rotation"] == ["ALPHA", "BETAX"]
     assert payload["plan"]["interval_days"] == 28
     # The anchor date IS the first buy, so that is what comes next.
-    assert payload["upcoming"][0] == {"ticker": "ALPHA", "due_date": "2026-07-06",
-                                      "amount": 500.0}
+    assert payload["upcoming"][0] == {"ticker": "ALPHA", "exchange": "ASX",
+                                      "due_date": "2026-07-06", "amount": 500.0}
 
 
 # --------------------------------------------------------------------------- #
@@ -677,3 +696,105 @@ def test_a_dividend_with_a_figure_too_big_for_its_column_is_refused(
     resp = client.post("/api/v1/dividends", json=body, headers=bearer(raw))
 
     assert resp.status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# The values a client really sends
+# --------------------------------------------------------------------------- #
+# A mutation run found these unguarded: the refusal of an over-sale counted
+# every holding's units (the test sold more than the whole portfolio held), a
+# rate of 0.65 or a 50-cent dividend could be refused, an AUD row's rate and
+# a US row's could be anything, and a trade dated today could be turned away.
+
+@freeze_time(ref.TODAY)
+def test_a_sale_is_held_to_its_own_holdings_units(client, session_factory, furnished):
+    """GAMMA holds 100. 150 is more than that and less than the portfolio holds
+    across every instrument, which is the case a mixed-up count would allow."""
+    portfolio_id, user_id = furnished
+    raw = issue_key(session_factory, portfolio_id, scopes="read,write", created_by=user_id)
+
+    resp = client.post("/api/v1/trades", headers=bearer(raw), json={
+        "ticker": "GAMMA", "type": "sell", "date": "2026-07-01", "units": "150",
+        "unit_price": "5.00"})
+
+    assert resp.status_code == 409
+    with bound(session_factory, portfolio_id) as s:
+        others = sum(t.quantity if t.type != "sell" else -t.quantity
+                     for t in s.scalars(select(Trade)) if t.instrument.ticker != "GAMMA")
+        assert others > 150, "the premise: the other holdings could have covered it"
+
+
+@freeze_time(ref.TODAY)
+@pytest.mark.parametrize("ticker, rate, stored", [("NOVA", "0.65", Decimal("0.65")),
+                                                  ("NOVA", None, None),
+                                                  ("ALPHA", "0.65", Decimal(1))])
+def test_a_trades_rate_is_the_one_sent_and_an_aud_one_is_1(client, session_factory, furnished,
+                                                           ticker, rate, stored):
+    portfolio_id, user_id = furnished
+    raw = issue_key(session_factory, portfolio_id, scopes="read,write", created_by=user_id)
+    with bound(session_factory, portfolio_id, user_id) as s:
+        if s.scalar(select(Instrument).where(Instrument.ticker == "NOVA")) is None:
+            fac.hold(s, fac.make_instrument(s, "NOVA", exchange="NASDAQ", currency="USD"))
+            s.commit()
+
+    body = {"ticker": ticker, "type": "buy", "date": str(ref.TODAY), "units": "1",
+            "unit_price": "10.00", "brokerage": "0"}
+    if rate:
+        body["fx_rate"] = rate
+    resp = client.post("/api/v1/trades", headers=bearer(raw), json=body)
+
+    assert resp.status_code == 201, resp.text
+    with bound(session_factory, portfolio_id) as s:
+        latest = s.scalars(select(Trade).order_by(Trade.id.desc())).first()
+        assert (latest.fx_rate, latest.date.isoformat()) == (stored, str(ref.TODAY))
+
+
+@freeze_time(ref.TODAY)
+def test_a_small_dividend_with_no_franking_and_a_rate_is_accepted(client, session_factory,
+                                                                  furnished):
+    portfolio_id, user_id = furnished
+    raw = issue_key(session_factory, portfolio_id, scopes="read,write", created_by=user_id)
+    with bound(session_factory, portfolio_id, user_id) as s:
+        fac.hold(s, fac.make_instrument(s, "NOVA", exchange="NASDAQ", currency="USD"))
+        s.commit()
+
+    resp = client.post("/api/v1/dividends", headers=bearer(raw), json={
+        "ticker": "NOVA", "date": str(ref.TODAY), "cash_amount": "0.50",
+        "franking_credits": "0", "fx_rate": "0.65"})
+
+    assert resp.status_code == 201, resp.text
+    with bound(session_factory, portfolio_id) as s:
+        row = s.scalars(select(Dividend).order_by(Dividend.id.desc())).first()
+        assert (row.cash_amount, row.franking_credits, row.fx_rate, row.note) == (
+            Decimal("0.50"), Decimal(0), Decimal("0.65"), "via API")
+
+
+def test_since_includes_its_own_day(client, session_factory, furnished):
+    portfolio_id, user_id = furnished
+    raw = issue_key(session_factory, portfolio_id, created_by=user_id)
+    with bound(session_factory, portfolio_id) as s:
+        first_trade = min(t.date for t in s.scalars(select(Trade))).isoformat()
+        first_dividend = min(d.date for d in s.scalars(select(Dividend))).isoformat()
+
+    trades = client.get("/api/v1/trades", params={"since": first_trade},
+                        headers=bearer(raw)).json()["trades"]
+    dividends = client.get("/api/v1/dividends", params={"since": first_dividend},
+                           headers=bearer(raw)).json()["dividends"]
+
+    assert first_trade in {t["date"] for t in trades}
+    assert first_dividend in {d["date"] for d in dividends}
+
+
+def test_the_fy_endpoints_grossed_up_income_is_cash_plus_franking(client, session_factory,
+                                                                  furnished):
+    portfolio_id, user_id = furnished
+    raw = issue_key(session_factory, portfolio_id, created_by=user_id)
+    with bound(session_factory, portfolio_id, user_id) as s:
+        alpha = s.scalar(select(Instrument).where(Instrument.ticker == "ALPHA"))
+        fac.add_dividend(s, alpha, "2024-03-15", "40.00", franking_credits="17.14")
+        s.commit()
+
+    income = client.get(f"/api/v1/fy/{ref.FY2024}", headers=bearer(raw)).json()["income"]
+
+    assert income["franking_credits"] > 0, "the premise: there is franking to add"
+    assert income["grossed_up"] == pytest.approx(income["cash"] + income["franking_credits"])

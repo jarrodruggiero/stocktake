@@ -13,6 +13,7 @@ and opens the list of them, with Delete all trades, instead of removing.
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
@@ -217,3 +218,50 @@ def test_whoever_is_signed_in_is_a_writer_here(session_factory, writer):
     """The fixture's premise: the person signed in is not an instance admin."""
     with session_factory() as s:
         assert s.scalar(select(User).where(User.email == "user@example.test")).is_admin is False
+
+
+def test_a_new_currency_forgets_the_rates_recorded_under_the_old_one(
+        client, session_factory, writer, app_module, monkeypatch):
+    """Saved as AUD by mistake, a US stock's trades and distributions carry the
+    rate an AUD row gets, 1. Corrected to USD, that 1 would book US dollars as
+    Australian ones (decisions.md #5), so the rates go and the feed fills them
+    from the stored series. Back to AUD, they are 1 again."""
+    from app.models import Dividend, Trade
+
+    kicked = []
+    monkeypatch.setattr(app_module, "_kick_feed", lambda: kicked.append(1) or False)
+    with session_factory() as s:
+        zulu = s.get(Instrument, writer["zulu"])
+        mine = s.scalar(select(fac.Portfolio))
+        fac.add_trade(s, zulu, "2026-01-05", "buy", 10, "5.00", portfolio_id=mine.id)
+        fac.add_dividend(s, zulu, "2026-02-05", "1.00", portfolio_id=mine.id)
+        s.commit()
+
+    def rates():
+        with session_factory() as s:
+            tenancy.allow_unscoped(s)
+            return [r.fx_rate for model in (Trade, Dividend)
+                    for r in s.scalars(select(model).where(model.instrument_id == writer["zulu"]))]
+
+    assert rates() == [Decimal(1), Decimal(1)]
+    _save(client, session_factory, writer["zulu"], currency="USD", yahoo_symbol="ZULU.AX")
+    assert rates() == [None, None]
+    assert kicked == [1], "the feed fills the trade's rate from the stored series"
+    _save(client, session_factory, writer["zulu"], currency="AUD", yahoo_symbol="ZULU.AX")
+    assert rates() == [Decimal(1), Decimal(1)] and kicked == [1], "AUD needs no rate"
+    _save(client, session_factory, writer["zulu"], currency="AUD", yahoo_symbol="ZULU.AX")
+    assert rates() == [Decimal(1), Decimal(1)] and kicked == [1]
+
+
+def test_an_admins_new_currency_reaches_every_portfolios_rates(client, session_factory, admin):
+    """ACME is shared, and its rows in the stranger's portfolio were recorded
+    under the same old currency as mine."""
+    from app.models import Trade
+
+    _save(client, session_factory, admin["acme"], name="Acme", currency="USD",
+          yahoo_symbol="ACME.AX")
+    with session_factory() as s:
+        tenancy.allow_unscoped(s)
+        rates = [t.fx_rate for t in s.scalars(select(Trade).where(
+            Trade.instrument_id == admin["acme"]))]
+    assert rates == [None, None]

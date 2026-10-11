@@ -161,14 +161,12 @@ def _touches_scoped(state) -> bool:
         if _mentions(element, scoped_tables):
             return True
     # Eager loads name their target in the statement's _with_options; simplest
-    # reliable signal is the ORM path they walk.
+    # reliable signal is the ORM path they walk, every step of it, so a scoped
+    # model in the middle of a nested load counts too.
     for opt in getattr(state.statement, "_with_options", ()):
         for attr in getattr(opt, "path", ()) or ():
             if getattr(getattr(attr, "entity", None), "class_", None) in scoped:
                 return True
-        target = getattr(getattr(opt, "path", None), "entity", None)
-        if getattr(target, "class_", None) in scoped:
-            return True
     return False
 
 

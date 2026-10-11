@@ -11,7 +11,11 @@ installed, reused, or sent as a pull request unchanged.
 
 from __future__ import annotations
 
+import html
+
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 
 from app import brokerdesign
 
@@ -130,6 +134,20 @@ def test_a_column_is_not_used_for_two_fields():
     assert len(used) == len(set(used))
 
 
+def test_a_column_two_fields_could_claim_goes_to_the_first():
+    """The loose pass offers "Security Type" to the action ("type") and then
+    to the ticker ("security"). The action has it; the ticker gets nothing
+    rather than the same column."""
+    guess = brokerdesign.guess(["Date", "Security Type", "Units", "Price"])
+
+    assert (guess["action"], guess["ticker"]) == ("Security Type", None)
+
+
+def test_the_words_that_rule_out_a_price_rule_out_only_the_price():
+    assert brokerdesign.guess(["Date", "Type", "Code", "Units", "Price",
+                               "Brokerage cost"])["brokerage"] == "Brokerage cost"
+
+
 def test_total_value_is_never_guessed_as_the_unit_price():
     """The single most damaging mis-guess available: a "Value" or "Consideration"
     column is quantity times price, and reading it as the price overstates every
@@ -226,6 +244,39 @@ def test_the_yaml_round_trips_into_a_working_format():
     assert result.errors == []
     assert [c.ticker for c in result.candidates] == ["ALPHA", "BETAX"]
     assert str(result.candidates[0].unit_price) == "89.50"
+
+
+# The round trip above uses one broker's headers. The file is written by
+# hand, line by line, so a header or a name YAML gives a meaning to came back
+# as something else: "Trade #" lost everything after the "#", and a name or a
+# header with ": " in it made a file that would not load at all.
+AWKWARD = ["Trade #", "Price: AUD", "Units #2", "- Units", "#", ":", "? Code", "Qty, units",
+           "'Price'", '"Price"', "[Code]", "{Code}", "&Code", "*Code", "!Code", "|", ">",
+           "%Fee", "@Code", "`Code", "Yes", "off", "null", "~", "12:30", "1e3", "0x1F",
+           "Code ", "Price (A$)", "Brokerage (incl GST)", "Trade Date/Time"]
+written = st.one_of(st.sampled_from(AWKWARD), st.text(
+    st.characters(blacklist_categories=("Cs", "Cc", "Zl", "Zp")), min_size=1, max_size=12)
+    .map(str.strip).filter(bool))
+
+
+@example(name="Broker: Home", headers=["Trade #", "Price: AUD", "[Code]", "null", "1e3", "#"],
+         words=["Buy #", "- Sell"])
+@given(name=written, headers=st.lists(written, min_size=6, max_size=6, unique=True),
+       words=st.lists(written, min_size=1, max_size=3, unique=True))
+def test_any_mapping_reads_back_as_it_was_made(name, headers, words):
+    from ruamel.yaml import YAML
+
+    columns = dict(zip(brokerdesign.FIELDS, headers))
+    actions = dict(zip(words, ["buy", "sell", "drp"]))
+    body = brokerdesign.broker_yaml(name=name, exchange="ASX", currency="AUD",
+                                    date_format="%d/%m/%Y", columns=columns, actions=actions)
+
+    loaded = YAML(typ="safe").load(body)
+
+    assert loaded["name"] == name
+    assert loaded["columns"] == columns
+    assert loaded["actions"] == actions
+    assert loaded["date_format"] == "%d/%m/%Y"
 
 
 def test_the_yaml_explains_itself():
@@ -374,7 +425,7 @@ def test_the_generated_format_appears_on_the_page(client, session_factory):
         headers=HTML)
 
     assert "kind: mapped" in page.text
-    assert "ticker: Code" in page.text
+    assert 'ticker: "Code"' in html.unescape(page.text)
 
 
 def test_a_column_that_is_not_in_the_file_is_refused(client, session_factory):
@@ -660,3 +711,245 @@ def test_the_back_button_goes_where_you_came_from_not_somewhere_fixed():
         assert navigation.safe_path(hostile, "/imports-exports") == "/imports-exports"
     # Unnamed but valid: the fallback names it rather than the template guessing.
     assert navigation.back_label("/holding/ALPHA", "Imports") == "Imports"
+
+
+# --------------------------------------------------------------------------- #
+# The small helpers the page leans on, found unchecked by a mutation run
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize(("index", "letters"), [
+    (0, "A"), (25, "Z"), (26, "AA"), (27, "AB"), (51, "AZ"), (52, "BA"), (701, "ZZ"),
+    (702, "AAA")])
+def test_columns_are_lettered_as_a_spreadsheet_letters_them(index, letters):
+    assert brokerdesign.column_letter(index) == letters
+
+
+def test_the_action_words_on_offer_are_the_files_own_commonest_first():
+    """Blank cells say nothing; equal counts fall back to the alphabet, so the
+    order does not depend on which row came first."""
+    rows = [{"Side": w} for w in ["Sell", "Buy", " Buy ", "In", "", None, "Buy", "Sell", "Adj"]]
+
+    assert brokerdesign.action_words(rows, "Side") == ["Buy", "Sell", "Adj", "In"]
+    assert brokerdesign.action_words(rows, None) == []
+
+
+def test_blank_dates_are_neither_ambiguous_nor_a_format():
+    assert brokerdesign.dates_are_ambiguous(["", "  "]) is False
+    assert brokerdesign.guess_date_format(["", "  "]) is None
+    # A blank among real ones is passed over rather than failing every format.
+    assert brokerdesign.guess_date_format(["17/02/2026", " ", "05/01/2026"]) == "%d/%m/%Y"
+    assert brokerdesign.dates_are_ambiguous(["01/02/2026", ""]) is True
+
+
+def test_only_the_rows_left_out_for_want_of_a_price_are_counted():
+    skipped = ["line 3: DRP allotment with no price — import the dividend statement",
+               "line 5: action 'Transfer'",
+               "line 9: DRP allotment with no price — import the dividend statement"]
+
+    assert brokerdesign.drp_skipped(skipped) == 2
+    assert brokerdesign.drp_skipped([]) == 0
+
+
+def test_a_format_with_no_date_format_chosen_reads_day_first():
+    from ruamel.yaml import YAML
+
+    body = brokerdesign.broker_yaml(name="X", exchange="ASX", currency="AUD",
+                                    date_format=None, columns={})
+
+    assert YAML(typ="safe").load(body)["date_format"] == "%d/%m/%Y"
+
+
+# --------------------------------------------------------------------------- #
+# The page's second pass: what a mutation run found unchecked
+# --------------------------------------------------------------------------- #
+
+COLUMNS = {"col_date": "Trade Date", "col_action": "Buy/Sell", "col_ticker": "Code",
+           "col_units": "Units", "col_price": "Price", "col_brokerage": "Brokerage"}
+
+
+def _second_pass(client, session_factory, body=SELFWEALTH, **fields):
+    from ruamel.yaml import YAML
+
+    make_login(client, session_factory)
+    page = upload(client, session_factory, body=body, **{**COLUMNS, **fields})
+    assert page.status_code == 200
+    return page, YAML(typ="safe").load(rendered_yaml(page.text))
+
+
+def test_a_currency_is_taken_however_it_is_typed(client, session_factory):
+    _page, fmt = _second_pass(client, session_factory, exchange="NASDAQ", currency=" usd ")
+
+    assert fmt["currency"] == "USD"
+
+
+def test_the_action_words_mapped_on_the_page_reach_the_format(client, session_factory):
+    _page, fmt = _second_pass(client, session_factory, act_Buy="buy", act_Sell="sell",
+                              act_Adj="transfer")
+
+    assert fmt["actions"] == {"Buy": "buy", "Sell": "sell"}     # not a kind: left out
+
+
+def test_columns_chosen_with_spaces_around_them_are_found(client, session_factory):
+    _page, fmt = _second_pass(client, session_factory, col_date=" Trade Date ",
+                              col_ticker="  Code")
+
+    assert fmt["columns"]["date"] == "Trade Date" and fmt["columns"]["ticker"] == "Code"
+
+
+@pytest.mark.parametrize(("fields", "expected"), [
+    ({"custom_date": "on", "date_format_custom": " %d/%m/%y "}, "%d/%m/%y"),
+    ({"custom_date": "on", "date_format_custom": "  ", "date_format": "%Y-%m-%d"},
+     "%Y-%m-%d"),
+    ({}, "%d/%m/%Y"),                                   # guessed from the dates
+])
+def test_a_typed_date_format_wins_only_when_one_was_typed(client, session_factory, fields,
+                                                          expected):
+    _page, fmt = _second_pass(client, session_factory, **fields)
+
+    assert fmt["date_format"] == expected
+
+
+def test_dates_nothing_reads_fall_back_to_day_first(client, session_factory):
+    body = ("Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+            "sometime,Buy,ALPHA,100,89.50,9.50\n")
+
+    _page, fmt = _second_pass(client, session_factory, body=body)
+
+    assert fmt["date_format"] == "%d/%m/%Y"
+
+
+def test_a_blank_name_is_my_broker(client, session_factory):
+    _page, fmt = _second_pass(client, session_factory, name="")
+
+    assert fmt["name"] == "My broker"
+
+
+def test_the_page_says_how_many_drp_rows_were_left_out(client, session_factory):
+    body = SELFWEALTH + "20/02/2026,DRP,ALPHA,3,,0\n"
+
+    page, _fmt = _second_pass(client, session_factory, body=body, act_DRP="drp")
+
+    assert "1 DRP allotment(s) left out." in page.text
+
+
+def test_a_field_past_the_csv_modules_limit_is_a_sentence_on_the_page(client, session_factory):
+    """`read_csv` says it never raises; a 200 KiB field made it, and the
+    designer page with it."""
+    assert brokerdesign.read_csv("Date,Code\n" + "x" * 200_000 + ",A\n").problem == \
+        "This file could not be read as a CSV."
+
+    make_login(client, session_factory)
+    page = upload(client, session_factory, body="a" * 200_000)
+
+    assert page.status_code == 200
+    assert "This file could not be read as a CSV." in page.text
+
+
+def test_a_short_row_reads_as_blanks_not_none():
+    """A footer line one field long: its other columns are blank, not None,
+    which the page would print as "None" and the preview's parser choked on."""
+    read = brokerdesign.read_csv(SELFWEALTH + "End of report\n")
+
+    assert read.rows[-1] == {"Trade Date": "End of report", "Buy/Sell": "", "Code": "",
+                             "Units": "", "Price": "", "Brokerage": ""}
+
+
+# --------------------------------------------------------------------------- #
+# What the last mutation pass found the designer's route left unchecked
+# --------------------------------------------------------------------------- #
+
+SECOND_PASS = {"name": "SelfWealth", "exchange": "ASX", "currency": "AUD",
+               "date_format": "%d/%m/%Y", "col_date": "Trade Date", "col_action": "Buy/Sell",
+               "col_ticker": "Code", "col_units": "Units", "col_price": "Price",
+               "col_brokerage": "Brokerage"}
+
+
+def _confirmed(client, factory, **fields):
+    return client.post("/imports-exports/broker/design", headers=HTML, data={
+        "_csrf": session_csrf(factory), "text": SELFWEALTH, **SECOND_PASS, **fields})
+
+
+def test_a_column_chosen_on_the_second_pass_is_kept_not_guessed_again(client, session_factory):
+    """Price mapped to the brokerage column, wrongly but on purpose: the
+    guess is for the first pass only, and the person's choice stands."""
+    make_login(client, session_factory)
+
+    page = _confirmed(client, session_factory, col_price="Brokerage")
+
+    assert 'price: "Brokerage"' in rendered_yaml(page.text)
+
+
+def test_the_first_pass_reads_the_date_format_from_the_file(client, session_factory):
+    make_login(client, session_factory)
+
+    import re
+
+    page = upload(client, session_factory, body=SELFWEALTH.replace("05/01/2026", "2026-01-05")
+                  .replace("17/02/2026", "2026-02-17"))
+
+    picker = re.search(r'<select name="date_format".*?</select>', page.text, re.S).group(0)
+    assert re.findall(r'<option value="([^"]+)" selected>', picker) == ["%Y-%m-%d"]
+
+
+@pytest.mark.parametrize("name, written", [("SelfWealth", "SelfWealth"), ("", "My broker")])
+def test_the_format_carries_the_name_given_or_a_plain_one(client, session_factory, name,
+                                                          written):
+    make_login(client, session_factory)
+
+    page = _confirmed(client, session_factory, name=name)
+
+    assert f'name: "{written}"' in rendered_yaml(page.text)
+
+
+def test_an_empty_file_field_beside_the_text_keeps_the_text(client, session_factory):
+    """A browser sends the file input as an empty part when nothing was
+    chosen; the second pass carries the export in its text field."""
+    make_login(client, session_factory)
+
+    page = client.post("/imports-exports/broker/design", headers=HTML,
+                       data={"_csrf": session_csrf(session_factory), "text": SELFWEALTH,
+                             **SECOND_PASS},
+                       files={"file": ("", b"", "application/octet-stream")})
+
+    assert "2 trade(s) read" in page.text
+
+
+def test_the_first_pass_says_nothing_of_drp_rows_left_out(client, session_factory):
+    make_login(client, session_factory)
+
+    assert "DRP allotment(s) left out" not in upload(client, session_factory).text
+
+
+def test_the_designers_way_back_follows_where_you_came_from(client, session_factory):
+    """Reached by posting a file, so the origin travels in a hidden field."""
+    import re
+
+    make_login(client, session_factory)
+
+    page = _confirmed(client, session_factory, **{"return": "/holdings"}).text
+
+    back = re.search(r'class="backlink" href="([^"]*)">\s*<button[^>]*>\s*&larr;\s*([^<]*?)\s*<',
+                     page)
+    assert back.groups() == ("/holdings", "Holdings")
+
+
+def test_a_row_longer_than_its_header_is_read_and_padded_names_are_found():
+    """A trailing comma on every row gives each one a value with no column,
+    and a header written "Date, Code" names its columns with spaces."""
+    read = brokerdesign.read_csv("Trade Date, Code\n05/01/2026, ALPHA,\n")
+
+    assert read.headers == ["Trade Date", "Code"]
+    assert (read.rows[0]["Trade Date"], read.rows[0]["Code"]) == ("05/01/2026", " ALPHA")
+
+
+def test_dates_written_with_spaces_around_them_still_say_their_format():
+    assert brokerdesign.guess_date_format([" 05/01/2026", " 17/02/2026 "]) == "%d/%m/%Y"
+
+
+@pytest.mark.parametrize("values, ambiguous", [
+    (["01/02/2026", "  "], True),          # a blank cell settles nothing
+    (["13/01/2026", "14/02/2026"], False),  # only day-first reads these
+    (["01/13/2026", "02/14/2026"], False),  # only month-first does
+], ids=["blank-beside", "day-first-only", "month-first-only"])
+def test_dates_are_ambiguous_only_when_both_readings_take_them(values, ambiguous):
+    assert brokerdesign.dates_are_ambiguous(values) is ambiguous

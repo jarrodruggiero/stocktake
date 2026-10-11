@@ -178,8 +178,15 @@
     } else if (shelf === "x") {
       if (f.role !== "dimension") return;
       spec.x = key;
+      if (spec.split === key) spec.split = null;
     } else if (shelf === "split") {
       if (f.role !== "dimension") return;
+      // Only the splits a chart can draw (fields.validate): a holding
+      // attribute for a daily series, not the X axis again for holdings, and
+      // none for performance windows. The date on the split shelf of a daily
+      // series was accepted here and refused by the preview.
+      if (spec.grain === "periods" || key === spec.x) return;
+      if (spec.grain === "timeseries" && !splittable(f)) return;
       spec.split = key;
     }
     update();
@@ -220,6 +227,10 @@
 
   let timer = null;
   let chart = null;
+  /* Only the newest preview is drawn. Each one asks the server, and an
+     answer for a draft since changed could arrive after the one for the
+     draft on the shelves, or after the shelves stopped being drawable. */
+  let asked = 0;
 
   function update() {
     renderShelves();
@@ -230,6 +241,7 @@
   }
 
   function preview() {
+    const mine = ++asked;
     const msg = $("preview-msg");
     if (!spec.x || !spec.measures.length) {
       msg.textContent = "Pick an X axis and a measure.";
@@ -249,6 +261,7 @@
         return r.json();
       })
       .then((data) => {
+        if (mine !== asked) return;
         const n = data.labels.length;
         msg.textContent = `${n} row${n === 1 ? "" : "s"}`;
         if (chart) chart.destroy();
@@ -258,6 +271,7 @@
         chart = window.portfolioCharts.renderSpec("c-preview", "t-preview", data);
       })
       .catch((e) => {
+        if (mine !== asked) return;
         msg.textContent = e.message;
         if (chart) { chart.destroy(); chart = null; }
       });
@@ -271,8 +285,15 @@
     const t = templates[$("template").value];
     $("template-blurb").textContent = t ? "Loaded — change anything before saving." : "";
     if (!t) return;
-    Object.assign(spec, JSON.parse(JSON.stringify(t.spec)));
+    // The template whole, not merged into the draft: a split, a date or a
+    // filter left over from before broke "save it as-is to get the default
+    // back", and a split left on a grain that has none made a chart nothing
+    // could draw.
+    for (const key of Object.keys(spec)) delete spec[key];
+    Object.assign(spec, { split: null, since: null, filters: {}, bucket: "month" },
+                  JSON.parse(JSON.stringify(t.spec)));
     spec.measures = spec.measures || [];
+    $("since").value = "";
     window.__chartWidth = t.width;
     $("width").value = t.width;
     if (!$("chart-name").value.trim()) $("chart-name").value = t.name;

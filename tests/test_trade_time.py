@@ -122,3 +122,58 @@ def test_trades_sharing_a_day_and_a_time_keep_their_recorded_order(pf, acme):
     second = fac.add_trade(pf, acme, "2026-03-02", "buy", 50, "6.00")
 
     assert queries.balance_after([second, first]) == 150
+
+
+# --------------------------------------------------------------------------- #
+# Which clock a time is read on (markettime)
+# --------------------------------------------------------------------------- #
+# Nothing called `aware`, which stamps a trade's time on the holding page for
+# localtime.js to move to the viewer's clock, and the offset it attaches is the
+# whole point: an ASX trade in January and one in July are an hour apart.
+
+@pytest.mark.parametrize(("exchange", "day", "offset"), [
+    ("ASX", dt.date(2026, 1, 15), "+11:00"), ("ASX", dt.date(2026, 7, 15), "+10:00"),
+    ("NASDAQ", dt.date(2026, 1, 15), "-05:00"), ("NASDAQ", dt.date(2026, 7, 15), "-04:00"),
+    ("asx", dt.date(2026, 1, 15), "+11:00"),
+])
+def test_a_trade_is_stamped_with_its_own_days_offset(exchange, day, offset):
+    from app import markettime
+
+    stamp = markettime.aware(day, dt.time(14, 5), exchange)
+
+    assert stamp.isoformat() == f"{day.isoformat()}T14:05:00{offset}"
+
+
+def test_a_trade_with_no_time_is_stamped_at_the_open_and_crypto_not_at_all():
+    from app import markettime
+
+    assert markettime.aware(dt.date(2026, 1, 15), None, "ASX").time() == MARKET_OPEN
+    assert markettime.aware(dt.date(2026, 1, 15), dt.time(14, 5), "CRYPTO") is None
+    assert markettime.aware(dt.date(2026, 1, 15), dt.time(14, 5), "NOWHERE") is None
+
+
+def test_the_holding_page_stamps_a_trades_time_with_its_offset(client, session_factory):
+    from test_routes import bind_to_only_portfolio, make_login
+
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        acme = fac.make_instrument(s, "ACME")
+        fac.add_trade(s, acme, "2026-01-15", "buy", 10, "5.00", time=dt.time(14, 5))
+        fac.add_trade(s, acme, "2026-07-15", "buy", 10, "5.00", time=dt.time(14, 5))
+        s.commit()
+
+    page = client.get("/holding/ACME", headers={"accept": "text/html"}).text
+
+    assert 'datetime="2026-01-15T14:05:00+11:00"' in page
+    assert 'datetime="2026-07-15T14:05:00+10:00"' in page
+
+
+@pytest.mark.parametrize(("zone", "exchange"), [
+    ("", "ASX"), ("Not/AZone", "ASX"), ("Australia/Perth", "CRYPTO")])
+def test_a_conversion_it_cannot_make_leaves_the_date_and_time_alone(zone, exchange):
+    from app import markettime
+
+    when = (dt.date(2026, 1, 15), dt.time(23, 30))
+
+    assert markettime.to_market(when[1], when[0], zone, exchange) == when

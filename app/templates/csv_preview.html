@@ -78,7 +78,9 @@
 </table>
 </div>
 
-{% if uid and insertable %}
+{% if held_back %}
+<p class="note">Fix the marked rows to commit.</p>
+{% elif uid and insertable %}
 <form action="/imports-exports/csv/{{ uid }}/commit" method="post" class="commitbar">
   <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
   <button type="submit">Commit {{ insertable }} trade(s)</button>

@@ -10,8 +10,10 @@ from __future__ import annotations
 import bisect
 import datetime as dt
 import json
+from collections import Counter
 from dataclasses import dataclass, field
 from decimal import Decimal
+from urllib.parse import urlencode
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -495,15 +497,18 @@ class LedgerEvent:
 
 
 def ledger(
-    session: Session, ticker: str
+    session: Session, ticker: str, exchange: str | None = None
 ) -> tuple[Instrument, Holding, list[LedgerEvent]] | None:
-    inst = session.scalars(
-        select(Instrument)
-        .where(Instrument.ticker == ticker)
-        .options(selectinload(Instrument.trades), selectinload(Instrument.dividends))
-    ).first()
-    if inst is None:
+    # This portfolio's, not the catalogue's: a ticker is unique per exchange,
+    # so the catalogue can hold another portfolio's under the same one. Held
+    # here on two exchanges, the exchange says which; without it, the older.
+    found = held_as(session, ticker, exchange)
+    if not found:
         return None
+    inst = session.scalars(
+        select(Instrument).where(Instrument.id == found[0].id)
+        .options(selectinload(Instrument.trades), selectinload(Instrument.dividends))
+    ).one()
     pref = prefs_by_instrument(session).get(inst.id)
     latest = _latest_price(session, inst.id)
     latest_close = latest[0] if latest else None
@@ -809,11 +814,12 @@ def grouped_series(session: Session, by: str, filters: dict | None = None) -> di
 
     out = {label: blank() for label in labels}
 
+    # Per instrument, as in `portfolio_series`: a holding that cannot be valued
+    # on a day leaves that day's line whole, cost and proceeds and income,
+    # rather than charting as a loss of everything it cost.
     units: dict[int, Decimal] = {}
-    invested = {label: ZERO for label in labels}
-    proceeds = {label: ZERO for label in labels}
-    divs = {label: ZERO for label in labels}
-    prev_invested = {label: ZERO for label in labels}
+    spent: dict[int, Decimal] = {}
+    returned: dict[int, Decimal] = {}     # sale proceeds and cash income
     ei = 0
 
     for d in dates:
@@ -828,28 +834,34 @@ def grouped_series(session: Session, by: str, filters: dict | None = None) -> di
                     units[inst.id] = units.get(inst.id, ZERO) + obj.quantity
                     if obj.type == "buy":
                         spend = (obj.quantity * obj.unit_price + obj.brokerage) * fxr
-                        invested[label] += spend
+                        spent[inst.id] = spent.get(inst.id, ZERO) + spend
                         day_flow[label] += spend
                 else:
                     units[inst.id] = units.get(inst.id, ZERO) - obj.quantity
-                    proceeds[label] += (obj.quantity * obj.unit_price - obj.brokerage) * fxr
+                    returned[inst.id] = returned.get(inst.id, ZERO) + (
+                        obj.quantity * obj.unit_price - obj.brokerage) * fxr
             else:
-                divs[label] += obj.cash_amount * fxr
-                day_div[label] += obj.cash_amount * fxr
+                cash = obj.cash_amount * fxr
+                returned[inst.id] = returned.get(inst.id, ZERO) + cash
+                day_div[label] += cash
             ei += 1
 
         value = {label: ZERO for label in labels}
+        invested = {label: ZERO for label in labels}
+        back = {label: ZERO for label in labels}
         for inst in instruments:
             u = units.get(inst.id, ZERO)
-            if not u or inst.id not in steppers:
+            close = steppers[inst.id].at(d) if inst.id in steppers else None
+            if u and close is None:
                 continue
-            close = steppers[inst.id].at(d)
-            if close is None:
-                continue
-            value[_instrument_group(inst, by)] += u * close * fxbook.rate(inst.currency, d)
+            label = _instrument_group(inst, by)
+            invested[label] += spent.get(inst.id, ZERO)
+            back[label] += returned.get(inst.id, ZERO)
+            if u:
+                value[label] += u * close * fxbook.rate(inst.currency, d)
 
         for label in labels:
-            gain = value[label] + proceeds[label] + divs[label] - invested[label]
+            gain = value[label] + back[label] - invested[label]
             g = out[label]
             g["value"].append(round(float(value[label]), 2))
             g["invested"].append(round(float(invested[label]), 2))
@@ -859,9 +871,10 @@ def grouped_series(session: Session, by: str, filters: dict | None = None) -> di
             )
             g["flow_in"].append(round(float(day_flow[label]), 2))
             g["cash_div"].append(round(float(day_div[label]), 2))
-            prev_invested[label] = invested[label]
 
-    live = {k: v for k, v in out.items() if any(v["invested"]) or any(v["value"])}
+    # Income alone is history too: dropping its line left the split short of
+    # the total by exactly that income.
+    live = {k: v for k, v in out.items() if any(any(series) for series in v.values())}
     return {"dates": [d.isoformat() for d in dates], "groups": live, "excluded": excluded}
 
 
@@ -1238,6 +1251,52 @@ def portfolio_instrument_ids(session: Session) -> set[int]:
             | set(session.scalars(select(InvestmentPlanEntry.instrument_id)
                                   .where(InvestmentPlanEntry.plan_id.in_(
                                       list(session.scalars(plans)))))))
+
+
+def held_as(session: Session, ticker: str, exchange: str | None = None) -> list[Instrument]:
+    """This portfolio's instruments a ticker can mean, oldest first: one, none,
+    or the same code on more than one exchange. `ticker` may carry the
+    exchange itself, as TICKER:EXCHANGE — the form a list of tickers names it in."""
+    code, _, named = ticker.strip().upper().partition(":")
+    exchange = (exchange or named).strip().upper()
+    ids = portfolio_instrument_ids(session)
+    if not code or not ids:
+        return []
+    stmt = select(Instrument).where(Instrument.ticker == code, Instrument.id.in_(ids))
+    if exchange:
+        stmt = stmt.where(Instrument.exchange == exchange)
+    return list(session.scalars(stmt.order_by(Instrument.id)))
+
+
+def held_twice(found: list[Instrument]) -> str:
+    """Why a ticker alone is not enough here, and how to say which."""
+    code = found[0].ticker
+    return (f"{code} is held on {' and '.join(i.exchange for i in found)} — "
+            f"name the exchange, as {code}:{found[0].exchange}.")
+
+
+def ambiguous_tickers(session: Session) -> set[str]:
+    """Tickers this portfolio holds on more than one exchange."""
+    ids = portfolio_instrument_ids(session)
+    if not ids:
+        return set()
+    counts = Counter(session.scalars(select(Instrument.ticker).where(Instrument.id.in_(ids))))
+    return {ticker for ticker, n in counts.items() if n > 1}
+
+
+def listing_ref(ticker: str, exchange: str, ambiguous: set[str]) -> str:
+    """How a list of tickers names a holding: its ticker, or TICKER:EXCHANGE
+    when that ticker is held on more than one exchange."""
+    return f"{ticker}:{exchange}" if ticker in ambiguous else ticker
+
+
+def holding_path(ticker: str, exchange: str | None, ambiguous: set[str], **params) -> str:
+    """The holding page's address. The exchange goes in only when the ticker
+    is held on more than one, so every other address is what it always was."""
+    if exchange and ticker in ambiguous:
+        params = {"exchange": exchange, **params}
+    query = urlencode({k: v for k, v in params.items() if v}, safe="/")
+    return f"/holding/{ticker}" + (f"?{query}" if query else "")
 
 
 def portfolio_instruments(session: Session) -> list[Instrument]:

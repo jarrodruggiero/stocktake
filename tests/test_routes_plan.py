@@ -18,13 +18,15 @@ from sqlalchemy import select
 
 import factories as fac
 import fixture_portfolio as ref
-from app import chart_templates
+from app import chart_templates, tenancy
 from app.models import (
     InvestmentPlan,
     InvestmentPlanEntry,
     PlannedPurchase,
+    PortfolioMember,
     SavedChart,
     Trade,
+    User,
 )
 from test_routes import bind_to_only_portfolio, make_login, reading, session_csrf
 
@@ -538,6 +540,39 @@ def test_dragging_charts_into_a_new_order_persists_it(client, session_factory):
     assert reordered == list(reversed(ids))
 
 
+def test_a_viewer_builds_deletes_and_arranges_their_own_charts(client, session_factory):
+    """Charts are the person's, not the portfolio's, so a viewer keeping a page
+    of their own changes nothing of the portfolio. Another person's chart is
+    still not theirs to touch."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        member = s.scalar(select(PortfolioMember))
+        member.role = "viewer"
+        s.get(User, member.user_id).is_admin = False
+        other = fac.make_user(s, "other@example.test")
+        theirs = SavedChart(user_id=other.id, portfolio_id=member.portfolio_id, name="Theirs",
+                            spec={"grain": "positions", "measures": ["pos_value"],
+                                  "type": "table"}, position=0, width="half")
+        s.add(theirs)
+        s.commit()
+        theirs_id = theirs.id
+    csrf = {"X-CSRF-Token": session_csrf(session_factory)}
+    chart = {"name": "Mine", "width": "half",
+             "spec": {"grain": "positions", "x": "ticker", "measures": ["pos_value"],
+                      "type": "table"}}
+
+    saved = client.post("/charts/save", json=chart, headers=csrf)
+    touched = client.post("/charts/save", json={**chart, "id": theirs_id}, headers=csrf)
+    removed = client.post(f"/charts/{saved.json()['id']}/delete", headers={**csrf, **HTML},
+                          follow_redirects=False)
+
+    assert saved.status_code == 200 and touched.status_code == 404
+    assert removed.status_code == 303
+    with session_factory() as s:
+        tenancy.allow_unscoped(s)          # both people's charts, not only mine
+        assert [c.name for c in s.scalars(select(SavedChart))] == ["Theirs"]
+
+
 @freeze_time(ref.TODAY)
 def test_the_fy_tab_renders_a_past_year(client, session_factory):
     make_login(client, session_factory)
@@ -549,6 +584,23 @@ def test_the_fy_tab_renders_a_past_year(client, session_factory):
 
     assert page.status_code == 200
     assert "FY23/24" in page.text
+
+
+@freeze_time(ref.TODAY)
+def test_the_fy_tab_names_what_its_totals_leave_out(client, session_factory):
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        ref.build_reference(s)
+        nova = fac.make_instrument(s, "NOVA", exchange="LSE", currency="GBP",
+                                   asset_class="share")
+        fac.add_trade(s, nova, "2023-08-01", "buy", 100, "10.00")
+        fac.add_trade(s, nova, "2023-09-01", "sell", 100, "12.00")
+        s.commit()
+
+    page = client.get(f"/?fy={ref.FY2024}", headers=HTML).text
+
+    assert "Totals exclude NOVA — no exchange rate stored" in page
 
 
 @freeze_time(ref.TODAY)
@@ -644,3 +696,57 @@ def test_a_viewer_cannot_change_the_plan(client, session_factory):
 
     assert save_plan(client, session_factory).status_code == 403
     assert InvestmentPlanEntry is not None
+
+
+# --------------------------------------------------------------------------- #
+# What the plan's routes left unchecked
+# --------------------------------------------------------------------------- #
+# A mutation run removed the lines saving an edited plan's name and brokerage,
+# the due-date half of "is this still the next buy", and the AUD/foreign
+# choice of a planned buy's rate, and nothing failed.
+
+@freeze_time(TODAY)
+def test_saving_again_changes_the_name_and_brokerage_too(client, session_factory, holdings):
+    save_plan(client, session_factory)
+
+    save_plan(client, session_factory, name="Monthly", brokerage="4.95")
+
+    with reading(session_factory) as s:
+        plan = s.scalars(select(InvestmentPlan)).one()
+        assert (plan.name, plan.brokerage) == ("Monthly", Decimal("4.95"))
+
+
+@freeze_time(TODAY)
+@pytest.mark.parametrize("path", ["/schedule/complete", "/schedule/skip"])
+def test_a_buy_whose_date_has_moved_on_is_refused(client, session_factory, holdings, path):
+    """The right ticker with a stale due date is a form left open while the
+    slot was filled; recording it would fill the next slot by mistake."""
+    save_plan(client, session_factory, start_date="2026-07-06")
+
+    resp = client.post(path, headers=HTML, data={
+        "ticker": "ACME", "due_date": "2026-06-08", "trade_date": "2026-07-06",
+        "quantity": "10", "unit_price": "5.00", "_csrf": session_csrf(session_factory)})
+
+    assert resp.status_code == 409
+    with reading(session_factory) as s:
+        assert s.scalars(select(PlannedPurchase)).all() == []
+
+
+@freeze_time(TODAY)
+@pytest.mark.parametrize("currency, rate", [("USD", None), ("AUD", Decimal(1))])
+def test_a_planned_buys_rate_is_1_in_aud_and_left_for_the_feed_otherwise(
+        client, session_factory, currency, rate):
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        fac.hold(s, fac.make_instrument(s, "GAMMA", currency=currency,
+                                        exchange="ASX" if currency == "AUD" else "NYSE"))
+        s.commit()
+    save_plan(client, session_factory, tickers="GAMMA", start_date="2026-07-06")
+
+    client.post("/schedule/complete", headers=HTML, follow_redirects=False, data={
+        "ticker": "GAMMA", "due_date": "2026-07-06", "trade_date": "2026-07-06",
+        "quantity": "10", "unit_price": "5.00", "_csrf": session_csrf(session_factory)})
+
+    with reading(session_factory) as s:
+        assert s.scalars(select(Trade)).one().fx_rate == rate

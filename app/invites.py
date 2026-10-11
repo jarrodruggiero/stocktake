@@ -166,11 +166,6 @@ def outstanding(db: DbSession, portfolio_id: int) -> list[PortfolioInvite]:
 
 
 def state(invite: PortfolioInvite) -> str:
-    """What to call this one in a list: used, expired or live."""
-    if invite.used_at is not None:
-        return "used"
-    if invite.revoked_at is not None:
-        return "withdrawn"
-    if ensure_utc(invite.expires_at) < _utcnow():
-        return "expired"
-    return "live"
+    """What to call one of `outstanding`'s in a list: used or live. Withdrawn
+    and expired ones are not in that list to be called anything."""
+    return "used" if invite.used_at is not None else "live"

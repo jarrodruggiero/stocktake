@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from contextlib import contextmanager
 
 import pytest
@@ -20,7 +21,7 @@ from sqlalchemy import select
 import factories as fac
 import fixture_portfolio as ref
 from app import auth as auth_mod
-from app.models import Instrument, SavedChart, Trade, User, UserSession
+from app.models import HoldingPref, Instrument, SavedChart, Trade, User, UserSession
 
 PASSWORD = "correct-horse-battery"
 
@@ -269,6 +270,7 @@ def test_recording_a_trade_stores_it_and_returns_to_the_instrument(client, sessi
     with session_factory() as s:
         bind_to_only_portfolio(s)
         acme = fac.make_instrument(s, "ACME", name="Acme Industries")
+        fac.hold(s, acme)
         s.commit()
         acme_id = acme.id
 
@@ -312,6 +314,58 @@ def test_a_sell_that_would_go_negative_is_refused_with_an_explanation(client, se
     with reading(session_factory) as s:
         # Nothing was written — the guard runs before the insert.
         assert len(s.scalars(select(Trade)).all()) == 1
+
+
+@freeze_time(ref.TODAY)
+def test_a_sale_is_held_to_its_own_holdings_units(client, session_factory):
+    """ACME holds 10; WIDGET's 100 beside it must not cover a sale of 25 ACME.
+    A mutation run took the instrument out of the check and nothing failed."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        acme = fac.make_instrument(s, "ACME")
+        widget = fac.make_instrument(s, "WIDGET")
+        fac.add_trade(s, acme, "2026-01-05", "buy", 10, "4.00")
+        fac.add_trade(s, widget, "2026-01-05", "buy", 100, "1.00")
+        s.commit()
+        acme_id = acme.id
+
+    resp = client.post("/trade/new", headers={"accept": "text/html"}, data={
+        "instrument_id": str(acme_id), "type": "sell", "trade_date": "2026-07-01",
+        "quantity": "25", "unit_price": "5.00", "brokerage": "0",
+        "_csrf": session_csrf(session_factory)})
+
+    assert "10 units of ACME held" in resp.text
+    with reading(session_factory) as s:
+        assert len(s.scalars(select(Trade)).all()) == 2
+
+
+@freeze_time(ref.TODAY)
+@pytest.mark.parametrize("overrides, says", [
+    ({"type": "drp"}, "Choose buy or sell."),
+    ({"brokerage": "-1"}, "Brokerage can"),
+    ({"fx_rate": "0"}, "FX must be positive"),
+    ({"fx_rate": "-0.5"}, "FX must be positive"),
+    ({"set_time": "1", "trade_time": "25:99"}, "That time isn"),
+])
+def test_the_form_refuses_what_a_trade_cannot_be(client, session_factory, overrides, says):
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        acme = fac.make_instrument(s, "ACME")
+        fac.hold(s, acme)
+        s.commit()
+        acme_id = acme.id
+    data = {"instrument_id": str(acme_id), "type": "buy", "trade_date": "2026-07-01",
+            "quantity": "1", "unit_price": "1.00", "brokerage": "0",
+            "_csrf": session_csrf(session_factory)}
+    data.update(overrides)
+
+    resp = client.post("/trade/new", data=data, headers={"accept": "text/html"})
+
+    assert resp.status_code == 200 and says in resp.text
+    with reading(session_factory) as s:
+        assert s.scalars(select(Trade)).all() == []
 
 
 @freeze_time(ref.TODAY)
@@ -362,6 +416,42 @@ def test_an_instrument_can_be_added_inline_while_recording_the_trade(client, ses
         assert inst.ticker == "NOVA"   # upper-cased on the way in
         assert inst.name == "Nova Group"
         assert s.scalars(select(Trade)).one().instrument_id == inst.id
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_a_refused_trade_adds_nothing_inline(client, session_factory, app_module,
+                                             monkeypatch, existing):
+    """A sell of something not held is refused, and the instrument typed in
+    beside it is not added either: not to the catalogue, not to the list, and
+    not reactivated if another portfolio had removed it. Found by a generated
+    sequence (test_sequences_through_the_routes.py)."""
+    kicked = []
+    monkeypatch.setattr(app_module, "_kick_feed", lambda: kicked.append(1))
+    make_login(client, session_factory)
+    if existing:
+        with session_factory() as s:
+            fac.make_instrument(s, "NOVA", active=False)
+            s.commit()
+    before = _counts(session_factory)
+
+    resp = client.post(
+        "/trade/new",
+        data={"instrument_id": "new", "type": "sell", "trade_date": "2026-07-01",
+              "quantity": "5", "unit_price": "12.00", "new_ticker": "NOVA",
+              "new_exchange": "ASX", "new_asset_class": "share", "new_currency": "AUD",
+              "_csrf": session_csrf(session_factory)},
+        headers={"accept": "text/html"}, follow_redirects=False)
+
+    assert resp.status_code == 200 and 'class="panel error"' in resp.text
+    assert _counts(session_factory) == before
+    assert kicked == []
+
+
+def _counts(session_factory) -> tuple:
+    with reading(session_factory) as s:
+        return (s.scalars(select(Instrument.active)).all(),
+                len(s.scalars(select(HoldingPref)).all()),
+                len(s.scalars(select(Trade)).all()))
 
 
 # --------------------------------------------------------------------------- #
@@ -675,3 +765,47 @@ def test_it_still_works_with_javascript_off(client, session_factory):
     assert any("addinst" in block for block in blocks), (
         "no <noscript> mentions the add-instrument dialog, so with scripting off "
         f"there is no way to open it. Found: {blocks!r}")
+
+
+def test_the_login_page_itself_sends_a_first_run_to_setup(client):
+    """/login is public, so the middleware's first-run redirect never sees
+    it; the route's own check is the only thing between a fresh install and a
+    sign-in form for accounts that do not exist."""
+    resp = client.get("/login", headers={"accept": "text/html"}, follow_redirects=False)
+
+    assert resp.status_code == 303 and resp.headers["location"] == "/setup"
+
+
+def test_the_brand_mark_carries_the_apps_name_for_a_screen_reader(client, session_factory):
+    """The mark is a picture; its accessible name is the text beside it.
+    Dropping the template global left an empty span and nothing failed."""
+    from app import branding
+
+    with session_factory() as s:
+        fac.make_user(s, "someone@example.test")
+        s.commit()
+
+    page = client.get("/login", headers={"accept": "text/html"}).text
+
+    assert f'<span class="visually-hidden">{branding.NAME}</span>' in page
+
+
+def test_the_trade_form_marks_only_a_foreign_instrument_and_keeps_fx_for_it(client,
+                                                                            session_factory):
+    """The reporting currency is a template global: without it every
+    instrument read "(AUD)" and the FX box was offered for an AUD trade."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        fac.hold(s, fac.make_instrument(s, "ALPHA"))
+        fac.hold(s, fac.make_instrument(s, "ZULU", exchange="NASDAQ", currency="USD"))
+        s.commit()
+
+    page = client.get("/trade/new", headers={"accept": "text/html"}).text
+
+    texts = [" ".join(t.split()) for t in re.findall(r"<option[^>]*>(.*?)</option>", page, re.S)]
+    alpha = next(t for t in texts if t.startswith("ALPHA — "))
+    zulu = next(t for t in texts if t.startswith("ZULU — "))
+    assert not alpha.endswith(")") and zulu.endswith("(USD)")
+    assert re.search(r'<label id="fxfield"\s+hidden', page)
+    assert "FX rate to AUD" in page

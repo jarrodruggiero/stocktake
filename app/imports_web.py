@@ -35,6 +35,7 @@ from . import (
     navigation,
     ofx,
     pagemap,
+    queries,
     statements,
     tenancy,
     textfield,
@@ -191,10 +192,19 @@ async def csv_preview(request: Request, file: UploadFile, broker: str = Form(...
             "skipped": result.skipped,
             "errors": result.errors,
             "uid": uid,
-            "insertable": sum(1 for c in result.candidates if c.status != "duplicate"),
+            **_counts(result.candidates, settings.imports),
             "unresolved": brokercsv.unresolved(result.candidates),
         },
     )
+
+
+def _counts(candidates: list, imports) -> dict:
+    """What the commit button would write, and how many rows hold it back: the
+    ones committing would refuse."""
+    held_back = sum(1 for c in candidates if c.status == "refused" or (
+        c.status == "unknown-instrument" and not imports.allow_new_instruments))
+    return {"insertable": sum(1 for c in candidates if c.status != "duplicate"),
+            "held_back": held_back}
 
 
 @router.post("/imports-exports/csv/{uid}/resolve", response_class=HTMLResponse)
@@ -251,7 +261,7 @@ async def csv_resolve(request: Request, uid: str):
                 "skipped": [],
                 "errors": [],
                 "uid": uid,
-                "insertable": sum(1 for c in candidates if c.status != "duplicate"),
+                **_counts(candidates, settings.imports),
                 "unresolved": brokercsv.unresolved(candidates),
                 "rechecked": True,
             },
@@ -278,6 +288,9 @@ async def csv_commit(request: Request, uid: str):
         blocked = [c for c in candidates if c.status == "unknown-instrument"]
         if blocked and not settings.imports.allow_new_instruments:
             raise HTTPException(409, f"unknown instruments: {sorted({c.ticker for c in blocked})}")
+        refused = [c for c in candidates if c.status == "refused"]
+        if refused:
+            raise HTTPException(409, refused[0].detail)
         counts = brokercsv.commit(s, candidates, settings.imports, staged["broker"])
     staged_path.unlink(missing_ok=True)
     return RedirectResponse(
@@ -298,7 +311,7 @@ async def statement_preview(request: Request, file: UploadFile,
             data, s, settings.imports.user_dir("statement"),
             ocr_enabled=settings.imports.ocr.enabled,
             wanted_template=template or None)
-        tickers = s.scalars(select(Instrument.ticker).order_by(Instrument.ticker)).all()
+        tickers = statements.choices(s)
         template = "statement_rows_preview.html" if parsed.rows else "statement_preview.html"
         return templates.TemplateResponse(
             request,
@@ -359,15 +372,22 @@ async def statement_commit(
         raise HTTPException(400, "DRP units have to be more than zero.")
     if price is not None and price < 0:
         raise HTTPException(400, "DRP price can't be negative.")
+    # Without its price a DRP has no cost base to book (decisions.md #100).
+    # Recording the cash alone dropped the units, and the holding came up short.
+    if units is not None and price is None:
+        raise HTTPException(400, "DRP units need their allotment price.")
 
     with auth.scoped_session(request) as (ctx, s):
         await auth.verify_csrf(request, s)
         _require_write(ctx)
-        inst = s.scalars(select(Instrument).where(Instrument.ticker == ticker.upper())).first()
-        if inst is None:
+        found = queries.held_as(s, ticker)
+        if len(found) > 1:
+            raise HTTPException(400, queries.held_twice(found))
+        if not found:
             raise HTTPException(400, f"unknown instrument {ticker!r}")
+        inst = found[0]
         if statements.duplicate_of(s, inst, date, amount):
-            raise HTTPException(409, f"a {ticker} dividend of {amount} on {date} already exists")
+            raise HTTPException(409, f"a {inst.ticker} dividend of {amount} on {date} already exists")
 
         note = "from dividend statement"
         if franked_amount.strip():
@@ -381,7 +401,7 @@ async def statement_commit(
             raise HTTPException(400, str(exc))
 
         reinvest = None
-        if units and price:
+        if units is not None:
             reinvest = tenancy.owned(
                 s,
                 Trade(
@@ -410,7 +430,8 @@ async def statement_commit(
                 ),
             )
         )
-    return RedirectResponse(f"/holding/{ticker.upper()}", status_code=303)
+        to = queries.holding_path(inst.ticker, inst.exchange, queries.ambiguous_tickers(s))
+    return RedirectResponse(to, status_code=303)
 
 
 # --------------------------------------------------------------------------- #
@@ -770,7 +791,8 @@ async def broker_designer(request: Request, file: UploadFile = None,
             result = brokercsv.ParseResult(errors=[currency_error])
         elif read.rows and not first_pass:
             result = brokerdesign.preview(text, exchange=exchange, currency=currency,
-                                          date_format=date_format, columns=chosen)
+                                          date_format=date_format, columns=chosen,
+                                          actions=actions)
 
         return templates.TemplateResponse(
             request,
@@ -822,7 +844,7 @@ KINDS = ("statement", "broker")
 def _require_admin(ctx) -> None:
     """A template changes how EVERY user's imports are parsed — it is not
     portfolio-scoped, so installing one is not a per-member decision."""
-    if ctx is None or not ctx.is_admin:
+    if not ctx.is_admin:
         raise HTTPException(403, "Admins only")
 
 

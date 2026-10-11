@@ -33,8 +33,8 @@ that switches a feature off is not carrying an unlinked door to it
 guessed. The rule has three parts: use the nearest stored FX rate within a
 tracked pair; **withhold and name the holding** when the pair is unknown; never
 fall back to 1:1, which books a foreign holding as though the currency did not
-exist. `totals.excluded` and `dividends_excluded` are how the withholding gets
-said out loud.
+exist. `totals.excluded`, `dividends_excluded` and the FY report's `withheld`
+are how the withholding gets said out loud.
 
 **6. …but a same-currency row needs no rate at all.** AUD → AUD is 1 by
 arithmetic, so requiring a stored `fx_rate` on an AUD row turns a fact about
@@ -1342,4 +1342,8 @@ portfolios and answered as ids alone, as `_anyone_has` is. A new price symbol
 keeps the prices already stored and fetches its own from the next run, and a
 blank one is the guess, as when adding. This replaces the "no way to edit a
 class" of 2026-10-09: test users needed to fix a NASDAQ stock saved as
-MSFT.AX. A row only saves for an instrument this portfolio has.
+MSFT.AX. A row only saves for an instrument this portfolio has. A new currency
+forgets the rates recorded under the old one, in every portfolio: an AUD row
+holds 1, and kept under USD that 1 books US dollars as Australian (#5). They
+become 1 again for AUD, and otherwise unknown until the feed fills them from
+the stored series.

@@ -44,6 +44,29 @@ def with_acme(session_factory):
         s.commit()
 
 
+def _holding_acme(client, session_factory):
+    """Signed in, with ACME on the portfolio's list: a statement is recorded
+    against a holding this portfolio has (decisions.md #139), not the first
+    instrument in the catalogue with its ticker."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        fac.hold(s, s.scalar(select(Instrument).where(Instrument.ticker == "ACME")))
+        s.commit()
+
+
+@pytest.fixture
+def staging_dir(monkeypatch, tmp_path):
+    """A staging directory of this test's own. The real one is shared by every
+    process on the machine, so a test that looks at all of it can see another
+    run's uploads."""
+    from app import imports_web
+
+    path = tmp_path / "staged"
+    monkeypatch.setattr(imports_web, "STAGING", path)
+    return path
+
+
 def upload_csv(client, session_factory, payload=GOOD_CSV, broker="testbroker"):
     return client.post("/imports-exports/csv",
                        files={"file": ("trades.csv", payload, "text/csv")},
@@ -185,6 +208,72 @@ def test_the_staged_file_is_cleared_after_committing(client, session_factory, wi
     assert not (STAGING / f"{uid}.json").exists()
 
 
+def test_a_file_with_a_bad_row_stages_nothing_to_commit(client, session_factory, with_acme,
+                                                       staging_dir):
+    """The preview shows the error and offers no commit. Nothing may be staged
+    behind it either, or a commit posted by hand would import the good rows
+    and quietly drop the bad one."""
+    make_login(client, session_factory)
+
+    resp = upload_csv(client, session_factory, GOOD_CSV + b"08/03/2025,Buy,ACME,NaN,6.00,9.50\n")
+
+    assert "NaN" in resp.text and "/commit" not in resp.text
+    assert list(staging_dir.glob("*.json")) == []
+
+
+def test_a_trade_recorded_since_the_preview_is_skipped_at_commit(client, session_factory,
+                                                                 with_acme):
+    """The file is checked against the ledger again when it is committed: a
+    row typed in by hand since the preview is a duplicate by then."""
+    make_login(client, session_factory)
+    uid = staged_id(upload_csv(client, session_factory))
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        acme = s.scalar(select(Instrument).where(Instrument.ticker == "ACME"))
+        fac.add_trade(s, acme, "2025-01-06", "buy", 100, "5.00", brokerage="9.50")
+        s.commit()
+
+    resp = client.post(f"/imports-exports/csv/{uid}/commit",
+                       data={"_csrf": session_csrf(session_factory)},
+                       headers=HTML, follow_redirects=False)
+
+    assert resp.headers["location"].endswith("inserted=1&skipped=1")
+    with reading(session_factory) as s:
+        assert len(s.scalars(select(Trade)).all()) == 2
+
+
+def test_the_commit_button_counts_only_what_it_would_write(client, session_factory,
+                                                           with_acme):
+    _holding_acme(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        acme = s.scalar(select(Instrument).where(Instrument.ticker == "ACME"))
+        fac.add_trade(s, acme, "2025-01-06", "buy", 100, "5.00", brokerage="9.50")
+        s.commit()
+
+    assert "Commit 1 trade(s)" in upload_csv(client, session_factory).text
+
+
+def test_with_creation_allowed_a_new_ticker_is_offered_and_committed(client, session_factory,
+                                                                     monkeypatch):
+    """The setting both pages read: the preview offers the commit, and the
+    commit creates the instrument rather than refusing the file."""
+    from app import main as main_mod
+
+    monkeypatch.setattr(main_mod.settings.imports, "allow_new_instruments", True)
+    make_login(client, session_factory)
+    resp = upload_csv(client, session_factory)          # ACME is in no catalogue
+    assert "Commit 2 trade(s)" in resp.text
+
+    committed = client.post(f"/imports-exports/csv/{staged_id(resp)}/commit",
+                            data={"_csrf": session_csrf(session_factory)},
+                            headers=HTML, follow_redirects=False)
+
+    assert committed.headers["location"].endswith("inserted=2&skipped=0")
+    with reading(session_factory) as s:
+        assert s.scalars(select(Instrument)).one().note == "created by testbroker import"
+
+
 def test_committing_twice_is_refused_rather_than_duplicating(client, session_factory,
                                                              with_acme):
     make_login(client, session_factory)
@@ -248,15 +337,52 @@ def test_another_accounts_staged_upload_cannot_be_committed(client, session_fact
     assert "another account" in resp.text
 
 
-def test_committing_refuses_unknown_instruments_by_default(client, session_factory):
+def test_committing_refuses_unknown_instruments_by_default(client, session_factory,
+                                                           staging_dir):
     """`allow_new_instruments` is off, so an unrecognised ticker stops the
-    import instead of quietly inventing a holding."""
+    import instead of quietly inventing a holding: no commit form is offered,
+    and a commit posted anyway is refused.
+
+    This test used to end `assert "/commit" not in resp.text or True`, which
+    cannot fail; the form WAS offered, and pressing it gave a 409."""
     make_login(client, session_factory)
     resp = upload_csv(client, session_factory)
-    # No commit form is offered when every row is blocked.
     assert "unknown-instrument" in resp.text
-    assert "/commit" not in resp.text or True
+    assert "/commit" not in resp.text
 
+    committed = client.post(f"/imports-exports/csv/{_newest_staged(staging_dir)}/commit",
+                            data={"_csrf": session_csrf(session_factory)},
+                            headers=HTML, follow_redirects=False)
+    assert committed.status_code == 409
+    with reading(session_factory) as s:
+        assert s.scalars(select(Trade)).all() == []
+
+
+def _newest_staged(staging_dir) -> str:
+    """The preview's staging id, for a page that offers no form carrying it."""
+    newest = max(staging_dir.glob("*.json"), key=lambda p: p.stat().st_mtime)
+    return newest.stem
+
+
+def test_a_file_selling_more_than_is_held_cannot_be_committed(client, session_factory,
+                                                              with_acme, staging_dir):
+    """A broker export covering the last year carries sales of shares bought
+    before it starts. Committed, one left a negative holding and the FY page
+    raised; now the row is refused in the preview, and at commit."""
+    make_login(client, session_factory)
+    sale = ("Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+            "06/01/2025,Buy,ACME,100,5.00,9.50\n"
+            "02/03/2025,Sell,ACME,150,6.00,9.50\n").encode()
+
+    resp = upload_csv(client, session_factory, payload=sale)
+
+    assert 'badge-refused' in resp.text
+    assert "more than the 100 units of ACME held on 2025-03-02" in resp.text
+    assert "/commit" not in resp.text
+    committed = client.post(f"/imports-exports/csv/{_newest_staged(staging_dir)}/commit",
+                            data={"_csrf": session_csrf(session_factory)},
+                            headers=HTML, follow_redirects=False)
+    assert committed.status_code == 409
     with reading(session_factory) as s:
         assert s.scalars(select(Trade)).all() == []
 
@@ -304,7 +430,7 @@ def test_a_statement_preview_offers_the_parsed_fields_for_correction(
 
 
 def test_committing_a_statement_records_the_dividend(client, session_factory, with_acme):
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
 
     resp = client.post("/imports-exports/statement/commit",
                        data={"ticker": "ACME", "payment_date": "2026-03-15",
@@ -317,13 +443,14 @@ def test_committing_a_statement_records_the_dividend(client, session_factory, wi
         dividend = s.scalars(select(Dividend)).one()
     assert dividend.cash_amount == Decimal("123.45")
     assert dividend.franking_credits == Decimal("52.91")
+    assert dividend.note == "from dividend statement"   # nothing added for empty fields
 
 
 def test_a_reinvested_statement_creates_the_drp_trade_too(client, session_factory,
                                                           with_acme):
     """A reinvestment is two records: the cash that was distributed, and the
     units it bought. They have to arrive together or the ledger is wrong."""
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
 
     client.post("/imports-exports/statement/commit",
                 data={"ticker": "ACME", "payment_date": "2026-03-15",
@@ -334,13 +461,13 @@ def test_a_reinvested_statement_creates_the_drp_trade_too(client, session_factor
     with reading(session_factory) as s:
         trade = s.scalars(select(Trade)).one()
         dividend = s.scalars(select(Dividend)).one()
-    assert trade.type == "drp"
-    assert trade.quantity == 10
+    assert (trade.type, trade.quantity, trade.unit_price) == ("drp", 10, Decimal("10.00"))
+    assert trade.brokerage == 0                        # a cost-base figure: none was paid
     assert dividend.reinvest_trade_id == trade.id
 
 
 def test_a_duplicate_statement_is_refused(client, session_factory, with_acme):
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
     payload = {"ticker": "ACME", "payment_date": "2026-03-15", "net_amount": "123.45",
                "_csrf": session_csrf(session_factory)}
     client.post("/imports-exports/statement/commit", data=payload, headers=HTML)
@@ -359,7 +486,10 @@ def test_a_duplicate_statement_is_refused(client, session_factory, with_acme):
 ])
 def test_bad_statement_input_is_refused(client, session_factory, with_acme,
                                         field, value, status):
-    make_login(client, session_factory)
+    """ACME is held, so the field under test is the only thing wrong: without
+    it every case was also refused for naming an instrument this portfolio
+    does not have, and a date check removed outright still passed."""
+    _holding_acme(client, session_factory)
     payload = {"ticker": "ACME", "payment_date": "2026-03-15", "net_amount": "123.45",
                "_csrf": session_csrf(session_factory)}
     payload[field] = value
@@ -372,7 +502,7 @@ def test_amounts_with_symbols_and_separators_are_accepted(client, session_factor
                                                           with_acme):
     """The values are copied off a statement by hand, so they arrive looking
     like a statement rather than like a number."""
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
 
     client.post("/imports-exports/statement/commit",
                 data={"ticker": "ACME", "payment_date": "2026-03-15",
@@ -384,7 +514,7 @@ def test_amounts_with_symbols_and_separators_are_accepted(client, session_factor
 
 
 def test_the_franked_amount_is_kept_on_the_note(client, session_factory, with_acme):
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
 
     client.post("/imports-exports/statement/commit",
                 data={"ticker": "ACME", "payment_date": "2026-03-15",
@@ -518,8 +648,9 @@ def test_the_way_back_follows_where_you_came_from(client, session_factory, with_
 def test_a_statement_that_the_dividend_form_would_refuse_is_not_saved(
         client, session_factory, with_acme, overrides):
     """Zero or negative cash and franking, and negative DRP units, used to be saved
-    as they came (the units failing later at the `quantity > 0` CHECK as a 500)."""
-    make_login(client, session_factory)
+    as they came (the units failing later at the `quantity > 0` CHECK as a 500).
+    ACME is held so the figure is the only thing wrong."""
+    _holding_acme(client, session_factory)
     payload = {"ticker": "ACME", "payment_date": "2026-03-15", "net_amount": "100.00",
                "drp_units": "10", "drp_price": "10.00",
                "_csrf": session_csrf(session_factory)}
@@ -532,3 +663,289 @@ def test_a_statement_that_the_dividend_form_would_refuse_is_not_saved(
     with reading(session_factory) as s:
         assert s.scalars(select(Dividend)).all() == []
         assert s.scalars(select(Trade)).all() == []
+
+
+# --------------------------------------------------------------------------- #
+# Recording a statement: the figures a mutation run found unchecked
+# --------------------------------------------------------------------------- #
+
+def _commit_statement(client, session_factory, **fields):
+    data = {"ticker": "ACME", "payment_date": "2026-03-15", "net_amount": "100.00",
+            "_csrf": session_csrf(session_factory)}
+    data.update(fields)
+    return client.post("/imports-exports/statement/commit", data=data, headers=HTML,
+                       follow_redirects=False)
+
+
+def _recorded(session_factory) -> tuple[list, list]:
+    with reading(session_factory) as s:
+        return list(s.scalars(select(Dividend))), list(s.scalars(select(Trade)))
+
+
+@pytest.mark.parametrize(("fields", "refused"), [
+    ({"net_amount": "0.01"}, False), ({"net_amount": "0"}, True), ({"net_amount": "  "}, True),
+    ({"franking_credits": "0"}, False), ({"franking_credits": "-0.01"}, True),
+    ({"drp_units": "0.5", "drp_price": "10.00"}, False),         # a managed fund's fraction
+    ({"drp_units": "0", "drp_price": "10.00"}, True),
+    ({"drp_units": "10", "drp_price": "0"}, False),             # an allotment at nothing
+    ({"drp_units": "10", "drp_price": "-1"}, True),
+])
+def test_each_figure_is_held_to_its_own_limit(client, session_factory, with_acme, fields,
+                                              refused):
+    _holding_acme(client, session_factory)
+
+    resp = _commit_statement(client, session_factory, **fields)
+
+    dividends, trades = _recorded(session_factory)
+    assert (resp.status_code == 400) is refused, resp.text[:200]
+    assert len(dividends) == (0 if refused else 1)
+    if not refused and "drp_units" in fields:
+        assert [(t.type, t.quantity, t.unit_price) for t in trades] == [
+            ("drp", Decimal(fields["drp_units"]), Decimal(fields["drp_price"]))]
+
+
+def test_drp_units_without_their_price_are_refused_not_dropped(client, session_factory,
+                                                               with_acme):
+    """The units were left out and the cash recorded as paid out: the holding
+    came up short by the allotment, with nothing to say so. A DRP without its
+    price has no cost base to book (decisions.md #100), so it is asked for."""
+    _holding_acme(client, session_factory)
+
+    resp = _commit_statement(client, session_factory, drp_units="10")
+
+    assert resp.status_code == 400
+    assert "price" in resp.text
+    assert _recorded(session_factory) == ([], [])
+
+
+def test_a_lower_case_ticker_and_the_note_are_kept(client, session_factory, with_acme):
+    _holding_acme(client, session_factory)
+
+    resp = _commit_statement(client, session_factory, ticker="acme", franked_amount="80.00",
+                             note_extra="  final distribution  ")
+
+    assert resp.status_code == 303 and resp.headers["location"] == "/holding/ACME"
+    (dividend,), _ = _recorded(session_factory)
+    assert dividend.note == ("from dividend statement; franked amount 80.00; "
+                             "final distribution")
+
+
+@pytest.mark.parametrize(("currency", "rate"), [("AUD", Decimal(1)), ("USD", None)])
+def test_a_foreign_holdings_statement_waits_for_its_rate(client, session_factory, currency,
+                                                        rate):
+    """An AUD payment is 1:1; any other is left for the feed's rate, never
+    taken at 1:1."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        fac.hold(s, fac.make_instrument(s, "ACME", currency=currency))
+        s.commit()
+
+    _commit_statement(client, session_factory, drp_units="10", drp_price="10.00")
+
+    (dividend,), (trade,) = _recorded(session_factory)
+    assert dividend.fx_rate == rate and trade.fx_rate == rate
+
+
+# --------------------------------------------------------------------------- #
+# Correcting a ticker before committing — a route no test sent
+# --------------------------------------------------------------------------- #
+
+TYPO_CSV = ("Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+            "06/01/2025,Buy,ACMEE,100,5.00,9.50\n"
+            "07/02/2025,Buy,ACMEE,50,6.00,9.50\n").encode()
+
+
+def resolve_id(response) -> str:
+    import re
+
+    match = re.search(r"/imports-exports/csv/([0-9a-f-]{36})/resolve", response.text)
+    assert match, "no correction form on the preview page"
+    return match.group(1)
+
+
+def _resolve(client, session_factory, uid, **fields):
+    return client.post(f"/imports-exports/csv/{uid}/resolve",
+                       data={"_csrf": session_csrf(session_factory), **fields}, headers=HTML)
+
+
+def test_a_corrected_ticker_moves_every_row_of_it_and_then_commits(client, session_factory,
+                                                                   with_acme):
+    _holding_acme(client, session_factory)
+    uid = resolve_id(upload_csv(client, session_factory, payload=TYPO_CSV))
+
+    page = _resolve(client, session_factory, uid,
+                    **{"ticker__ACMEE__ASX": " acme ", "exchange__ACMEE__ASX": "asx"})
+
+    assert page.status_code == 200
+    assert "Rechecked against your instruments." not in page.text   # nothing left to fix
+    assert staged_id(page) == uid
+    client.post(f"/imports-exports/csv/{uid}/commit",
+                data={"_csrf": session_csrf(session_factory)}, headers=HTML)
+    with reading(session_factory) as s:
+        trades = s.scalars(select(Trade).order_by(Trade.date)).all()
+        tickers = {s.get(Instrument, t.instrument_id).ticker for t in trades}
+    assert [t.quantity for t in trades] == [100, 50] and tickers == {"ACME"}
+
+
+def test_a_corrected_exchange_finds_the_listing_there(client, session_factory, with_acme):
+    """The same code on two exchanges: ACME is listed on the NASDAQ too. The
+    exchange is a text box, so it is typed as it comes: lower case, spaced."""
+    _holding_acme(client, session_factory)
+    with session_factory() as s:
+        fac.make_instrument(s, "ACMEE", exchange="NASDAQ", currency="USD")
+        s.commit()
+    uid = resolve_id(upload_csv(client, session_factory, payload=TYPO_CSV))
+
+    page = _resolve(client, session_factory, uid,
+                    **{"ticker__ACMEE__ASX": "ACMEE", "exchange__ACMEE__ASX": " nasdaq "})
+
+    assert staged_id(page) == uid
+    staged = json.loads((STAGING / f"{uid}.json").read_text())
+    assert {(r["ticker"], r["exchange"]) for r in staged["rows"]} == {("ACMEE", "NASDAQ")}
+
+
+@pytest.mark.parametrize("fields", [
+    {"ticker__ACMEE__ASX": "", "exchange__ACMEE__ASX": "ASX"},
+    {"ticker__ACMEE__ASX": "ACME", "exchange__ACMEE__ASX": ""},
+    {"ticker__NOPE__ASX": "ACME", "exchange__NOPE__ASX": "ASX"},
+])
+def test_a_correction_without_both_halves_moves_nothing(client, session_factory, with_acme,
+                                                        fields):
+    _holding_acme(client, session_factory)
+    uid = resolve_id(upload_csv(client, session_factory, payload=TYPO_CSV))
+
+    page = _resolve(client, session_factory, uid, **fields)
+
+    assert resolve_id(page) == uid                     # still to be fixed
+    assert "Rechecked against your instruments." in page.text
+    staged = json.loads((STAGING / f"{uid}.json").read_text())
+    assert {r["ticker"] for r in staged["rows"]} == {"ACMEE"}
+
+
+def test_only_the_uploader_can_correct_their_upload(client, session_factory, with_acme):
+    make_login(client, session_factory, email="first@example.test", admin=True)
+    uid = resolve_id(upload_csv(client, session_factory, payload=TYPO_CSV))
+    with session_factory() as s:
+        other = fac.make_user(s, "second@example.test",
+                              password_hash=auth_mod.hash_password(PASSWORD))
+        fac.make_portfolio(s, "Their portfolio", owner=other)
+        s.commit()
+    client.cookies.clear()
+    from test_routes import pre_auth_csrf
+    token = pre_auth_csrf(client)
+    client.post("/login", data={"email": "second@example.test", "password": PASSWORD,
+                                "_csrf": token}, headers=HTML)
+
+    resp = _resolve(client, session_factory, uid,
+                    **{"ticker__ACMEE__ASX": "ACME", "exchange__ACMEE__ASX": "ASX"})
+
+    assert resp.status_code == 403
+    staged = json.loads((STAGING / f"{uid}.json").read_text())
+    assert {r["ticker"] for r in staged["rows"]} == {"ACMEE"}
+
+
+def test_a_correction_to_an_unknown_or_expired_upload_is_refused(client, session_factory):
+    make_login(client, session_factory)
+
+    assert _resolve(client, session_factory, "not-a-uuid").status_code == 400
+    assert _resolve(client, session_factory, "0" * 8 + "-0000-0000-0000-" + "0" * 12
+                    ).status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# What the last mutation pass found the import routes left unchecked
+# --------------------------------------------------------------------------- #
+
+def _way_back(page: str) -> tuple[str, str]:
+    """The back button's address and its words."""
+    import re
+
+    found = re.search(r'class="backlink" href="([^"]*)">\s*<button[^>]*>\s*&larr;\s*([^<]*?)\s*<',
+                      page)
+    assert found, "no way back on the page"
+    return found.groups()
+
+
+ADVICE = ("Distribution and Reinvestment Advice\nPayment Date: 15 March 2026\n\n"
+          "Fund Price Held PerSec Tax Amount Brought Allotted Carried\n"
+          "ACME 5.00 10 0.50000000 0.00 5.00 0.00 1 0.00\n")
+
+
+def test_every_import_page_reached_from_elsewhere_goes_back_there(client, session_factory,
+                                                                   with_acme, monkeypatch):
+    from app import statements
+
+    _holding_acme(client, session_factory)
+    monkeypatch.setattr(statements, "_pdf_text", lambda data: "ACME\nNet Amount: $10.00\n")
+    uid = resolve_id(upload_csv(client, session_factory, payload=TYPO_CSV))
+
+    pages = {
+        "correction": client.post(f"/imports-exports/csv/{uid}/resolve?return=/holdings",
+                                  data={"_csrf": session_csrf(session_factory)}, headers=HTML),
+        "statement": client.post("/imports-exports/statement?return=/holdings", headers=HTML,
+                                 files={"file": ("a.pdf", b"%PDF-1.4", "application/pdf")},
+                                 data={"_csrf": session_csrf(session_factory)}),
+    }
+    for label, resp in pages.items():
+        assert _way_back(resp.text) == ("/holdings", "Holdings"), label
+
+
+def test_a_combined_advice_previews_as_a_table_of_funds(client, session_factory, with_acme,
+                                                        monkeypatch):
+    from app import statements
+
+    _holding_acme(client, session_factory)
+    monkeypatch.setattr(statements, "_pdf_text", lambda data: ADVICE)
+
+    page = client.post("/imports-exports/statement", headers=HTML,
+                       files={"file": ("advice.pdf", b"%PDF-1.4", "application/pdf")},
+                       data={"_csrf": session_csrf(session_factory)}).text
+
+    assert "Units on statement" in page
+
+
+def test_a_figure_typed_as_spaces_is_left_blank(client, session_factory, with_acme):
+    """A space in a box nobody filled in is not a figure, a franked amount,
+    or a note."""
+    _holding_acme(client, session_factory)
+
+    resp = client.post("/imports-exports/statement/commit", headers=HTML, follow_redirects=False,
+                       data={"ticker": "ACME", "payment_date": "2026-03-15",
+                             "net_amount": "10.00", "franking_credits": "  ",
+                             "franked_amount": "  ", "note_extra": "  ",
+                             "_csrf": session_csrf(session_factory)})
+
+    assert resp.status_code == 303
+    with reading(session_factory) as s:
+        dividend = s.scalars(select(Dividend)).one()
+    assert (dividend.franking_credits, dividend.note) == (None, "from dividend statement")
+
+
+def test_a_file_with_nothing_to_import_stages_nothing(client, session_factory, with_acme,
+                                                      staging_dir):
+    make_login(client, session_factory)
+
+    page = upload_csv(client, session_factory,
+                      b"Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+                      b"06/01/2025,Transfer,ACME,100,5.00,0\n").text
+
+    assert "Transfer" in page and "/commit" not in page
+    assert list(staging_dir.glob("*.json")) == []
+
+
+def test_the_export_filter_lists_instruments_by_class_then_ticker(client, session_factory):
+    import re
+
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        for ticker, kind in (("ZETA", "share"), ("BETA", "etf"), ("ALFA", "etf")):
+            fac.add_trade(s, fac.make_instrument(s, ticker, asset_class=kind),
+                          "2026-01-05", "buy", 1, "1.00")
+        s.commit()
+
+    page = client.get("/imports-exports", headers=HTML).text
+    listed = re.search(r'<option value="">All instruments</option>(.*?)</select>', page, re.S)
+
+    assert re.findall(r'<option value="([A-Z]+)"', listed.group(1)) == ["ALFA", "BETA", "ZETA"]

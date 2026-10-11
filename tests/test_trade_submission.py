@@ -28,6 +28,7 @@ def acme(client, session_factory):
     with session_factory() as s:
         bind_to_only_portfolio(s)
         inst = fac.make_instrument(s, "ACME")
+        fac.hold(s, inst)
         s.commit()
         return inst.id
 
