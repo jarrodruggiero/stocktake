@@ -721,6 +721,30 @@ def test_performance_cumulative_columns_only_move_forward(portfolio):
     assert cumulative == sorted(cumulative)
 
 
+def test_performance_names_what_each_year_leaves_out(pf):
+    """Two holdings of 1,000, one with no price stored by the year's end: the
+    FY page counted both, and this row counted one and named neither."""
+    acme = make_instrument(pf, "ACME")
+    add_trade(pf, acme, "2024-01-02", "buy", 100, "10.00")
+    add_prices(pf, acme, [("2024-01-02", "10.00"), ("2024-06-28", "10.00"),
+                          ("2024-09-02", "12.00")])
+    beta = make_instrument(pf, "BETA")                  # priced from the next year
+    add_trade(pf, beta, "2024-01-02", "buy", 100, "10.00")
+    add_prices(pf, beta, [("2024-07-01", "11.00")])
+    nova = make_instrument(pf, "NOVA", exchange="LSE", currency="GBP")
+    add_trade(pf, nova, "2024-09-02", "buy", 10, "5.00")  # no rate for pounds at all
+    add_trade(pf, nova, "2025-01-10", "buy", 10, "5.00")
+
+    headers, rows = exports.performance(pf)
+
+    assert column(headers, rows, "Financial year") == ["FY23/24", "FY24/25"]
+    assert column(headers, rows, "Invested cumulative (AUD)")[0] == Decimal("1000.00")
+    # NOVA was bought after FY23/24, so that row has nothing of it to leave out;
+    # FY24/25's last day is the day it was bought, so that row does.
+    assert column(headers, rows, "Note") == ["Leaves out BETA (no price by then)",
+                                             "Leaves out NOVA (no exchange rate)"]
+
+
 @freeze_time("2026-07-15")
 def test_a_closed_positions_dividend_with_no_rate_is_blank_not_one_to_one(pf):
     """The figure went to an accountant as if a pound were a dollar

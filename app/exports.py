@@ -273,16 +273,18 @@ def performance(session: Session, **_) -> Report:
     headers = [
         "Financial year", "Invested in year (AUD)", "Invested cumulative (AUD)",
         "Value at year end (AUD)", "Net gain cumulative (AUD)", "Gain %",
-        "Gain in year (AUD)", "Year gain %",
+        "Gain in year (AUD)", "Year gain %", "Note",
     ]
     annual = queries.annual_series(session)
     rows = []
     for i, label in enumerate(annual["labels"]):
+        left_out = ", ".join(f"{ticker} ({why})" for ticker, why in annual["left_out"][i])
         rows.append([
             label, _d(annual["invested_yr"][i]), _d(annual["invested_cum"][i]),
             _d(annual["value_eofy"][i]), _d(annual["gain_cum"][i]),
             _d(annual["gain_pct"][i] * 100), _d(annual["gain_yr"][i]),
             _d(annual["yr_pct"][i] * 100),
+            f"Leaves out {left_out}" if left_out else "",
         ])
     return headers, rows
 

@@ -481,7 +481,7 @@ def test_empty_portfolio_returns_empty_series_rather_than_raising(pf):
 
     assert series == {"dates": [], "invested": [], "value": [], "gain": [],
                       "gain_pct": [], "flow": [], "flow_in": [], "cash_div": [],
-                      "excluded": []}
+                      "unpriced": [], "excluded": [], "excluded_since": {}}
     assert queries.grouped_series(pf, "ticker") == {"dates": [], "groups": {}, "excluded": []}
 
 
