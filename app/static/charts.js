@@ -31,7 +31,13 @@
     };
   }
 
-  const money = (v) => "$" + Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  // As the server writes money (money.text): the sign before the symbol, and
+  // grouped the same whatever the browser's locale. Every figure charted is
+  // in AUD, so the symbol is its.
+  const money = (v) => {
+    const n = Number(v);
+    return (n < 0 ? "-" : "") + "$" + Math.abs(n).toLocaleString("en-AU", { maximumFractionDigits: 0 });
+  };
   // A table cell is text unless it says it is markup, and only this says so:
   // labels are tickers, currencies and series names from the data, and a
   // currency once held markup (decisions.md #130).

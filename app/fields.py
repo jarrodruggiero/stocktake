@@ -77,7 +77,7 @@ FIELDS: tuple[Field, ...] = (
     Field("pos_gain_pct", "Gain %", "positions", "measure", "percent",
           "Capital gain over cost", agg="ratio"),
     Field("pos_dividends", "Dividends", "positions", "measure", "money",
-          "Distributions received, native currency"),
+          "Distributions received, in AUD"),
     Field("pos_units", "Units", "positions", "measure", "number"),
     Field("pos_day_change", "Change today", "positions", "measure", "money",
           "Move since the previous close, in AUD"),

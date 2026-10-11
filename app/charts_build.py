@@ -239,7 +239,9 @@ def _positions(session: Session, spec: dict) -> dict:
             "pos_cost": h.cost_aud,
             "pos_gain": h.gain_aud,
             "pos_gain_pct": h.gain_pct,
-            "pos_dividends": h.dividends_cash,
+            # In AUD like every other figure here: a bar per class or exchange
+            # adds holdings up, and their own currencies do not add.
+            "pos_dividends": h.dividends_aud,
             "pos_units": h.units,
             "pos_day_change": h.day_change_aud,
             "pos_day_pct": h.day_pct,
