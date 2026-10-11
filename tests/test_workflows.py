@@ -18,6 +18,8 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -343,3 +345,27 @@ def test_ci_tests_postgres_on_the_python_it_ships():
 
     assert [str(leg["python"]) for leg in matrix["include"] if leg.get("backend") == "postgres"] == [
         SHIPPED_PYTHON]
+
+
+def test_appcore_is_tested_at_the_revision_this_app_pins(tmp_path):
+    """The checkout named no revision, so the job tested appcore's main, which
+    says nothing about the pin; and nothing waited for it."""
+    jobs = _document(ROOT / ".github" / "workflows" / "ci.yml")["jobs"]
+    steps = jobs["appcore"]["steps"]
+    checkout = next(step["with"] for step in steps
+                    if (step.get("with") or {}).get("repository") == "jarrodruggiero/appcore")
+    pin = next((step for step in steps if step.get("id") == "pin"), None)
+    assert pin is not None, "the appcore job does not read the pin"
+    output = tmp_path / "output"
+
+    result = subprocess.run(
+        ["bash", "-e", "-c", pin["run"]], cwd=ROOT, capture_output=True, text=True,
+        env={**os.environ, "GITHUB_OUTPUT": str(output),
+             "PATH": f"{Path(sys.executable).parent}:{os.environ['PATH']}"})
+
+    pinned = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert result.returncode == 0, result.stderr
+    assert output.read_text(encoding="utf-8") == (
+        f"rev={pinned['tool']['uv']['sources']['appcore']['rev']}\n")
+    assert checkout.get("ref") == "${{ steps.pin.outputs.rev }}"
+    assert "appcore" in jobs["dev"]["needs"]
