@@ -12,13 +12,13 @@ from decimal import Decimal
 
 import pytest
 from freezegun import freeze_time
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 import factories as fac
 import fixture_portfolio as ref
 from app import auth as auth_mod
 from app import queries, tenancy
-from app.models import ApiKey, Dividend, Instrument, Trade
+from app.models import ApiKey, Dividend, Instrument, Price, Trade
 
 READ_ENDPOINTS = ["/api/v1/portfolio", "/api/v1/holdings", "/api/v1/trades",
                   "/api/v1/dividends", "/api/v1/schedule"]
@@ -330,6 +330,15 @@ def test_the_portfolios_endpoint_lists_what_the_key_reaches_now(client, session_
     ], key=lambda p: p["name"])
 
 
+def test_a_read_key_reads_even_where_its_creator_could_write(client, session_factory, two):
+    first, _second, user_id = two
+    raw = issue_key(session_factory, first, created_by=user_id)          # read only
+
+    listed = client.get("/api/v1/portfolios", headers=bearer(raw)).json()["portfolios"]
+
+    assert [p["access"] for p in listed] == ["read"]
+
+
 def test_the_portfolios_endpoint_still_refuses_a_dead_key(client, session_factory, two):
     first, _second, user_id = two
     raw = issue_key(session_factory, first, created_by=user_id)
@@ -386,6 +395,28 @@ def test_a_write_key_can_record_a_trade(client, session_factory, furnished):
         latest = s.scalars(select(Trade).order_by(Trade.id.desc())).first()
         assert latest.quantity == 10
         assert latest.note == "via API"
+        assert resp.json()["id"] == latest.id      # the row it made, not None
+
+
+@freeze_time(ref.TODAY)
+@pytest.mark.parametrize("path, body", [
+    ("/api/v1/trades", {"ticker": "ALPHA", "type": "buy", "date": "2026-07-01",
+                        "units": "10", "unit_price": "14.00"}),
+    ("/api/v1/dividends", {"ticker": "ALPHA", "date": "2026-07-01", "cash_amount": "42.00"}),
+], ids=["trade", "dividend"])
+def test_a_note_sent_is_kept_and_the_row_made_is_the_one_answered(client, session_factory,
+                                                                    furnished, path, body):
+    portfolio_id, user_id = furnished
+    raw = issue_key(session_factory, portfolio_id, scopes="read,write", created_by=user_id)
+
+    resp = client.post(path, json={**body, "note": "from the budget app"}, headers=bearer(raw))
+
+    model = Trade if path.endswith("trades") else Dividend
+    with bound(session_factory, portfolio_id) as s:
+        latest = s.scalars(select(model).order_by(model.id.desc())).first()
+        assert (resp.json()["id"], latest.note) == (latest.id, "from the budget app")
+        if model is Trade:
+            assert latest.brokerage == 0           # none sent is none paid
 
 
 @freeze_time(ref.TODAY)
@@ -472,6 +503,45 @@ def test_holdings_lists_only_open_positions(client, session_factory, furnished):
     assert "ZULU" not in tickers   # sold out entirely
 
 
+@freeze_time(ref.TODAY)
+def test_a_holding_says_when_its_price_is_from_or_that_it_has_none(client, session_factory,
+                                                                    furnished):
+    portfolio_id, user_id = furnished
+    with bound(session_factory, portfolio_id, user_id) as s:
+        fac.add_trade(s, fac.make_instrument(s, "UNPRICED"), "2026-01-05", "buy", 1, "1.00")
+        s.commit()
+    raw = issue_key(session_factory, portfolio_id, created_by=user_id)
+
+    rows = {h["ticker"]: h
+            for h in client.get("/api/v1/holdings", headers=bearer(raw)).json()["holdings"]}
+
+    with bound(session_factory, portfolio_id) as s:
+        alpha = s.scalars(select(Instrument).where(Instrument.ticker == "ALPHA")).one()
+        last = s.scalar(select(func.max(Price.date)).where(Price.instrument_id == alpha.id))
+    assert (rows["ALPHA"]["price_date"], rows["UNPRICED"]["price_date"]) == (
+        last.isoformat(), None)
+
+
+@freeze_time(ref.TODAY)
+def test_units_come_back_to_the_eight_places_they_are_stored_to(client, session_factory,
+                                                                furnished):
+    """A crypto holding is counted in hundred-millionths; rounding to six put
+    0.12345678 out as 0.123457."""
+    portfolio_id, user_id = furnished
+    with bound(session_factory, portfolio_id, user_id) as s:
+        coin = fac.make_instrument(s, "COIN", exchange="CRYPTO", asset_class="crypto")
+        fac.add_trade(s, coin, "2026-01-05", "buy", "0.12345678", "100.00")
+        s.commit()
+    raw = issue_key(session_factory, portfolio_id, created_by=user_id)
+
+    holdings = client.get("/api/v1/holdings", headers=bearer(raw)).json()["holdings"]
+    trades = client.get("/api/v1/trades", params={"ticker": "COIN"},
+                        headers=bearer(raw)).json()["trades"]
+
+    assert [h["units"] for h in holdings if h["ticker"] == "COIN"] == [0.12345678]
+    assert [t["units"] for t in trades] == [0.12345678]
+
+
 # --------------------------------------------------------------------------- #
 # Filters
 # --------------------------------------------------------------------------- #
@@ -487,10 +557,30 @@ def test_trades_can_be_filtered_by_date_and_ticker(client, session_factory, furn
                        headers=bearer(raw)).json()["trades"]
     assert sorted(t["ticker"] for t in since) == ["BETAX", "ZULU"]
 
-    betax = client.get("/api/v1/trades", params={"ticker": "betax"},
+    betax = client.get("/api/v1/trades", params={"ticker": " betax "},
                        headers=bearer(raw)).json()["trades"]
     assert {t["ticker"] for t in betax} == {"BETAX"}
     assert len(betax) == 3        # two buys and one sell
+
+
+@freeze_time(ref.TODAY)
+@pytest.mark.parametrize("path", ["/api/v1/trades", "/api/v1/dividends"])
+def test_rows_come_back_in_date_order_whatever_order_they_were_written(
+        client, session_factory, furnished, path):
+    portfolio_id, user_id = furnished
+    with bound(session_factory, portfolio_id, user_id) as s:
+        alpha = s.scalars(select(Instrument).where(Instrument.ticker == "ALPHA")).one()
+        if path.endswith("trades"):
+            fac.add_trade(s, alpha, "2019-01-02", "buy", 1, "1.00")     # before everything
+        else:
+            fac.add_dividend(s, alpha, "2019-01-02", "1.00")
+        s.commit()
+    raw = issue_key(session_factory, portfolio_id, created_by=user_id)
+
+    rows = client.get(path, headers=bearer(raw)).json()[path.rsplit("/", 1)[1]]
+
+    dates = [r["date"] for r in rows]
+    assert dates[0] == "2019-01-02" and dates == sorted(dates)
 
 
 def test_a_malformed_since_is_rejected(client, session_factory, furnished):
@@ -595,6 +685,16 @@ def test_the_plan_endpoint_returns_the_rotation_and_what_is_next(client, session
     # The anchor date IS the first buy, so that is what comes next.
     assert payload["upcoming"][0] == {"ticker": "ALPHA", "exchange": "ASX",
                                       "due_date": "2026-07-06", "amount": 500.0}
+    assert len(payload["upcoming"]) == 6           # the endpoint's promise
+
+
+def test_with_no_plan_the_endpoint_says_so(client, session_factory, furnished):
+    portfolio_id, user_id = furnished
+    raw = issue_key(session_factory, portfolio_id, created_by=user_id)
+
+    resp = client.get("/api/v1/schedule", headers=bearer(raw))
+
+    assert (resp.status_code, resp.json()) == (200, {"plan": None, "upcoming": []})
 
 
 # --------------------------------------------------------------------------- #
@@ -750,6 +850,30 @@ def test_a_trades_rate_is_the_one_sent_and_an_aud_one_is_1(client, session_facto
     with bound(session_factory, portfolio_id) as s:
         latest = s.scalars(select(Trade).order_by(Trade.id.desc())).first()
         assert (latest.fx_rate, latest.date.isoformat()) == (stored, str(ref.TODAY))
+
+
+@freeze_time(ref.TODAY)
+@pytest.mark.parametrize("ticker, rate, stored", [("NOVA", "0.65", Decimal("0.65")),
+                                                  ("NOVA", None, None),
+                                                  ("ALPHA", "0.65", Decimal(1))])
+def test_a_dividends_rate_is_the_one_sent_and_an_aud_one_is_1(client, session_factory,
+                                                              furnished, ticker, rate, stored):
+    portfolio_id, user_id = furnished
+    raw = issue_key(session_factory, portfolio_id, scopes="read,write", created_by=user_id)
+    with bound(session_factory, portfolio_id, user_id) as s:
+        if s.scalar(select(Instrument).where(Instrument.ticker == "NOVA")) is None:
+            fac.hold(s, fac.make_instrument(s, "NOVA", exchange="NASDAQ", currency="USD"))
+            s.commit()
+
+    body = {"ticker": ticker, "date": str(ref.TODAY), "cash_amount": "12.34"}
+    if rate:
+        body["fx_rate"] = rate
+    resp = client.post("/api/v1/dividends", headers=bearer(raw), json=body)
+
+    assert resp.status_code == 201, resp.text
+    with bound(session_factory, portfolio_id) as s:
+        latest = s.scalars(select(Dividend).order_by(Dividend.id.desc())).first()
+        assert latest.fx_rate == stored
 
 
 @freeze_time(ref.TODAY)

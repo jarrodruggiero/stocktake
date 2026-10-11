@@ -32,7 +32,9 @@ router = APIRouter(prefix="/api/v1", tags=["api"])
 
 
 def _num(value: Decimal | None) -> float | None:
-    return round(float(value), 6) if value is not None else None
+    # Eight places, the finest any column stores (a quantity, to a
+    # hundred-millionth of a coin), so no stored digit is lost on the way out.
+    return round(float(value), 8) if value is not None else None
 
 
 @router.get("/portfolios")
