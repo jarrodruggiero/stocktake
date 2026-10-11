@@ -477,6 +477,86 @@ async def statement_commit(
     return RedirectResponse(to, status_code=303)
 
 
+# A combined advice is a handful of funds. Past this a post is not one.
+_MAX_ROWS = 200
+
+
+def _posted_rows(form) -> list[statements.StatementRow]:
+    """A combined advice's rows as its form sent them back."""
+    indices = list(dict.fromkeys(str(i) for i in form.getlist("row")
+                                 if re.fullmatch(r"[0-9]{1,4}", str(i))))
+    if len(indices) > _MAX_ROWS:
+        raise HTTPException(400, "That is more rows than an advice has.")
+    ticked = {str(i) for i in form.getlist("save")}
+    rows = []
+    for i in indices:
+        def sent(name: str) -> str:
+            return str(form.get(f"{name}-{i}") or "")
+        rows.append(statements.StatementRow(
+            ticker=sent("fund"), cash_amount=sent("amount"), drp_price=sent("price"),
+            drp_units=sent("units"), units_held=sent("held"), carry_note=sent("carry"),
+            payment_date=sent("date"), listing=sent("ticker"), ticked=i in ticked))
+    return rows
+
+
+@router.post("/imports-exports/statement/rows")
+async def statement_rows_commit(request: Request):
+    """Every ticked fund of a combined advice, saved together. One refused,
+    and none is saved: the advice comes back with each row's reason and
+    everything as it was typed, so nothing has to be uploaded again."""
+    templates, settings, _ = _ctx(request)
+    form = await request.form()
+    rows = _posted_rows(form)
+    with auth.scoped_session(request) as (ctx, s):
+        await auth.verify_csrf(request, s)
+        _require_write(ctx)
+        statements.annotate_rows(s, rows)
+        found: list[_Distribution] = []
+        seen: set[tuple] = set()
+        for row in rows:
+            if not row.ticked:
+                continue
+            reinvested = row.drp_units not in ("", "0")
+            try:
+                one = _distribution(s, ticker=row.listing or row.ticker,
+                                    payment_date=row.payment_date, net_amount=row.cash_amount,
+                                    drp_units=row.drp_units if reinvested else "",
+                                    drp_price=row.drp_price if reinvested else "",
+                                    note_extra=row.carry_note)
+            except _Refused as exc:
+                row.problem = str(exc)
+                continue
+            key = (one.instrument.id, one.date, one.amount)
+            if key in seen:
+                row.problem = "This distribution is on the advice twice."
+                continue
+            seen.add(key)
+            found.append(one)
+        problem = "" if found or any(r.problem for r in rows) else "Tick the funds to save."
+        if problem or any(r.problem for r in rows):
+            return templates.TemplateResponse(
+                request,
+                "statement_rows_preview.html",
+                {
+                    "auth": ctx,
+                    "nav": navigation.nav_for(ctx, settings),
+                    "active_nav": "imports",
+                    "p": statements.ParsedStatement(
+                        text_sample="", rows=rows,
+                        payment_date=str(form.get("advice_date") or "") or None,
+                        used_ocr=bool(form.get("used_ocr")), problem=problem),
+                    "filename": str(form.get("filename") or ""),
+                    "return_to": _came_from(request, form)[0],
+                    "back_label": _came_from(request, form)[1],
+                },
+                status_code=400,
+            )
+        for one in found:
+            _record(s, one)
+    return RedirectResponse(f"/imports-exports?done=statement&saved={len(found)}",
+                            status_code=303)
+
+
 # --------------------------------------------------------------------------- #
 # The statement template designer. The feature most likely to drift, and the
 # three principles holding it straight — the document never leaves the machine,

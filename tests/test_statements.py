@@ -58,6 +58,31 @@ def test_each_fund_on_a_combined_advice_becomes_a_row(pf, stub_text):
     assert parsed.payment_date == dt.date(2026, 3, 15)
 
 
+@pytest.mark.parametrize("amount, looked_up", [
+    ("1E+999999", False),       # no column holds it: Postgres refused the comparison
+    ("NaN", False),
+    ("1,234.50", True),         # read as the save reads it
+])
+def test_only_a_figure_the_column_holds_is_looked_up_as_a_duplicate(pf, monkeypatch, amount,
+                                                                     looked_up):
+    """The combined advice's form comes back as text, and every row was looked
+    up as a possible duplicate however it read: Postgres will not compare a
+    Numeric column with 1E+999999 at all, so one such row took the whole form
+    down. The hostile walk found it, on Postgres only."""
+    fac.hold(pf, fac.make_instrument(pf, "ALPHA"))
+    pf.commit()
+    asked = []
+    monkeypatch.setattr(statements, "duplicate_of",
+                        lambda session, inst, date, value: asked.append(value))
+    row = statements.StatementRow(ticker="ALPHA", cash_amount=amount, drp_price="",
+                                  drp_units="", units_held="", carry_note="",
+                                  payment_date="2026-03-15")
+
+    statements.annotate_rows(pf, [row])
+
+    assert asked == ([Decimal("1234.50")] if looked_up else [])
+
+
 def test_the_distribution_is_the_reinvestment_amount_not_units_times_price(pf, stub_text):
     """The figure that matters is the cash the fund distributed, which is NOT
     units allotted x DRP price — residual balances are carried forward between
