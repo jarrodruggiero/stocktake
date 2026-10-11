@@ -18,13 +18,15 @@ from sqlalchemy import select
 
 import factories as fac
 import fixture_portfolio as ref
-from app import chart_templates
+from app import chart_templates, tenancy
 from app.models import (
     InvestmentPlan,
     InvestmentPlanEntry,
     PlannedPurchase,
+    PortfolioMember,
     SavedChart,
     Trade,
+    User,
 )
 from test_routes import bind_to_only_portfolio, make_login, reading, session_csrf
 
@@ -536,6 +538,39 @@ def test_dragging_charts_into_a_new_order_persists_it(client, session_factory):
     with reading(session_factory) as s:
         reordered = [c.id for c in s.scalars(select(SavedChart).order_by(SavedChart.position))]
     assert reordered == list(reversed(ids))
+
+
+def test_a_viewer_builds_deletes_and_arranges_their_own_charts(client, session_factory):
+    """Charts are the person's, not the portfolio's, so a viewer keeping a page
+    of their own changes nothing of the portfolio. Another person's chart is
+    still not theirs to touch."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        member = s.scalar(select(PortfolioMember))
+        member.role = "viewer"
+        s.get(User, member.user_id).is_admin = False
+        other = fac.make_user(s, "other@example.test")
+        theirs = SavedChart(user_id=other.id, portfolio_id=member.portfolio_id, name="Theirs",
+                            spec={"grain": "positions", "measures": ["pos_value"],
+                                  "type": "table"}, position=0, width="half")
+        s.add(theirs)
+        s.commit()
+        theirs_id = theirs.id
+    csrf = {"X-CSRF-Token": session_csrf(session_factory)}
+    chart = {"name": "Mine", "width": "half",
+             "spec": {"grain": "positions", "x": "ticker", "measures": ["pos_value"],
+                      "type": "table"}}
+
+    saved = client.post("/charts/save", json=chart, headers=csrf)
+    touched = client.post("/charts/save", json={**chart, "id": theirs_id}, headers=csrf)
+    removed = client.post(f"/charts/{saved.json()['id']}/delete", headers={**csrf, **HTML},
+                          follow_redirects=False)
+
+    assert saved.status_code == 200 and touched.status_code == 404
+    assert removed.status_code == 303
+    with session_factory() as s:
+        tenancy.allow_unscoped(s)          # both people's charts, not only mine
+        assert [c.name for c in s.scalars(select(SavedChart))] == ["Theirs"]
 
 
 @freeze_time(ref.TODAY)
