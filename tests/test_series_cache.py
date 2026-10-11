@@ -221,3 +221,17 @@ def test_a_neighbours_edit_does_not_invalidate_this_portfolios_cache(pf):
     _commit(pf)
 
     assert _series_value(pf) == Decimal("600")
+
+
+def test_reordering_the_holdings_handed_out_leaves_the_cache_alone(pf):
+    """The cache handed out its own list, so a caller that sorted it in place
+    reordered every later caller's holdings too."""
+    for ticker in ("ALPHA", "BETAX"):
+        fac.add_trade(pf, fac.make_instrument(pf, ticker), "2026-01-05", "buy", 10, "5.00")
+    pf.flush()
+
+    queries.cached_holdings(pf).reverse()        # the call that fills the cache
+    queries.cached_holdings(pf).reverse()        # and one served from it
+
+    assert [h.instrument.ticker for h in queries.cached_holdings(pf)] == ["ALPHA", "BETAX"]
+

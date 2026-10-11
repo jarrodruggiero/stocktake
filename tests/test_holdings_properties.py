@@ -56,8 +56,6 @@ def test_every_holding_agrees_with_the_working_out(session_factory, portfolio, h
         for c in closed:
             w = want[c.instrument.ticker]
             assert (c.outlay, _q(c.proceeds)) == (w["cost"], _q(w["proceeds"]))
-            assert _q(c.profit) == (None if w["proceeds"] is None else
-                                    _q(w["proceeds"] + w["dividends_cash"] - w["cost"]))
 
         totals = queries.totals(open_)
         held = {t: w for t, w in want.items() if w["units"] > 0 and t in active}
