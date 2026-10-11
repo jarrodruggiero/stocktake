@@ -24,8 +24,8 @@ this form is the source of truth. Leave DRP fields empty for a cash dividend.</p
   <label>Instrument
     <select name="ticker" required>
       <option value="" {{ 'selected' if not p.ticker }} disabled>— select —</option>
-      {% for t in tickers %}
-      <option value="{{ t }}" {{ 'selected' if t == p.ticker }}>{{ t }}</option>
+      {% for value, label in tickers %}
+      <option value="{{ value }}"{{ ' selected' if value == p.ticker }}>{{ label }}</option>
       {% endfor %}
     </select>
   </label>

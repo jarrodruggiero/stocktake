@@ -41,6 +41,7 @@ class UpcomingBuy:
     entry_id: int | None
     instrument_id: int | None
     amount: Decimal | None = None
+    exchange: str | None = None
 
     @property
     def is_due(self) -> bool:
@@ -83,13 +84,14 @@ def suggested_rotation(session: Session) -> list[str]:
     person's holdings as its default — and could not be changed without a
     redeploy.
     """
-    from .queries import all_holdings, split_positions
+    from .queries import all_holdings, ambiguous_tickers, listing_ref, split_positions
 
     open_positions, _closed = split_positions(all_holdings(session))
     ordered = sorted(
         open_positions, key=lambda h: (h.instrument.asset_class, h.instrument.ticker)
     )
-    return [h.instrument.ticker for h in ordered]
+    twice = ambiguous_tickers(session)
+    return [listing_ref(h.instrument.ticker, h.instrument.exchange, twice) for h in ordered]
 
 
 def history(session: Session) -> list[PlannedPurchase]:
@@ -206,6 +208,7 @@ def schedule(session: Session, upcoming: int = 3) -> dict:
             entry_id=plan.entries[(position + i) % size].id,
             instrument_id=plan.entries[(position + i) % size].instrument_id,
             amount=plan.amount,
+            exchange=plan.entries[(position + i) % size].instrument.exchange,
         )
         for i, (due, ticker) in enumerate(dates)
     ]

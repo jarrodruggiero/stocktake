@@ -300,7 +300,7 @@ short by those holdings, not by a rounding.</p>
       <tr>
         {%- for c in cols %}{% set v = c.value(h) %}
         {%- if c.render == 'ticker' %}
-        <td><a href="/holding/{{ h.instrument.ticker }}">{{ h.instrument.ticker }}</a>
+        <td><a href="{{ holding_href(h.instrument.ticker, h.instrument.exchange) }}">{{ h.instrument.ticker }}</a>
             {% if h.instrument.currency != 'AUD' %}<span class="ccy">{{ h.instrument.currency }}</span>{% endif %}</td>
         {%- elif c.render == 'gain' %}
         {%- set pct = h.gain_pct if c.key == 'gain_reporting' else h.day_pct %}

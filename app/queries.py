@@ -10,8 +10,10 @@ from __future__ import annotations
 import bisect
 import datetime as dt
 import json
+from collections import Counter
 from dataclasses import dataclass, field
 from decimal import Decimal
+from urllib.parse import urlencode
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -495,19 +497,18 @@ class LedgerEvent:
 
 
 def ledger(
-    session: Session, ticker: str
+    session: Session, ticker: str, exchange: str | None = None
 ) -> tuple[Instrument, Holding, list[LedgerEvent]] | None:
     # This portfolio's, not the catalogue's: a ticker is unique per exchange,
-    # so the catalogue can hold another portfolio's under the same one.
-    inst = session.scalars(
-        select(Instrument)
-        .where(Instrument.ticker == ticker,
-               Instrument.id.in_(portfolio_instrument_ids(session)))
-        .order_by(Instrument.id)
-        .options(selectinload(Instrument.trades), selectinload(Instrument.dividends))
-    ).first()
-    if inst is None:
+    # so the catalogue can hold another portfolio's under the same one. Held
+    # here on two exchanges, the exchange says which; without it, the older.
+    found = held_as(session, ticker, exchange)
+    if not found:
         return None
+    inst = session.scalars(
+        select(Instrument).where(Instrument.id == found[0].id)
+        .options(selectinload(Instrument.trades), selectinload(Instrument.dividends))
+    ).one()
     pref = prefs_by_instrument(session).get(inst.id)
     latest = _latest_price(session, inst.id)
     latest_close = latest[0] if latest else None
@@ -1250,6 +1251,52 @@ def portfolio_instrument_ids(session: Session) -> set[int]:
             | set(session.scalars(select(InvestmentPlanEntry.instrument_id)
                                   .where(InvestmentPlanEntry.plan_id.in_(
                                       list(session.scalars(plans)))))))
+
+
+def held_as(session: Session, ticker: str, exchange: str | None = None) -> list[Instrument]:
+    """This portfolio's instruments a ticker can mean, oldest first: one, none,
+    or the same code on more than one exchange. `ticker` may carry the
+    exchange itself, as TICKER:EXCHANGE — the form a list of tickers names it in."""
+    code, _, named = ticker.strip().upper().partition(":")
+    exchange = (exchange or named).strip().upper()
+    ids = portfolio_instrument_ids(session)
+    if not code or not ids:
+        return []
+    stmt = select(Instrument).where(Instrument.ticker == code, Instrument.id.in_(ids))
+    if exchange:
+        stmt = stmt.where(Instrument.exchange == exchange)
+    return list(session.scalars(stmt.order_by(Instrument.id)))
+
+
+def held_twice(found: list[Instrument]) -> str:
+    """Why a ticker alone is not enough here, and how to say which."""
+    code = found[0].ticker
+    return (f"{code} is held on {' and '.join(i.exchange for i in found)} — "
+            f"name the exchange, as {code}:{found[0].exchange}.")
+
+
+def ambiguous_tickers(session: Session) -> set[str]:
+    """Tickers this portfolio holds on more than one exchange."""
+    ids = portfolio_instrument_ids(session)
+    if not ids:
+        return set()
+    counts = Counter(session.scalars(select(Instrument.ticker).where(Instrument.id.in_(ids))))
+    return {ticker for ticker, n in counts.items() if n > 1}
+
+
+def listing_ref(ticker: str, exchange: str, ambiguous: set[str]) -> str:
+    """How a list of tickers names a holding: its ticker, or TICKER:EXCHANGE
+    when that ticker is held on more than one exchange."""
+    return f"{ticker}:{exchange}" if ticker in ambiguous else ticker
+
+
+def holding_path(ticker: str, exchange: str | None, ambiguous: set[str], **params) -> str:
+    """The holding page's address. The exchange goes in only when the ticker
+    is held on more than one, so every other address is what it always was."""
+    if exchange and ticker in ambiguous:
+        params = {"exchange": exchange, **params}
+    query = urlencode({k: v for k, v in params.items() if v}, safe="/")
+    return f"/holding/{ticker}" + (f"?{query}" if query else "")
 
 
 def portfolio_instruments(session: Session) -> list[Instrument]:

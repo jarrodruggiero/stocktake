@@ -590,8 +590,8 @@ def test_the_plan_endpoint_returns_the_rotation_and_what_is_next(client, session
     assert payload["plan"]["rotation"] == ["ALPHA", "BETAX"]
     assert payload["plan"]["interval_days"] == 28
     # The anchor date IS the first buy, so that is what comes next.
-    assert payload["upcoming"][0] == {"ticker": "ALPHA", "due_date": "2026-07-06",
-                                      "amount": 500.0}
+    assert payload["upcoming"][0] == {"ticker": "ALPHA", "exchange": "ASX",
+                                      "due_date": "2026-07-06", "amount": 500.0}
 
 
 # --------------------------------------------------------------------------- #
