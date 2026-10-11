@@ -13,6 +13,7 @@ import json
 import logging
 import re
 import uuid
+from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -334,6 +335,101 @@ async def statement_preview(request: Request, file: UploadFile,
         )
 
 
+class _Refused(Exception):
+    """What a statement form would not save, and why. The form comes back
+    holding what was typed: it is the answer to an upload, so Back cannot."""
+
+    def __init__(self, message: str, status: int = 400):
+        super().__init__(message)
+        self.status = status
+
+
+@dataclass
+class _Distribution:
+    instrument: Instrument
+    date: dt.date
+    amount: Decimal
+    franking: Decimal | None
+    units: Decimal | None
+    price: Decimal | None
+    note: str
+
+
+def _distribution(s, *, ticker: str, payment_date: str, net_amount: str,
+                  franked_amount: str = "", franking_credits: str = "", drp_units: str = "",
+                  drp_price: str = "", note_extra: str = "") -> _Distribution:
+    """A statement's figures, checked by the rules the dividend edit form
+    uses, so a statement cannot save what that form would refuse."""
+
+    def _dec(raw: str, column, name: str) -> Decimal | None:
+        raw = raw.strip().replace(",", "").replace("$", "")
+        if not raw:
+            return None
+        try:
+            return money.parse(raw, column, name)
+        except money.FigureError as exc:
+            raise _Refused(str(exc)) from None
+
+    if not payment_date.strip():
+        raise _Refused("A payment date is needed.")
+    try:
+        date = dt.date.fromisoformat(payment_date.strip())
+    except ValueError:
+        raise _Refused("The payment date has to be a date, like 2026-03-15.") from None
+    amount = _dec(net_amount, Dividend.cash_amount, "Net amount")
+    if amount is None:
+        raise _Refused("A net amount is needed.")
+    if amount <= 0:
+        raise _Refused("Net amount has to be more than zero.")
+    franking = _dec(franking_credits, Dividend.franking_credits, "Franking credits")
+    if franking is not None and franking < 0:
+        raise _Refused("Franking credits can't be negative.")
+    units = _dec(drp_units, Trade.quantity, "DRP units")
+    price = _dec(drp_price, Trade.unit_price, "DRP price")
+    if units is not None and units <= 0:
+        raise _Refused("DRP units have to be more than zero.")
+    if price is not None and price < 0:
+        raise _Refused("DRP price can't be negative.")
+    # Without its price a DRP has no cost base to book (decisions.md #100).
+    # Recording the cash alone dropped the units, and the holding came up short.
+    if units is not None and price is None:
+        raise _Refused("DRP units need their allotment price.")
+
+    found = queries.held_as(s, ticker)
+    if len(found) > 1:
+        raise _Refused(queries.held_twice(found))
+    if not found:
+        raise _Refused(f"{ticker.strip() or 'That'} isn't one of this portfolio's holdings.")
+    inst = found[0]
+    if statements.duplicate_of(s, inst, date, amount):
+        raise _Refused(f"{inst.ticker} already has a distribution of {amount} on {date}.", 409)
+
+    note = "from dividend statement"
+    if franked_amount.strip():
+        note += f"; franked amount {_dec(franked_amount, Dividend.cash_amount, 'Franked amount')}"
+    if note_extra.strip():
+        note += f"; {note_extra.strip()}"
+    try:
+        textfield.fit(note, Dividend.note, "Note")      # the trade's note is the same
+    except textfield.TextError as exc:
+        raise _Refused(str(exc)) from None
+    return _Distribution(inst, date, amount, franking, units, price, note)
+
+
+def _record(s, d: _Distribution) -> None:
+    """The distribution, and the units it bought when it was reinvested."""
+    rate = Decimal(1) if d.instrument.currency == "AUD" else None
+    reinvest = None
+    if d.units is not None:
+        reinvest = tenancy.owned(s, Trade(
+            instrument=d.instrument, date=d.date, type="drp", quantity=d.units,
+            unit_price=d.price, brokerage=Decimal(0), fx_rate=rate, note=d.note))
+        s.add(reinvest)
+    s.add(tenancy.owned(s, Dividend(
+        instrument=d.instrument, date=d.date, cash_amount=d.amount, fx_rate=rate,
+        franking_credits=d.franking, reinvest_trade=reinvest, note=d.note)))
+
+
 @router.post("/imports-exports/statement/commit")
 async def statement_commit(
     request: Request,
@@ -345,97 +441,39 @@ async def statement_commit(
     drp_units: str = Form(""),
     drp_price: str = Form(""),
     note_extra: str = Form(""),
+    filename: str = Form(""),
+    used_ocr: str = Form(""),
 ):
-    _, _, session_factory = _ctx(request)
-
-    def _dec(raw: str, column, name: str) -> Decimal | None:
-        raw = raw.strip().replace(",", "").replace("$", "")
-        if not raw:
-            return None
-        try:
-            return money.parse(raw, column, name)
-        except money.FigureError as exc:
-            raise HTTPException(400, str(exc))
-
-    try:
-        date = dt.date.fromisoformat(payment_date)
-    except ValueError:
-        raise HTTPException(400, f"bad payment date {payment_date!r} (use YYYY-MM-DD)")
-    amount = _dec(net_amount, Dividend.cash_amount, "Net amount")
-    if amount is None:
-        raise HTTPException(400, "net amount is required")
-    # The same rules as the dividend edit form, so a statement cannot save what
-    # that form would refuse.
-    if amount <= 0:
-        raise HTTPException(400, "Net amount has to be more than zero.")
-    franking = _dec(franking_credits, Dividend.franking_credits, "Franking credits")
-    if franking is not None and franking < 0:
-        raise HTTPException(400, "Franking credits can't be negative.")
-    units = _dec(drp_units, Trade.quantity, "DRP units")
-    price = _dec(drp_price, Trade.unit_price, "DRP price")
-    if units is not None and units <= 0:
-        raise HTTPException(400, "DRP units have to be more than zero.")
-    if price is not None and price < 0:
-        raise HTTPException(400, "DRP price can't be negative.")
-    # Without its price a DRP has no cost base to book (decisions.md #100).
-    # Recording the cash alone dropped the units, and the holding came up short.
-    if units is not None and price is None:
-        raise HTTPException(400, "DRP units need their allotment price.")
-
+    templates, settings, _ = _ctx(request)
+    typed = {"ticker": ticker, "payment_date": payment_date, "net_amount": net_amount,
+             "franked_amount": franked_amount, "franking_credits": franking_credits,
+             "drp_units": drp_units, "drp_price": drp_price}
     with auth.scoped_session(request) as (ctx, s):
         await auth.verify_csrf(request, s)
         _require_write(ctx)
-        found = queries.held_as(s, ticker)
-        if len(found) > 1:
-            raise HTTPException(400, queries.held_twice(found))
-        if not found:
-            raise HTTPException(400, f"unknown instrument {ticker!r}")
-        inst = found[0]
-        if statements.duplicate_of(s, inst, date, amount):
-            raise HTTPException(409, f"a {inst.ticker} dividend of {amount} on {date} already exists")
-
-        note = "from dividend statement"
-        if franked_amount.strip():
-            note += (f"; franked amount "
-                     f"{_dec(franked_amount, Dividend.cash_amount, 'Franked amount')}")
-        if note_extra.strip():
-            note += f"; {note_extra.strip()}"
         try:
-            textfield.fit(note, Dividend.note, "Note")      # the trade's note is the same
-        except textfield.TextError as exc:
-            raise HTTPException(400, str(exc))
-
-        reinvest = None
-        if units is not None:
-            reinvest = tenancy.owned(
-                s,
-                Trade(
-                    instrument=inst,
-                    date=date,
-                    type="drp",
-                    quantity=units,
-                    unit_price=price,
-                    brokerage=Decimal(0),
-                    fx_rate=Decimal(1) if inst.currency == "AUD" else None,
-                    note=note,
-                ),
+            found = _distribution(s, **typed, note_extra=note_extra)
+        except _Refused as exc:
+            return templates.TemplateResponse(
+                request,
+                "statement_preview.html",
+                {
+                    "auth": ctx,
+                    "nav": navigation.nav_for(ctx, settings),
+                    "active_nav": "imports",
+                    "p": statements.ParsedStatement(text_sample="", **typed,
+                                                    used_ocr=bool(used_ocr),
+                                                    problem=str(exc)),
+                    "filename": filename,
+                    "tickers": statements.choices(s),
+                    "return_to": _came_from(request)[0],
+                    "back_label": _came_from(request)[1],
+                },
+                status_code=exc.status,
             )
-            s.add(reinvest)
-        s.add(
-            tenancy.owned(
-                s,
-                Dividend(
-                    instrument=inst,
-                    date=date,
-                    cash_amount=amount,
-                    fx_rate=Decimal(1) if inst.currency == "AUD" else None,
-                    franking_credits=franking,
-                    reinvest_trade=reinvest,
-                    note=note,
-                ),
-            )
-        )
-        to = queries.holding_path(inst.ticker, inst.exchange, queries.ambiguous_tickers(s))
+        _record(s, found)
+        to = queries.holding_path(found.instrument.ticker, found.instrument.exchange,
+                                  queries.ambiguous_tickers(s))
     return RedirectResponse(to, status_code=303)
 
 

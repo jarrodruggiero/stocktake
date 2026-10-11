@@ -21,6 +21,9 @@ this form is the source of truth. Leave DRP fields empty for a cash dividend.</p
 
 <form action="/imports-exports/statement/commit" method="post" class="panel statement">
   <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  {# Carried so a refusal can bring the form back as it was, warning and all. #}
+  <input type="hidden" name="filename" value="{{ filename or '' }}">
+  {% if p.used_ocr %}<input type="hidden" name="used_ocr" value="1">{% endif %}
   <label>Instrument
     <select name="ticker" required>
       <option value="" {{ 'selected' if not p.ticker }} disabled>— select —</option>
@@ -48,6 +51,8 @@ this form is the source of truth. Leave DRP fields empty for a cash dividend.</p
 {# What the app actually saw. A blank field is otherwise indistinguishable
    from a layout nobody has written a template for — this is the difference
    between "it didn't work" and knowing which label to add. #}
+{# Not there when a refusal brought the form back: only the figures travel. #}
+{% if p.full_text or p.text_sample %}
 <details class="inspect">
   <summary>What was read from this file</summary>
   <p class="note">
@@ -66,5 +71,6 @@ this form is the source of truth. Leave DRP fields empty for a cash dividend.</p
     <button type="submit">Design a template for this layout</button>
   </form>
 </details>
+{% endif %}
 
 {% endblock %}
