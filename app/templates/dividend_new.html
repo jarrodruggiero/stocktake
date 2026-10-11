@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Record a distribution — Stocktake{% endblock %}
+{% block content %}
+
+<a class="backlink" href="{{ return_to }}"><button type="button" class="secondary">&larr; {{ back_label }}</button></a>
+
+<h1>Record a distribution</h1>
+{% if p.problem %}
+<p role="alert" class="panel error">{{ p.problem }}</p>
+{% endif %}
+
+{% include "_distribution_form.html" %}
+
+{% endblock %}

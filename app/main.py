@@ -87,6 +87,7 @@ from . import (
     queries,
     setupwizard,
     sorting,
+    statements,
     submissions,
     tenancy,
     textfield,
@@ -5845,6 +5846,14 @@ async def instrument_pref(
     return _redirect(_back_to_referer(request, "/holdings"))
 
 
+def _distribution_form(db: DbSession, inst: Instrument) -> dict:
+    choices = statements.choices(db)
+    value = next((v for v, _label in choices if v in (inst.ticker, f"{inst.ticker}:{inst.exchange}")),
+                 "")
+    return {"dist": statements.ParsedStatement(text_sample="", ticker=value),
+            "dist_tickers": choices}
+
+
 @app.get("/holding/{ticker}", response_class=HTMLResponse)
 def instrument(request: Request, ticker: str, error: str = "", exchange: str = ""):
     with scoped(request) as (ctx, db):
@@ -5868,6 +5877,9 @@ def instrument(request: Request, ticker: str, error: str = "", exchange: str = "
                 "events": events,
                 "series_json": series,
                 "has_series": bool(series["dates"]),
+                # Record a distribution: the statement form, this holding
+                # chosen in its list.
+                **(_distribution_form(db, inst) if ctx.can_write else {}),
                 # Where the back button goes comes from `?return=`, not from
                 # `Referer` or `history.back()` — decisions.md #40.
                 "return_to": back_to,

@@ -142,7 +142,7 @@ def test_only_a_writer_is_shown_the_buttons_that_open_them(client, session_facto
     assert shown == ([] if role == "viewer" else [label for _page, label in OPENERS])
 
 
-@pytest.mark.parametrize("page", ["/trade/new", "/schedule/complete"])
+@pytest.mark.parametrize("page", ["/trade/new", "/schedule/complete", "/dividend/new?ticker=ACME"])
 def test_a_page_that_is_only_a_write_is_refused_to_a_viewer(client, session_factory, page):
     """Opened from a bookmark, they took a whole trade before refusing it."""
     _furnished(client, session_factory, "viewer")

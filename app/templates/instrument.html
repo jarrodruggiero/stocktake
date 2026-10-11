@@ -43,6 +43,18 @@
 
 {% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
 
+{% if auth.can_write %}
+{# A distribution with no statement to upload. The same form as /dividend/new,
+   which is where a browser without scripting goes. #}
+<dialog id="distdialog">
+  <h2>Record a distribution</h2>
+  {% with in_dialog = True, p = dist, tickers = dist_tickers, filename = '', return_to = holding_href(inst.ticker, inst.exchange) %}
+  {% include "_distribution_form.html" %}
+  {% endwith %}
+</dialog>
+<script src="/static/dialogs.js?v={{ asset_v }}" defer></script>
+{% endif %}
+
 <section>
   {# A button, not a `<small>` link inside the heading. It is the one action
      this page offers, and it was set in the heading's own size and weight —
@@ -52,7 +64,9 @@
      rather than squeezing the title. #}
   <h2 class="sectionhead">Ledger
     {% if auth.can_write %}<a href="/trade/new?ticker={{ inst.ticker }}{% if others %}&amp;exchange={{ inst.exchange }}{% endif %}"><button type="button"
-       class="secondary">Record a trade</button></a>{% endif %}</h2>
+       class="secondary">Record a trade</button></a>
+    <button type="button" class="secondary" data-opens="distdialog">Record a distribution</button>
+    <noscript><a href="/dividend/new?ticker={{ dist.ticker | urlencode }}">Record a distribution</a></noscript>{% endif %}</h2>
   <div class="tablewrap">
   <table>
     <thead>

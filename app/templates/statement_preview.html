@@ -19,34 +19,7 @@ figure against the document before saving.</p>
 <p class="note">Check every field against the PDF — parsing is best-effort and
 this form is the source of truth. Leave DRP fields empty for a cash dividend.</p>
 
-<form action="/imports-exports/statement/commit" method="post" class="panel statement">
-  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-  {# Carried so a refusal can bring the form back as it was, warning and all. #}
-  <input type="hidden" name="filename" value="{{ filename or '' }}">
-  {% if p.used_ocr %}<input type="hidden" name="used_ocr" value="1">{% endif %}
-  <label>Instrument
-    <select name="ticker" required>
-      <option value="" {{ 'selected' if not p.ticker }} disabled>— select —</option>
-      {% for value, label in tickers %}
-      <option value="{{ value }}"{{ ' selected' if value == p.ticker }}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>Payment date <input type="date" name="payment_date"
-      value="{{ p.payment_date or '' }}" required></label>
-  <label>Net amount ($) <input name="net_amount" value="{{ p.net_amount or '' }}" required></label>
-  <label>Franked amount ($) <input name="franked_amount" value="{{ p.franked_amount or '' }}"></label>
-  <label>Franking credits ($) <input name="franking_credits" value="{{ p.franking_credits or '' }}"></label>
-  <fieldset>
-    <legend>DRP reinvestment (if units were allotted)</legend>
-    <label>Units allotted <input name="drp_units" value="{{ p.drp_units or '' }}"></label>
-    <label>Allotment price ($) <input name="drp_price" value="{{ p.drp_price or '' }}"></label>
-  </fieldset>
-  <div class="commitbar">
-    <button type="submit">Save dividend</button>
-    <a href="/imports-exports">Cancel</a>
-  </div>
-</form>
+{% include "_distribution_form.html" %}
 
 {# What the app actually saw. A blank field is otherwise indistinguishable
    from a layout nobody has written a template for — this is the difference
