@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
+import pytest
 from freezegun import freeze_time
 from sqlalchemy import select
 
@@ -332,6 +333,156 @@ def test_projections_stop_at_the_horizon(pf):
     assert all(e.date <= dt.date(2027, 6, 30) for e in far)
 
 
+@freeze_time(TODAY)
+def test_the_amount_is_this_funds_latest_published_one(pf):
+    """Not the earliest published, and not another fund's. With every
+    published amount the same 0.50 and one fund publishing, neither was
+    tested. Written out of order, so the cycle depends on the dates' order
+    too: 20 Dec, 20 Mar and 20 Jun are 90 and 92 days apart."""
+    alpha = fac.make_instrument(pf, "ALPHA", name="Alpha Index Fund")
+    fac.add_trade(pf, alpha, "2026-01-05", "buy", 100, "10.00")
+    for ex_date, amount in (("2025-12-20", "0.48"), ("2026-06-20", "0.55"),
+                            ("2026-03-20", "0.50")):
+        fac.add_market_dividend(pf, alpha, ex_date, amount)
+    other = fac.make_instrument(pf, "OTHER")
+    fac.add_market_dividend(pf, other, "2026-07-30", "9.99")    # later, and not ALPHA's
+    pf.commit()
+
+    projected = calendarview.projected_dividends(pf, fac.d("2026-10-31"))
+
+    assert [(e.ticker, e.date, e.amount) for e in projected] == [
+        ("ALPHA", dt.date(2026, 9, 19), Decimal("55.00"))]
+
+
+@freeze_time(TODAY)
+def test_without_a_published_record_the_amount_comes_from_the_last_payment(pf):
+    """Per unit: the last payment over the units held before it, scaled to the
+    units held now. A sale before it counts against, a buy after it does not
+    count, and an earlier payment of another size is not the last one."""
+    alpha = fac.make_instrument(pf, "ALPHA")
+    fac.add_trade(pf, alpha, "2025-06-02", "buy", 100, "10.00")
+    fac.add_dividend(pf, alpha, "2025-12-20", "30.00")           # not the last
+    fac.add_trade(pf, alpha, "2026-02-02", "sell", 20, "10.00")  # 80 held at the last
+    fac.add_dividend(pf, alpha, "2026-03-20", "40.00")           # 0.50 a unit
+    fac.add_trade(pf, alpha, "2026-04-02", "buy", 40, "10.00")   # 120 held now
+    pf.commit()
+
+    [projected] = calendarview.projected_dividends(pf, fac.d("2026-09-30"))
+
+    assert (projected.date, projected.amount) == (dt.date(2026, 9, 16), Decimal("60.00"))
+    assert "your history" in projected.detail
+
+
+@freeze_time(TODAY)
+def test_units_a_payment_reinvested_did_not_earn_it(pf):
+    """A reinvestment is allotted on the payment date. Counted as held that
+    day, its own units shrank the figure per unit, so a reinvesting holding's
+    projection never grew: 0.50 on 100 units, with 4 reinvested, is 52.00
+    next time, not 50.00."""
+    alpha = fac.make_instrument(pf, "ALPHA")
+    fac.add_trade(pf, alpha, "2025-06-02", "buy", 100, "10.00")
+    fac.add_dividend(pf, alpha, "2025-12-20", "50.00")
+    fac.add_drp(pf, alpha, "2026-03-20", "50.00", 4, "12.50")
+    pf.commit()
+
+    [projected] = calendarview.projected_dividends(pf, fac.d("2026-09-30"))
+
+    assert projected.amount == Decimal("52.00")
+
+
+@freeze_time(TODAY)
+def test_a_last_payment_with_nothing_held_before_it_gives_no_amount(pf):
+    """Sold out before the last payment was recorded, and bought back since:
+    there is no figure per unit to scale, so the date comes without one."""
+    alpha = fac.make_instrument(pf, "ALPHA")
+    fac.add_trade(pf, alpha, "2025-06-02", "buy", 100, "10.00")
+    fac.add_dividend(pf, alpha, "2025-12-20", "50.00")
+    fac.add_trade(pf, alpha, "2026-03-01", "sell", 100, "10.00")
+    fac.add_dividend(pf, alpha, "2026-03-20", "50.00")           # earned before the sale
+    fac.add_trade(pf, alpha, "2026-04-02", "buy", 100, "10.00")
+    pf.commit()
+
+    [projected] = calendarview.projected_dividends(pf, fac.d("2026-09-30"))
+
+    assert (projected.date, projected.amount) == (dt.date(2026, 9, 16), None)
+
+
+@freeze_time(TODAY)
+def test_one_unit_held_at_the_last_payment_is_enough_to_work_it_out(pf):
+    alpha = fac.make_instrument(pf, "ALPHA")
+    fac.add_trade(pf, alpha, "2025-06-02", "buy", 1, "10.00")
+    fac.add_dividend(pf, alpha, "2025-12-20", "0.50")
+    fac.add_dividend(pf, alpha, "2026-03-20", "0.50")
+    fac.add_trade(pf, alpha, "2026-04-02", "buy", 9, "10.00")    # ten now
+    pf.commit()
+
+    [projected] = calendarview.projected_dividends(pf, fac.d("2026-09-30"))
+
+    assert projected.amount == Decimal("5.00")
+
+
+@freeze_time(TODAY)
+def test_the_published_amount_beats_one_worked_out_from_the_holders_payments(pf):
+    alpha = fac.make_instrument(pf, "ALPHA")
+    fac.add_trade(pf, alpha, "2026-01-05", "buy", 100, "10.00")
+    fac.add_dividend(pf, alpha, "2026-03-20", "40.00")           # 0.40 a unit, theirs
+    for ex_date in ("2025-12-20", "2026-03-20", "2026-06-20"):
+        fac.add_market_dividend(pf, alpha, ex_date, "0.55")
+    pf.commit()
+
+    [projected] = calendarview.projected_dividends(pf, fac.d("2026-10-31"))
+
+    assert projected.amount == Decimal("55.00")
+
+
+@freeze_time(TODAY)
+@pytest.mark.parametrize("published, cycle", [(1, 61), (2, 91)], ids=["one", "two"])
+def test_two_published_payments_show_a_cycle_and_one_does_not(pf, published, cycle):
+    """With one published payment the holder's own are followed instead:
+    theirs are 61 days apart, the fund's 91."""
+    alpha = fac.make_instrument(pf, "ALPHA")
+    fac.add_trade(pf, alpha, "2025-06-02", "buy", 100, "10.00")
+    for paid in ("2026-01-20", "2026-03-22", "2026-05-22"):
+        fac.add_dividend(pf, alpha, paid, "50.00")
+    for ex_date in ("2026-03-20", "2026-06-19")[2 - published:]:
+        fac.add_market_dividend(pf, alpha, ex_date, "0.50")
+    pf.commit()
+
+    projected = calendarview.projected_dividends(pf, fac.d("2026-12-31"))
+
+    assert f"~{cycle}-day cycle" in projected[0].detail
+
+
+@freeze_time(TODAY)
+def test_a_payment_due_today_and_one_on_the_last_day_asked_for_are_both_in(pf):
+    """1 Feb and 3 May are 91 days apart, so the next is today, 2 Aug, and
+    the one after is 1 Nov."""
+    alpha = fac.make_instrument(pf, "ALPHA")
+    fac.add_trade(pf, alpha, "2026-01-05", "buy", 1, "10.00")    # one unit is a holding
+    for ex_date in ("2026-02-01", "2026-05-03"):
+        fac.add_market_dividend(pf, alpha, ex_date, "0.50")
+    pf.commit()
+
+    projected = calendarview.projected_dividends(pf, fac.d("2026-11-01"))
+
+    assert [e.date for e in projected] == [dt.date(2026, 8, 2), dt.date(2026, 11, 1)]
+
+
+@freeze_time(TODAY)
+def test_payments_expected_on_one_day_are_listed_in_ticker_order(pf):
+    for ticker in ("ZETA", "ALPHA"):                              # ids the other way
+        inst = fac.make_instrument(pf, ticker)
+        fac.add_trade(pf, inst, "2026-01-05", "buy", 10, "10.00")
+        for ex_date in ("2026-03-20", "2026-06-20"):
+            fac.add_market_dividend(pf, inst, ex_date, "0.50")
+    pf.commit()
+
+    upcoming = calendarview.month_grid(pf, 2026, 8)["upcoming"]
+
+    assert [e.ticker for e in upcoming if e.kind == "dividend-expected"][:2] == [
+        "ALPHA", "ZETA"]
+
+
 # --------------------------------------------------------------------------- #
 # Recorded events and the grid
 # --------------------------------------------------------------------------- #
@@ -386,3 +537,90 @@ def test_events_land_on_their_own_day(pf):
 
     day = next(d for week in grid["weeks"] for d in week if d.date == dt.date(2026, 8, 5))
     assert [e.kind for e in day.events] == ["buy"]
+
+
+def test_a_planned_buy_counts_as_expected():
+    planned = calendarview.CalEvent(date=dt.date(2026, 8, 3), kind="buy-planned", ticker="X")
+    bought = calendarview.CalEvent(date=dt.date(2026, 8, 3), kind="buy", ticker="X")
+
+    assert (planned.expected, bought.expected) == (True, False)
+
+
+@freeze_time(TODAY)
+def test_a_recorded_distribution_says_whether_it_was_reinvested(pf):
+    alpha = fac.make_instrument(pf, "ALPHA")
+    fac.add_trade(pf, alpha, "2026-01-05", "buy", 10, "10.00")
+    fac.add_dividend(pf, alpha, "2026-08-05", "12.00")
+    fac.add_drp(pf, alpha, "2026-08-06", "10.00", 1, "10.00")
+    pf.commit()
+
+    events = calendarview.recorded_events(pf, fac.d("2026-08-01"), fac.d("2026-08-31"))
+
+    assert sorted((e.date.day, e.detail) for e in events if e.kind == "dividend") == [
+        (5, "paid"), (6, "reinvested")]
+
+
+@freeze_time(TODAY)
+def test_planned_buys_run_up_to_and_including_the_day_asked_for(pf):
+    make_plan(pf, ["ALPHA"], interval_days=7, start_date="2026-08-03")
+    pf.commit()
+
+    buys = calendarview.planned_buys(pf, fac.d("2026-08-17"))
+
+    assert [e.date for e in buys] == [dt.date(2026, 8, 3), dt.date(2026, 8, 10),
+                                      dt.date(2026, 8, 17)]
+
+
+@freeze_time("2026-08-10")
+def test_a_day_lists_what_happened_then_what_is_expected(pf):
+    """Each by kind, then ticker. BETA's payments, 9 Feb and 11 May, put its
+    next one today."""
+    alpha, beta, zeta = (fac.make_instrument(pf, t) for t in ("ALPHA", "BETA", "ZETA"))
+    fac.add_trade(pf, beta, "2026-01-05", "buy", 10, "10.00")
+    fac.add_trade(pf, zeta, "2026-01-05", "buy", 10, "10.00")
+    for ex_date in ("2026-02-09", "2026-05-11"):
+        fac.add_market_dividend(pf, beta, ex_date, "0.50")
+    fac.add_trade(pf, zeta, "2026-08-10", "sell", 5, "11.00")    # written first
+    fac.add_trade(pf, alpha, "2026-08-10", "buy", 5, "10.00")
+    make_plan(pf, ["ALPHA"], start_date="2026-08-10")
+    pf.commit()
+
+    grid = calendarview.month_grid(pf, 2026, 8)
+
+    day = next(d for week in grid["weeks"] for d in week if d.date == dt.date(2026, 8, 10))
+    assert [(e.kind, e.ticker) for e in day.events] == [
+        ("buy", "ALPHA"), ("sell", "ZETA"), ("buy-planned", "ALPHA"),
+        ("dividend-expected", "BETA")]
+
+
+@freeze_time("2026-07-27")
+def test_a_buy_on_the_grids_first_day_is_on_it(pf):
+    make_plan(pf, ["ALPHA"], start_date="2026-07-27")
+    pf.commit()
+
+    first = calendarview.month_grid(pf, 2026, 8)["weeks"][0][0]
+
+    assert (first.date, [e.kind for e in first.events]) == (
+        dt.date(2026, 7, 27), ["buy-planned"])
+
+
+@freeze_time("2026-07-10")
+def test_an_overdue_buy_leads_the_coming_up_list(pf):
+    """The 6 July buy, not yet recorded, is the plan's next. The list began at
+    3 August, so the buy actually owed never showed, and Skip on the first row
+    that did was refused for not being the next buy."""
+    make_plan(pf, ["ALPHA"], start_date="2026-07-06")
+    pf.commit()
+
+    upcoming = calendarview.month_grid(pf, 2026, 7)["upcoming"]
+
+    assert [(e.kind, e.date) for e in upcoming][:2] == [
+        ("buy-planned", dt.date(2026, 7, 6)), ("buy-planned", dt.date(2026, 8, 3))]
+
+
+@freeze_time(TODAY)
+def test_coming_up_lists_twelve(pf):
+    make_plan(pf, ["ALPHA"], interval_days=7, start_date="2026-08-03")
+    pf.commit()
+
+    assert len(calendarview.month_grid(pf, 2026, 8)["upcoming"]) == 12

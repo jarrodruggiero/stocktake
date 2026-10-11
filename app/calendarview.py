@@ -61,8 +61,7 @@ class Day:
 
 
 def _median_gap(dates: list[dt.date]) -> int | None:
-    if len(dates) < MIN_HISTORY:
-        return None
+    # Fewer than MIN_HISTORY dates have no gap between them, so nothing comes back.
     gaps = [(b - a).days for a, b in zip(dates, dates[1:]) if (b - a).days > 20]
     if not gaps:
         return None
@@ -118,13 +117,18 @@ def projected_dividends(session: Session, until: dt.date) -> list[CalEvent]:
                 .limit(1)
             ).scalar()
             per_unit = rows
-        if per_unit is None and inst.dividends:
+        if per_unit is None:
+            # Nothing published, so `dates` were this holder's own payments,
+            # at least two of them.
             last = max(inst.dividends, key=lambda d: d.date)
             prior_units = sum(
                 (
                     t.quantity if t.type in ("buy", "drp") else -t.quantity
                     for t in inst.trades
-                    if t.date <= last.date
+                    # Before the payment, not on its day: a reinvestment is
+                    # allotted on the payment date, and those units did not
+                    # earn it.
+                    if t.date < last.date
                 ),
                 Decimal(0),
             )
@@ -260,13 +264,11 @@ def month_grid(session: Session, year: int, month: int) -> dict:
         "prev": (prev_month.year, prev_month.month),
         "next": (next_month.year, next_month.month),
         "today": today,
+        # Every scheduled buy still owed, an overdue one included: it is the
+        # plan's next buy, and the page marks it due. Expected payments start
+        # from today already.
         "upcoming": sorted(
-            (
-                e
-                for e in planned_buys(session, horizon)
-                + projected_dividends(session, horizon)
-                if e.date >= today
-            ),
+            planned_buys(session, horizon) + projected_dividends(session, horizon),
             key=lambda e: e.date,
         )[:12],
     }

@@ -305,6 +305,17 @@ def test_skipping_a_buy_records_it_without_a_trade(client, session_factory, hold
 
 
 @freeze_time(TODAY)
+def test_an_overdue_buy_is_on_the_page_to_skip(client, session_factory, holdings):
+    """The test above posts the skip straight to the route. From the page it
+    could not be done: the overdue buy was left off the list."""
+    save_plan(client, session_factory, start_date="2026-07-06")
+
+    page = client.get("/schedule", headers=HTML).text
+
+    assert 'name="due_date" value="2026-07-06"' in page
+
+
+@freeze_time(TODAY)
 def test_skipping_moves_the_rotation_on(client, session_factory, holdings):
     save_plan(client, session_factory, start_date="2026-07-06")
     client.post("/schedule/skip", data={"ticker": "ACME", "due_date": "2026-07-06",
