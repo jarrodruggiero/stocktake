@@ -30,7 +30,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from hypothesis import settings
+from hypothesis import Phase, settings
 from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule, run_state_machine_as_test
 from sqlalchemy import select, text
@@ -359,8 +359,14 @@ def env(app_module, template_db, tmp_path, monkeypatch):
 
 
 def test_generated_sequences_keep_what_must_always_hold(env):
+    # No shrinking but when exploring. A failing walk is at most 12 steps,
+    # readable as it stands, and each attempt to shrink one builds a fresh
+    # database: Hypothesis spent its whole 300 s cap on that before printing
+    # anything, which read as a hang, while memory doubled.
+    exploring = os.environ.get("HYPOTHESIS_PROFILE") == "explore"
     run_state_machine_as_test(lambda: Walk(env), settings=settings(
-        max_examples=settings.default.max_examples // 4 or 1, stateful_step_count=12))
+        max_examples=settings.default.max_examples // 4 or 1, stateful_step_count=12,
+        phases=list(Phase) if exploring else [Phase.explicit, Phase.reuse, Phase.generate]))
 
 
 def test_the_walk_starts_where_its_rules_expect(env):
