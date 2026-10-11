@@ -84,10 +84,10 @@ jobs:
           # be six jobs to tell us what four already do.
           #
           # "Shipped" means whatever the Dockerfile's base pin resolves to, and
-          # that has to be kept in step by hand — this said 3.12 for as long as
-          # the base did, then the pin moved to 3.14 and this did not follow, so
-          # the interpreter the container actually runs was the one combination
-          # never tested against Postgres.
+          # tests/test_workflows.py holds this to it. Kept in step by hand, this
+          # said 3.12 for as long as the base did, then the pin moved to 3.14
+          # and this did not follow, so the interpreter the container actually
+          # runs was the one combination never tested against Postgres.
           - python: "3.14"
             backend: postgres
 
