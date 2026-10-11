@@ -231,18 +231,29 @@ def _no_network(monkeypatch):
     would have failed on a plane, in CI without egress, and differently every
     day.
 
-    So the shared HTTP helper raises here by default. A test that wants a
-    provider's parsing exercised stubs `providers._get_json` itself with a
-    canned payload, which is both hermetic and far clearer about what shape it
-    is testing against.
+    So the shared HTTP helper, and appcore's for an identity provider, fail the
+    test here by default. A test that wants a provider's parsing exercised
+    stubs `providers._get_json` itself with a canned payload, which is both
+    hermetic and far clearer about what shape it is testing against.
+
+    They FAIL the test rather than raise: the callers catch Exception
+    (`providers.fetch` turns any failure into the next provider), so an
+    AssertionError was swallowed and the test passed as if offline. And a call
+    from a worker thread, a quote refresh after sign-in say, never reaches the
+    test at all, so every attempt is kept as well, and one left at the end
+    fails it there. Yields the list, for the guard's own tests.
     """
-    def _blocked(url, params):
-        raise AssertionError(
-            f"a test tried to reach the network: {url} {params}. Stub "
-            "`providers._get_json` with a canned payload instead."
-        )
+    from appcore import oidc
+
+    attempts: list[str] = []
+
+    def _blocked(url, *_args, **_kwargs):
+        attempts.append(str(url))
+        pytest.fail(f"a test tried to reach the network: {url}. Stub "
+                    "`providers._get_json` with a canned payload instead.", pytrace=False)
 
     monkeypatch.setattr(providers, "_get_json", _blocked)
+    monkeypatch.setattr(oidc, "_fetch", _blocked)
     monkeypatch.setattr(pricefeed, "_yf", _UnreachableYahoo())
 
     # The other way out, and a nastier one: adding an instrument kicks a real
@@ -250,6 +261,13 @@ def _no_network(monkeypatch):
     import app.main as main_module
 
     monkeypatch.setattr(main_module, "_kick_feed", lambda: None)
+    # Every sign-in asks for live prices the same way, on a worker thread that
+    # outlives the test, and it reaches Yahoo. A test of it captures the real
+    # function at import, as test_feed_kick does with `_kick_feed`.
+    monkeypatch.setattr(main_module, "refresh_quotes_soon", lambda: None)
+    yield attempts
+    if attempts:
+        pytest.fail(f"a test tried to reach the network: {attempts}", pytrace=False)
 
 
 @pytest.fixture

@@ -22,7 +22,7 @@ from freezegun import freeze_time
 from sqlalchemy import func, select
 
 import factories as fac
-from app import pricefeed, queries, tenancy
+from app import pricefeed, providers, queries, tenancy
 from app.models import FxRate, Instrument, MarketDividend, Price, Trade
 from app.settings import PriceFeedSettings
 
@@ -219,6 +219,7 @@ def test_a_trade_with_no_rate_takes_the_one_on_or_before_its_date(feed_session, 
     feed_session.commit()
     stub_closes(monkeypatch, {})
     stub_yf(monkeypatch)
+    stub_no_fx(monkeypatch)
 
     counts = pricefeed.run_feed(feed_session, SETTINGS)
 
@@ -237,6 +238,7 @@ def test_a_trade_that_already_has_a_rate_is_left_alone(feed_session, monkeypatch
     feed_session.commit()
     stub_closes(monkeypatch, {})
     stub_yf(monkeypatch)
+    stub_no_fx(monkeypatch)
 
     counts = pricefeed.run_feed(feed_session, SETTINGS)
 
@@ -403,6 +405,14 @@ def stub_windows(monkeypatch, rows_by_symbol):
     return asked
 
 
+def stub_no_fx(monkeypatch) -> None:
+    """The FX leg answers nothing, as an offline provider would. A run with a
+    foreign holding otherwise falls through the Yahoo stub to Frankfurter, and
+    the network guard fails the test; before it did, that call was swallowed
+    and the test passed with a live request behind it."""
+    monkeypatch.setattr(providers, "fetch_fx", lambda *_a, **_k: providers.Fetch())
+
+
 def seed_dense(session, inst, last: str, days: int = 60) -> None:
     """A real-looking weekday series ending on `last`.
 
@@ -441,6 +451,7 @@ def test_the_run_does_not_ask_a_market_for_a_session_it_has_not_had(
 
     asked = stub_windows(monkeypatch, {"ACME.AX": [("2026-08-12", "11.00")]})
     stub_yf(monkeypatch)
+    stub_no_fx(monkeypatch)
 
     pricefeed.run_feed(feed_session, SETTINGS)
 
