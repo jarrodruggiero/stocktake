@@ -705,6 +705,11 @@ class Instrument(Base):
     active: Mapped[bool] = mapped_column(default=True)  # still listed/tradeable
     yahoo_symbol: Mapped[str | None] = mapped_column(String(20))  # price feed
     note: Mapped[str | None] = mapped_column(String(400))  # catalogue note only
+    # The series cache fingerprints on it: a class or currency corrected in
+    # place changes what the split charts and the AUD figures show.
+    updated_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
 
     # Both relationships return ONLY the current user's rows: tenancy.py applies
     # a loader criterion to every select, eager load and lazy load.
@@ -740,6 +745,11 @@ class HoldingPref(Base):
         Boolean, default=False, server_default=false()
     )
     note: Mapped[str | None] = mapped_column(String(400))
+    # The series cache fingerprints on it: the reinvest flag and the note are
+    # part of the holdings the charts page reads from that cache.
+    updated_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
 
     instrument: Mapped[Instrument] = relationship()
 
@@ -851,6 +861,14 @@ class Price(Base):
     provisional: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false()
     )
+    # The series cache fingerprints on it, as on Trade.updated_at. A second
+    # quote on a day, or the settled close replacing a provisional one,
+    # rewrites the same row, so neither the count nor the latest date moves.
+    # The feed's upserts set it themselves: `onupdate` does not fire on an
+    # INSERT that turns into an update.
+    updated_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
 
 
 class MarketDividend(Base):
@@ -883,6 +901,10 @@ class FxRate(Base):
     date: Mapped[dt.date] = mapped_column(Date, primary_key=True)
     rate: Mapped[Decimal] = mapped_column(Numeric(12, 6))
     source: Mapped[str] = mapped_column(String(20), default="yfinance")
+    # As on Price: the feed rewrites a rate in place, and sets this itself.
+    updated_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
 
 
 class InvestmentPlan(Base):

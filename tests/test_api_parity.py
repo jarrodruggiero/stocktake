@@ -63,6 +63,10 @@ WITHHELD: dict[str, str] = {
     "trade.updated_at": "When the row was last edited. Callers follow the trade "
                         "date with ?since=, which is the fact they care about.",
     "dividend.updated_at": "When the row was last edited, as with trades.",
+    "instrument.updated_at": "When a catalogue row last changed, kept for the series "
+                             "cache to notice an edit; nothing a client needs.",
+    "price.updated_at": "When the feed last rewrote the price, kept for the series "
+                        "cache; the price's own date is what a client wants.",
     "portfolio.created_at": "When the portfolio was made. Of no use to a consumer.",
     "trade.time": "Orders same-day trades so a sell cannot precede its buy. "
                   "Sequencing within the app, not a fact about the trade.",
