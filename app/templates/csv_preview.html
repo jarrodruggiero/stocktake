@@ -9,9 +9,8 @@
 {% if errors %}
 <div class="panel error">
   <h2>Errors — nothing can be committed</h2>
-  <ul>{% for e in errors %}<li><code>{{ e }}</code></li>{% endfor %}</ul>
-  <p class="note">If the export format changed, adjust the column mapping under
-  <code>imports.brokers.{{ broker }}</code> in config.yaml.</p>
+  {# Each says what is wrong and what to do; no general advice under them. #}
+  <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
 </div>
 {% endif %}
 

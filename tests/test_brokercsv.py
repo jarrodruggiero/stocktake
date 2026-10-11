@@ -68,15 +68,51 @@ def test_amounts_carrying_currency_symbols_and_separators_parse():
 
 def test_a_missing_column_names_the_column_and_where_to_fix_it():
     """A broker changing its export is expected; the message has to say which
-    column vanished and that the fix is config, not code."""
+    column vanished and what to do. It said to fix the mapping in config.yaml,
+    for formats that ship as files and have a mapper in the app."""
     csv_text = "Trade Date,Buy/Sell,Code,Units\n06/01/2025,Buy,ACME,100\n"
 
     result = brokercsv.parse_csv(csv_text, "testbroker", MAPPED)
 
     assert result.candidates == []
-    assert len(result.errors) == 1
-    assert "Price" in result.errors[0]
-    assert "imports.brokers.testbroker.columns" in result.errors[0]
+    assert result.errors == [
+        "This file has no Price, Brokerage columns, which the testbroker format reads. Pick the "
+        "broker it came from, or map its columns with Map a new broker CSV."]
+
+
+def test_a_date_that_does_not_read_says_so_in_words():
+    """It read `line 2: ValueError('day is out of range for month') in {...}`:
+    an exception's repr and the whole row as a Python dict."""
+    csv_text = ("Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+                "31/02/2025,Buy,ACME,100,5.00,9.50\n")
+
+    result = brokercsv.parse_csv(csv_text, "testbroker", MAPPED)
+
+    assert result.errors == ["line 2: '31/02/2025' is not a date written as DD/MM/YYYY"]
+
+
+def test_one_missing_column_is_one_column():
+    csv_text = "Trade Date,Buy/Sell,Code,Units,Price\n06/01/2025,Buy,ACME,100,5.00\n"
+
+    result = brokercsv.parse_csv(csv_text, "testbroker", MAPPED)
+
+    assert result.errors[0].startswith("This file has no Brokerage column, which")
+
+
+def test_a_commsec_date_that_does_not_read_says_so_in_words():
+    result = brokercsv.parse_csv(
+        "Date,Reference,Details,Debit($),Credit($),Balance($)\n"
+        "2025-01-06,N123,B 50 WIDGET @ 20.000000,1009.50,,0.00\n", "commsec", COMMSEC)
+
+    assert result.errors == ["line 2: '2025-01-06' is not a date written as DD/MM/YYYY"]
+
+
+@pytest.mark.parametrize("pattern, written", [
+    ("%d/%m/%Y", "DD/MM/YYYY"), ("%Y-%m-%d", "YYYY-MM-DD"), ("%d %b %Y", "DD Mon YYYY"),
+    ("%m/%d/%y %H:%M", "MM/DD/YY hh:mm"),
+])
+def test_a_date_format_is_written_the_way_a_person_reads_one(pattern, written):
+    assert brokercsv.written_as(pattern) == written
 
 
 def test_a_row_that_is_not_a_trade_is_skipped_rather_than_failing():
@@ -108,7 +144,7 @@ def test_one_unparseable_row_does_not_lose_the_good_ones():
 
 
 def test_an_empty_file_is_an_error_not_a_crash():
-    assert brokercsv.parse_csv("", "testbroker", MAPPED).errors == ["empty file"]
+    assert brokercsv.parse_csv("", "testbroker", MAPPED).errors == ["The file is empty."]
 
 
 def test_an_unknown_format_kind_says_so():
@@ -362,7 +398,7 @@ def test_a_ticker_we_do_not_track_is_flagged(pf):
     brokercsv.annotate(pf, candidates, STRICT)
 
     assert candidates[0].status == "unknown-instrument"
-    assert "allow_new_instruments" in candidates[0].detail
+    assert candidates[0].detail == "not in this portfolio"
 
 
 # --------------------------------------------------------------------------- #
@@ -1027,8 +1063,8 @@ def test_a_field_past_the_csv_modules_limit_is_an_error_not_a_crash():
                                  + "x" * 200_000 + ",Buy,ACME,1,1.00,0\n", "b", MAPPED)
 
     assert result.candidates == []
-    assert result.errors and "could not be read as a CSV" in result.errors[0]
-    assert "could not be read" in brokercsv.parse_csv("a" * 200_000, "b", MAPPED).errors[0]
+    assert result.errors == ["The file could not be read as a CSV."]
+    assert brokercsv.parse_csv("a" * 200_000, "b", MAPPED).errors == result.errors
 
 
 def test_a_row_shorter_than_the_header_is_skipped_by_line_not_a_crash():
