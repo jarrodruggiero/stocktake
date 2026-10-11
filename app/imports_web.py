@@ -8,6 +8,7 @@ imperfect PDF parsing is corrected in the browser rather than trusted blindly.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import json
 import logging
@@ -313,7 +314,10 @@ async def statement_preview(request: Request, file: UploadFile,
     with auth.scoped_session(request) as (ctx, s):
         await auth.verify_csrf(request, s)
         _require_write(ctx)
-        parsed = statements.parse_statement(
+        # In a thread: OCR is up to a minute a page, and on the event loop
+        # every other request waited for it, /healthz included.
+        parsed = await asyncio.to_thread(
+            statements.parse_statement,
             data, s, settings.imports.user_dir("statement"),
             ocr_enabled=settings.imports.ocr.enabled,
             wanted_template=template or None)
@@ -798,7 +802,10 @@ async def visual_designer(request: Request, file: UploadFile):
         await auth.verify_csrf(request, s)
         _require_write(ctx)
         try:
-            token = pagemap.create(settings, user_id=ctx.user.id, data=data)
+            # In a thread, as a statement is read: every page is drawn at
+            # 300 dpi, and read by OCR when it is a scan.
+            token = await asyncio.to_thread(pagemap.create, settings,
+                                            user_id=ctx.user.id, data=data)
         except Exception as exc:
             log.info("visual mapper could not render %s: %s", file.filename, exc)
             return RedirectResponse("/imports-exports?error=" + quote_plus(
