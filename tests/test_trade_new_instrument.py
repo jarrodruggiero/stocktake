@@ -76,7 +76,7 @@ def _trades(session_factory) -> list[Trade]:
 
 
 def test_saving_a_new_instrument_asks_the_provider_nothing(
-        signed_in, session_factory, monkeypatch):
+        signed_in, session_factory, monkeypatch, feed_on):
     def refuse(*_args, **_kwargs):
         raise AssertionError("the save asked the provider")
     monkeypatch.setattr(pricefeed, "lookup", refuse)
@@ -91,7 +91,7 @@ def test_saving_a_new_instrument_asks_the_provider_nothing(
 
 
 def test_without_a_symbol_the_price_symbol_is_worked_out_not_asked(
-        signed_in, session_factory, monkeypatch):
+        signed_in, session_factory, monkeypatch, feed_on):
     monkeypatch.setattr(pricefeed, "lookup", lambda *_a, **_k: pytest.fail("asked"))
     assert _new(signed_in, session_factory).status_code == 303
     with session_factory() as s:

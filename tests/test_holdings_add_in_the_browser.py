@@ -190,3 +190,49 @@ def test_the_lookup_fills_the_dialog_and_leaves_the_rows_alone(client, session_f
     assert out["rowBefore"]["name"] == "Acme"
     assert out["rowAfter"] == out["rowBefore"]
     assert out["dialog"] == {"name": "Alphabet Inc.", "currency": "USD", "symbol": "GOOG"}
+
+
+FEED_OFF = """
+<script>
+window.fetch = function () {
+  var answer = {found: false, off: true, name: null, currency: null, symbol: "GOOG",
+                asset_class: null};
+  return Promise.resolve({ok: true, json: function () { return Promise.resolve(answer); }});
+};
+</script>
+"""
+
+SAYS = """
+<script>
+window.addEventListener("load", async function () {
+  var form = document.querySelector('form[action="/holdings/add"]');
+  var ticker = form.querySelector('[name="ticker"]');
+  document.getElementById("addinst-open").click();
+  ticker.value = "GOOG"; ticker.dispatchEvent(new Event("change", {bubbles: true}));
+  await new Promise(function (r) { setTimeout(r, 60); });
+  var pre = document.createElement("pre");
+  pre.id = "result";
+  pre.textContent = JSON.stringify({status: document.getElementById("lookup-status").textContent});
+  document.body.appendChild(pre);
+});
+</script>
+"""
+
+
+def test_a_lookup_with_the_feed_off_says_so(client, session_factory, tmp_path):
+    """Not "no match for GOOG", which sends somebody to check a ticker that
+    is fine."""
+    make_login(client, session_factory)
+    page = client.get("/holdings", headers=HTML)
+    target = tmp_path / "holdings.html"
+    target.write_text(_standalone(page.text, SAYS).replace("<head>", "<head>" + FEED_OFF, 1),
+                      encoding="utf-8")
+    dom = subprocess.run(
+        [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
+         "--allow-file-access-from-files", "--virtual-time-budget=4000", target.as_uri()],
+        capture_output=True, text=True, timeout=90).stdout
+    found = re.search(r'<pre id="result">(.*?)</pre>', dom, re.S)
+    assert found, "the driver did not finish"
+
+    assert json.loads(found.group(1).replace("&quot;", '"')) == {
+        "status": "not looked up: the price feed is off"}

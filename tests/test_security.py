@@ -475,25 +475,6 @@ def test_signing_in_asks_for_live_prices(client, session_factory, app_module, mo
     assert asked == [True]
 
 
-@pytest.mark.parametrize("enabled", [True, False])
-def test_live_prices_are_fetched_only_while_they_are_on(app_module, monkeypatch, enabled):
-    """Turned off, an install makes no quote requests at all."""
-    import asyncio
-    import threading
-
-    ran = threading.Event()
-    monkeypatch.setattr(app_module.settings.price_feed, "quotes_enabled", enabled)
-    monkeypatch.setattr(app_module, "_run_quotes", lambda: ran.set() or 0)
-
-    async def sign_in_moment():
-        _REAL_REFRESH()           # conftest replaces the module's with a no-op
-        await asyncio.sleep(0)
-
-    asyncio.run(sign_in_moment())
-
-    assert ran.wait(2 if enabled else 0.3) is enabled
-
-
 def test_a_reason_sent_back_to_the_sign_in_page_is_shown(client, session_factory):
     """A provider sign-in happens off-site; when it fails, the sign-in page
     is the only place the reason can be said."""

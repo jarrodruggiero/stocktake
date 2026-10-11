@@ -424,7 +424,7 @@ def test_a_member_of_another_portfolio_cannot_be_touched(client, session_factory
 
 def test_adding_an_instrument_fills_the_blanks_from_the_price_feed(client,
                                                                   session_factory,
-                                                                  monkeypatch):
+                                                                  monkeypatch, feed_on):
     from app import main as main_mod
 
     monkeypatch.setattr(main_mod.pricefeed, "lookup",
@@ -445,7 +445,8 @@ def test_adding_an_instrument_fills_the_blanks_from_the_price_feed(client,
     assert inst.yahoo_symbol == "ACME.AX"
 
 
-def test_what_was_typed_beats_what_the_feed_says(client, session_factory, monkeypatch):
+def test_what_was_typed_beats_what_the_feed_says(client, session_factory, monkeypatch,
+                                                 feed_on):
     from app import main as main_mod
 
     monkeypatch.setattr(main_mod.pricefeed, "lookup",

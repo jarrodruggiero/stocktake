@@ -378,14 +378,28 @@ def refresh_quotes_soon() -> None:
 
     Called at sign-in: the first thing somebody does is look at what their
     holdings are worth, and the poll below would otherwise leave them on the
-    last close for up to a whole interval.
+    last close for up to a whole interval. Only with the feed on as well as
+    its quotes, because `price_feed.enabled` governs every outbound request
+    (decisions.md #9), and only while a market is open, as the poll asks.
     """
-    if not settings.price_feed.quotes_enabled:
+    if not (settings.price_feed.enabled and settings.price_feed.quotes_enabled):
         return
     try:
-        asyncio.get_running_loop().run_in_executor(None, _run_quotes)
+        asyncio.get_running_loop().run_in_executor(None, _quotes_if_trading)
     except RuntimeError:  # no loop (CLI/tests) — the poll will catch it
         pass
+
+
+def _quotes_if_trading() -> int:
+    """A live refresh, unless every market is shut: then the price is the
+    close the daily run already has, and nothing can have moved."""
+    try:
+        with tenancy.unscoped_session(SessionLocal) as s:
+            trading = pricefeed.any_market_trading(s)
+    except Exception:
+        log.warning("could not tell whether a market is open", exc_info=True)
+        return 0
+    return _run_quotes() if trading else 0
 
 
 async def _await_database(what: str) -> None:
@@ -5613,6 +5627,11 @@ def instruments_lookup(request: Request, ticker: str = "", exchange: str = "ASX"
     with scoped(request) as (ctx, _db):
         if not ticker.strip():
             raise HTTPException(400, "ticker is required")
+        if not settings.price_feed.enabled:
+            # Nobody asked: the feed governs every outbound request (#9). The
+            # symbol is a guess made here, and needs nobody.
+            return {"symbol": pricefeed.yahoo_symbol_for(ticker, exchange), "name": None,
+                    "currency": None, "asset_class": None, "found": False, "off": True}
         return pricefeed.lookup(ticker, exchange)
 
 
@@ -5729,7 +5748,8 @@ async def instruments_add(
         )
         if existing is None:
             # Anything left blank is filled from Yahoo; what was typed wins.
-            found = pricefeed.lookup(ticker, exchange) if not (name.strip() and currency) else {}
+            found = (pricefeed.lookup(ticker, exchange)
+                     if settings.price_feed.enabled and not (name.strip() and currency) else {})
             symbol = yahoo_symbol.strip() or found.get("symbol") or pricefeed.yahoo_symbol_for(ticker, exchange)
             existing = Instrument(
                 ticker=ticker,

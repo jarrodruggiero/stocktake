@@ -781,7 +781,8 @@ def test_an_unknown_instrument_page_is_a_404(client, session_factory):
 
 
 @freeze_time(ref.TODAY)
-def test_the_instrument_lookup_endpoint_answers(client, session_factory, monkeypatch):
+def test_the_instrument_lookup_endpoint_answers(client, session_factory, monkeypatch,
+                                                feed_on):
     from app import main as main_mod
 
     monkeypatch.setattr(main_mod.pricefeed, "lookup",

@@ -255,9 +255,10 @@ def test_a_ticker_another_portfolio_added_is_reused_not_refused(
 
 
 def test_the_add_form_takes_its_currency_from_the_lookup(client, session_factory, two,
-                                                         monkeypatch):
+                                                         monkeypatch, app_module):
     """The field started at AUD, so the lookup's currency never landed and a
-    USD stock was added as AUD."""
+    USD stock was added as AUD. A lookup needs the feed on (test_feed_off)."""
+    monkeypatch.setattr(app_module.settings.price_feed, "enabled", True)
     page = client.get("/holdings", headers=HTML).text
     assert re.search(r'<input name="currency" value=""', page)
 
