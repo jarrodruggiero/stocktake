@@ -934,6 +934,12 @@ def portfolio_series(session: Session) -> dict:
         {inst.ticker for inst in instruments if not fxbook.known(inst.currency)}
     )
     priced = [inst for inst in instruments if inst.ticker not in excluded]
+    # When each of those was first traded or paid, so a year's figures name
+    # only what they would otherwise have held.
+    excluded_since = {
+        inst.ticker: min(row.date for row in [*inst.trades, *inst.dividends]).isoformat()
+        for inst in instruments if inst.ticker in excluded and (inst.trades or inst.dividends)
+    }
 
     events = []  # (date, kind, inst, trade/dividend)
     for inst in priced:
@@ -943,7 +949,8 @@ def portfolio_series(session: Session) -> dict:
             events.append((d.date, "d", inst, d))
     if not events:
         return {"dates": [], "invested": [], "value": [], "gain": [], "gain_pct": [],
-                "flow": [], "flow_in": [], "cash_div": [], "excluded": excluded}
+                "flow": [], "flow_in": [], "cash_div": [], "unpriced": [],
+                "excluded": excluded, "excluded_since": excluded_since}
     events.sort(key=lambda e: e[0])
     first = events[0][0]
     dates = sorted(d for d in date_set if d >= first)
@@ -959,7 +966,7 @@ def portfolio_series(session: Session) -> dict:
     earned: dict[int, Decimal] = {}
     ei = 0
     out_dates, out_invested, out_value, out_gain, out_gain_pct = [], [], [], [], []
-    out_flow, out_flow_in, out_cash_div = [], [], []
+    out_flow, out_flow_in, out_cash_div, out_unpriced = [], [], [], []
 
     prev_invested = prev_proceeds = Decimal(0)
     for d in dates:
@@ -1005,6 +1012,7 @@ def portfolio_series(session: Session) -> dict:
         # price and contributes `proceeds`, so it is never "unvalued" and its
         # realised result is never rewritten.
         drop_cost = drop_proceeds = drop_divs = Decimal(0)
+        unpriced: list[str] = []
         for inst in priced:
             u = units.get(inst.id, ZERO)
             if not u:
@@ -1014,6 +1022,7 @@ def portfolio_series(session: Session) -> dict:
                 drop_cost += spent.get(inst.id, ZERO)
                 drop_proceeds += taken.get(inst.id, ZERO)
                 drop_divs += earned.get(inst.id, ZERO)
+                unpriced.append(inst.ticker)
                 continue
             value += u * close * fxbook.rate(inst.currency, d)
         invested_now = invested - drop_cost
@@ -1026,6 +1035,7 @@ def portfolio_series(session: Session) -> dict:
         out_flow.append(round(float((invested - prev_invested) - (proceeds - prev_proceeds)), 2))
         out_flow_in.append(round(float(invested - prev_invested), 2))
         out_cash_div.append(round(float(day_cash_div), 2))
+        out_unpriced.append(tuple(sorted(unpriced)))
         prev_invested, prev_proceeds = invested, proceeds
         out_dates.append(d.isoformat())
         out_invested.append(round(float(invested_now), 2))
@@ -1045,8 +1055,11 @@ def portfolio_series(session: Session) -> dict:
         "flow": out_flow,
         "flow_in": out_flow_in,
         "cash_div": out_cash_div,
+        # Held that day but with no price stored by then, so left out of it.
+        "unpriced": out_unpriced,
         # Tickers left out of every number above, for the page to disclose.
         "excluded": excluded,
+        "excluded_since": excluded_since,
     }
 
 
@@ -1167,16 +1180,23 @@ def annual_series(session: Session, series: dict | None = None) -> dict:
     daily = series if series is not None else portfolio_series(session)
     if not daily["dates"]:
         return {"labels": [], "invested_yr": [], "invested_cum": [], "value_eofy": [],
-                "value_gain_cum": [], "gain_cum": [], "gain_pct": [], "gain_yr": [], "yr_pct": []}
+                "value_gain_cum": [], "gain_cum": [], "gain_pct": [], "gain_yr": [], "yr_pct": [],
+                "left_out": []}
     idx_by_fy: dict[dt.date, int] = {}
     for i, ds in enumerate(daily["dates"]):
         idx_by_fy[_fy_end(dt.date.fromisoformat(ds))] = i  # last index in each FY
     labels, invested_yr, invested_cum, value_eofy = [], [], [], []
     value_gain_cum, gain_cum, gain_pct, gain_yr, yr_pct = [], [], [], [], []
+    left_out: list[list[tuple[str, str]]] = []
+    since = daily["excluded_since"]
     prev_invested = prev_gain = 0.0
     for fy in sorted(idx_by_fy):
         i = idx_by_fy[fy]
         inv, val, gain = daily["invested"][i], daily["value"][i], daily["gain"][i]
+        # What the year's last day leaves out, and why (decisions.md #5).
+        left_out.append(
+            [(t, "no exchange rate") for t in sorted(since) if since[t] <= daily["dates"][i]]
+            + [(t, "no price by then") for t in daily["unpriced"][i]])
         labels.append(f"FY{str(fy.year - 1)[-2:]}/{str(fy.year)[-2:]}")
         invested_yr.append(round(inv - prev_invested, 2))
         invested_cum.append(inv)
@@ -1189,7 +1209,7 @@ def annual_series(session: Session, series: dict | None = None) -> dict:
         prev_invested, prev_gain = inv, gain
     return {"labels": labels, "invested_yr": invested_yr, "invested_cum": invested_cum,
             "value_eofy": value_eofy, "value_gain_cum": value_gain_cum, "gain_cum": gain_cum,
-            "gain_pct": gain_pct, "gain_yr": gain_yr, "yr_pct": yr_pct}
+            "gain_pct": gain_pct, "gain_yr": gain_yr, "yr_pct": yr_pct, "left_out": left_out}
 
 
 def instrument_series(session: Session, inst: Instrument) -> dict:
