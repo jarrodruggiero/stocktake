@@ -66,9 +66,11 @@ def test_explicit_times_order_the_day_regardless_of_entry_order(pf, acme):
 
 def test_fifo_consumes_the_earlier_parcel_of_the_same_day_first(pf, acme):
     """Two parcels bought the same day at different prices must still be
-    consumed oldest-first, or the cost base of a later sale is wrong."""
-    fac.add_trade(pf, acme, "2026-03-02", "buy", 100, "5.00", time=dt.time(10, 0))
+    consumed oldest-first, or the cost base of a later sale is wrong. The
+    14:00 parcel is written first: written in time order, a sort on the date
+    and the id alone gave the same answer as one on the time."""
     fac.add_trade(pf, acme, "2026-03-02", "buy", 100, "8.00", time=dt.time(14, 0))
+    fac.add_trade(pf, acme, "2026-03-02", "buy", 100, "5.00", time=dt.time(10, 0))
     fac.add_trade(pf, acme, "2027-06-01", "sell", 100, "9.00")
 
     disposal = fyreport.instrument_disposals(acme)[0]
