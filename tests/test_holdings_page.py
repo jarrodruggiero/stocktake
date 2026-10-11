@@ -45,6 +45,19 @@ def test_an_untraded_instrument_offers_a_remove_button(client, session_factory):
     assert re.search(r'action="/holdings/\d+/remove"', page), "no Remove control"
 
 
+def test_removing_one_asks_first_and_says_what_goes(client, session_factory):
+    """It went at a click, its note and reinvest setting with it."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        fac.hold(s, fac.make_instrument(s, "SPARE"))
+        s.commit()
+
+    page = _page(client)
+
+    assert re.search(r'<form[^>]*action="/holdings/\d+/remove"[^>]*data-confirm="Remove SPARE '
+                     r'from this portfolio\? Its note and reinvest setting go with it\."', page)
+
+
 def test_removing_it_stops_it_being_tracked(client, session_factory):
     make_login(client, session_factory)
     with session_factory() as s:

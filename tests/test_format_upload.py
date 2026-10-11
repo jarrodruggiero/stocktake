@@ -199,6 +199,18 @@ def test_installed_templates_are_listed(client, session_factory, admin, tmp_path
     assert "example-registry" in page
 
 
+def test_removing_one_asks_first_and_says_what_stays(client, session_factory, admin,
+                                                     tmp_path):
+    """It went at a click, for every account's imports at once."""
+    _upload(client, session_factory)
+
+    page = client.get("/imports-exports", headers=HTML).text
+
+    assert ('action="/imports-exports/formats/statement/example-registry/delete"\n'
+            '              data-confirm="Remove the example-registry template? Imports '
+            'already made with it stay."') in page
+
+
 def test_one_can_be_removed_again(client, session_factory, admin, tmp_path):
     _upload(client, session_factory)
 
