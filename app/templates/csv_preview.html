@@ -79,7 +79,11 @@
 </div>
 
 {% if held_back %}
-<p class="note">Fix the marked rows to commit.</p>
+{# Nothing on this page can change a row's units or date, so each says what
+   to do instead. An export that starts after the shares were bought is the
+   usual reason for a sale with nothing to sell. #}
+{% if short %}<p class="note">Record the buys the marked sales come from, then upload the file again.</p>{% endif %}
+{% if unlisted %}<p class="note">Add the marked instruments on <a href="/holdings">Manage holdings</a>, then upload the file again.</p>{% endif %}
 {% elif uid and insertable %}
 <form action="/imports-exports/csv/{{ uid }}/commit" method="post" class="commitbar">
   <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
