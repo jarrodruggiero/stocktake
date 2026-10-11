@@ -13,6 +13,7 @@ the chart with the tag's version, and the project reads its own from the tag.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tomllib
@@ -39,6 +40,20 @@ def test_the_project_takes_its_version_from_the_tag():
         f"pyproject.toml says version {project['version']!r}; the tag is the version")
     assert "version" in project.get("dynamic", [])
     assert pyproject["tool"]["hatch"]["version"]["source"] == "vcs"
+
+
+def test_what_builds_the_project_is_pinned():
+    """uv.lock holds what the project installs, not what builds it, so
+    hatchling and hatch-vcs resolved to whatever was newest in every job that
+    installs the project, the one that tests a release among them."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    pinned = {pin.split("==")[0].lower()
+              for pin in pyproject["tool"]["uv"].get("build-constraint-dependencies", [])
+              if re.fullmatch(r"[A-Za-z0-9_.-]+==[0-9][0-9A-Za-z.]*", pin)}
+    required = {re.match(r"[A-Za-z0-9_.-]+", requirement).group(0).lower()
+                for requirement in pyproject["build-system"]["requires"]}
+
+    assert required and required <= pinned, sorted(required - pinned)
 
 
 def test_the_chart_here_names_no_release():

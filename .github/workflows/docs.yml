@@ -18,10 +18,9 @@ on:
       - .github/workflows/docs.yml
   workflow_dispatch:
 
+# Read-only, but for the job that deploys: the build installs and runs code.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # Never two deploys at once; skip superseded runs rather than queueing them.
 concurrency:
@@ -33,14 +32,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
-          cache: pip
-      - run: pip install mkdocs-material
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          enable-cache: true
+      # From uv.lock, as everything else is: `pip install mkdocs-material` took
+      # whatever was newest. The docs group alone, so the project is not built.
+      - run: uv sync --only-group docs --locked
       # --strict fails the build on a broken internal link, so a renamed page
       # cannot quietly leave a dead link in the nav.
-      - run: mkdocs build --strict
+      - run: uv run --no-sync mkdocs build --strict
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
@@ -48,6 +50,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write      # publish the site
+      id-token: write   # prove to Pages that this run is the one publishing
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

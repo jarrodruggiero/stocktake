@@ -43,6 +43,23 @@ Issues = "https://github.com/jarrodruggiero/stocktake/issues"
 # Rebuild the project when the tag or commit moves, not only when this file
 # does, or an install made before a release goes on naming the version before.
 cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
+# What builds the project, pinned. uv.lock holds what the project installs, not
+# what builds it, so these resolved to whatever was newest in every job that
+# installs the project, the one that tests a release among them. Dependabot
+# does not read this list: move it by hand, then `uv lock`.
+build-constraint-dependencies = [
+    "hatchling==1.32.4",
+    "hatch-vcs==0.5.0",
+    # …and what those two need.
+    "packaging==26.3",
+    "pathspec==1.1.1",
+    "pluggy==1.6.0",
+    "setuptools==84.0.0",
+    "setuptools-scm==10.3.4",
+    "tomlkit==0.15.1",
+    "trove-classifiers==2026.9.21.13",
+    "vcs-versioning==2.6.0",
+]
 
 [tool.uv.sources]
 # Pinned to a revision rather than tracking a branch: nothing here changes
@@ -78,6 +95,11 @@ dev = [
     "pytest-cov>=5.0",
     "soft-webauthn>=0.1.3", # a signing authenticator, so passkey tests are real
     "hypothesis>=6.100", # many generated cases per test, shrunk to the smallest that fails
+]
+# The documentation site, which docs.yml builds from this lock like everything
+# else. `uv sync` takes only the dev group, so nothing else installs it.
+docs = [
+    "mkdocs-material>=9.7.7",
 ]
 
 [tool.ruff]

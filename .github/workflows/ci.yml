@@ -25,13 +25,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
       - name: Install the project and its dev tools
-        run: uv sync --dev
+        run: uv sync --dev --locked
 
       - name: Ruff
         run: uv run ruff check app tests tools
@@ -48,6 +50,7 @@ jobs:
         with:
           repository: jarrodruggiero/appcore
           path: appcore
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -109,6 +112,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
@@ -116,7 +121,7 @@ jobs:
           python-version: ${{ matrix.python }}
 
       - name: Install the project and its dev tools
-        run: uv sync --dev
+        run: uv sync --dev --locked
 
       - name: Test (python ${{ matrix.python }}, ${{ matrix.backend }})
         env:
@@ -144,6 +149,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           # Pinned for the same reason, and bumped by hand likewise.
@@ -177,13 +184,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
       - name: Install the project and its dev tools
-        run: uv sync --dev
+        run: uv sync --dev --locked
 
       - name: Confirm a browser is actually present
         # Without this a missing Chrome would skip all 57 tests and report
@@ -225,6 +234,8 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
@@ -232,7 +243,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install the project and its dev tools
-        run: uv sync --dev
+        run: uv sync --dev --locked
 
       - name: Every route, with values a form cannot send (${{ matrix.backend }})
         env:
@@ -261,6 +272,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Both architectures, like a release: `dev` is what gets deployed to try
       # something out, and an image that only runs on the machine that built it
       # is not much of a try-out.
