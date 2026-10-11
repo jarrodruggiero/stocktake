@@ -28,7 +28,8 @@ and the price feed needs no credentials.
 ## The two directories, and why only one is backed up
 
 **`/data` is everything you own** — the database, and any broker or statement
-formats you added. Back it up; it is the whole application state.
+formats you added. Back it up with `config.yaml`: together they are the whole
+application state ([how](https://jarrodruggiero.github.io/stocktake/deploy/#backing-up-and-restoring)).
 
 **`/scratch` is deliberately disposable.** The visual statement mapper renders
 page images there while somebody is using it, and sweeps them thirty minutes
@@ -100,9 +101,5 @@ newer version is refused by an older one. Move them together.
 
 ## Backups
 
-The database and `config.yaml` are the entire application state, and there is
-no external service holding anything. On Kubernetes the config is your manifest
-or values; under Compose and on a NAS the wizard wrote it, so back it up with
-the database.
-
-Test the restore. An untested backup is a hope.
+What to back up, how, and how to restore, on every platform:
+[Backing up and restoring](https://jarrodruggiero.github.io/stocktake/deploy/#backing-up-and-restoring).

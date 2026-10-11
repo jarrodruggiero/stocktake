@@ -182,7 +182,7 @@ def progress(active: str, *, skip: set[str] | None = None) -> list[dict]:
 # --------------------------------------------------------------------------- #
 
 def sqlite_settings(path: str) -> DatabaseSettings:
-    return DatabaseSettings(type="sqlite", path=path.strip() or "/data/portfolio.db")
+    return DatabaseSettings(type="sqlite", path=path.strip() or "/data/stocktake.db")
 
 
 def postgres_settings(*, host: str, port: str, name: str, user: str,

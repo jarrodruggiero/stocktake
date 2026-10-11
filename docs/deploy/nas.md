@@ -44,8 +44,8 @@ saving.
 
 The Compose file uses Docker named volumes, which TrueNAS manages and which
 arrive with the right ownership. To keep the data on a dataset you can snapshot
-instead — worth doing, since ZFS snapshots of the directory holding
-`stocktake.db` are the best backup this app can have:
+instead — worth doing, since ZFS snapshots of the dataset holding both
+directories are the best backup this app can have:
 
 ```yaml
     volumes:

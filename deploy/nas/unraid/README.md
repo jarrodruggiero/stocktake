@@ -43,10 +43,11 @@ failure.
 ## Backing up
 
 `/mnt/user/appdata/stocktake` is the entire application state — the
-database and `config.yaml` both sit in it, because the template maps one
-folder rather than two.
-Include that folder in your appdata backup and you have everything. Test the
-restore.
+database, any formats you added and `config.yaml` all sit in it, because the
+template maps one folder rather than two.
+Include that folder in your appdata backup and you have everything, provided the
+backup stops the container first; otherwise, and for restoring, see
+[Backing up and restoring](https://jarrodruggiero.github.io/stocktake/deploy/#backing-up-and-restoring). Test the restore.
 
 ## Submitting to Community Applications
 

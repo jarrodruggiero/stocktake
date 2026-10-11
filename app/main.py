@@ -1,7 +1,7 @@
 """Portfolio tracker entrypoint.
 
 Run locally:
-    APP_CONFIG_FILE=./config.yaml APP_DATABASE__PATH=./portfolio.db \
+    APP_CONFIG_FILE=./config.yaml APP_DATABASE__PATH=./stocktake.db \
         uvicorn app.main:app --reload
 
 Access control has two independent layers, on purpose:
@@ -1162,7 +1162,7 @@ def setup_database(request: Request, tested: str = "", ok: str = ""):
     return _wizard_page(request, "database", {
         "db_source": source,
         "db_description": database.describe(settings.database) if source.configured else None,
-        "default_path": settings.database.path or "/data/portfolio.db",
+        "default_path": settings.database.path or "/data/stocktake.db",
         "tested": tested,
         "tested_ok": ok == "1",
         "form": {},
@@ -1196,7 +1196,7 @@ def _database_form_page(request: Request, form, message: str, ok: bool) -> HTMLR
     page = _wizard_page(request, "database", {
         "db_source": database.source(settings),
         "db_description": None,
-        "default_path": settings.database.path or "/data/portfolio.db",
+        "default_path": settings.database.path or "/data/stocktake.db",
         "tested": message,
         "tested_ok": ok,
         "form": {k: v for k, v in form.items() if k not in ("_csrf", "password")},

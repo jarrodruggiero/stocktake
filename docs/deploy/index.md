@@ -77,17 +77,8 @@ docker compose pull && docker compose up -d          # upgrade
 docker compose exec app python -m app.recover --list # locked out
 ```
 
-### Backing up
-
-```sh
-# Python's sqlite3 module: the image has no sqlite3 command.
-docker compose exec app python -c "import sqlite3; sqlite3.connect('/data/stocktake.db').backup(sqlite3.connect('/data/backup.db'))"
-docker compose cp app:/data/backup.db ./stocktake-backup.db
-docker compose cp app:/config/config.yaml ./stocktake-config.yaml
-```
-
-Those two files are the entire application state. Restore them with the app
-stopped, as `/data/stocktake.db` and `/config/config.yaml`.
+Backing up is the same on every platform:
+[Backing up and restoring](#backing-up-and-restoring).
 
 ---
 
@@ -199,12 +190,66 @@ before it starts the new one, for the one-replica reasons above.
 
 ---
 
+## Backing up and restoring
+
+Three things, on every platform, and nothing else:
+
+| What | Where |
+| --- | --- |
+| The database | `/data/stocktake.db` on SQLite, or the Postgres database you named |
+| Formats you added | `/data/formats/`: broker and statement formats installed from **Imports & exports** |
+| The configuration | `/config/config.yaml`, which the setup wizard wrote; on Kubernetes, your manifest or Helm values |
+
+`/scratch` is never part of a backup. Its page images and CSV rows are minutes
+old, and the app sweeps them.
+
+### SQLite
+
+Copy the database with SQLite's backup API, which gives a consistent copy while
+the app runs. The image has no `sqlite3` command, so Python does it:
+
+```sh
+docker compose exec app python -c "import sqlite3; sqlite3.connect('/data/stocktake.db').backup(sqlite3.connect('/data/backup.db'))"
+docker compose cp app:/data/backup.db ./stocktake-backup.db
+docker compose cp app:/data/formats ./stocktake-formats   # there once a format is added
+docker compose cp app:/config/config.yaml ./stocktake-config.yaml
+```
+
+On Kubernetes it is the same through `kubectl exec` and `kubectl cp`.
+
+Don't copy `stocktake.db` itself while the app runs: its newest changes can
+still be in `stocktake.db-wal` beside it. A snapshot of the whole volume, such
+as a ZFS snapshot, is fine, because it takes both at the same moment.
+
+To restore, stop the app, then:
+
+1. Put the copy back as `/data/stocktake.db`.
+2. Delete any `stocktake.db-wal` and `stocktake.db-shm` beside it. They belong
+   to the database you replaced, and SQLite would apply them to the one you
+   restored.
+3. Put `/data/formats/` and the configuration back, and start the app.
+
+### Postgres
+
+```sh
+pg_dump --format=custom --file=stocktake.dump stocktake
+```
+
+Restore into an empty database with the app stopped
+(`pg_restore --no-owner --dbname=stocktake stocktake.dump`), then start it: it
+migrates the database to its own version. `/data/formats/` and the
+configuration are still files, backed up as above.
+
+Test a restore. An untested backup is a hope.
+
+---
+
 ## Upgrading
 
 The app migrates its own database at startup.
 
-**Back up first.** Migrations roll forward; rolling an image back after one has
-run is not a supported path.
+**[Back up](#backing-up-and-restoring) first.** Migrations roll forward;
+rolling an image back after one has run is not a supported path.
 
 **Config and app version are a matched pair.** The app rejects unknown settings
 outright — a typo should be loud, not silently ignored — which also means a
