@@ -59,6 +59,13 @@ ROW_ID_MAX = 2**31 - 1
 RowId = Annotated[int, Field(ge=1, le=ROW_ID_MAX)]
 
 
+def row_id(raw: str) -> int | None:
+    """An id as a form, a cookie or a query string sends it, else None. ASCII
+    digits only: `isdigit()` also passes "²", which `int()` cannot parse, and
+    5000 digits, which it refuses."""
+    return int(raw) if _re.fullmatch(r"[0-9]{1,18}", raw) else None
+
+
 def ticker_problem(ticker: str) -> str | None:
     ticker = (ticker or "").strip().upper()
     if not ticker:

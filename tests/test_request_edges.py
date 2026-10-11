@@ -14,7 +14,7 @@ from sqlalchemy import select
 from test_api import bearer, issue_key
 
 import factories as fac
-from app.models import ROW_ID_MAX, User
+from app.models import ROW_ID_MAX, Instrument, User
 from test_routes import bind_to_only_portfolio, make_login, session_csrf
 
 HTML = {"accept": "text/html"}
@@ -85,6 +85,22 @@ def test_the_largest_id_a_row_can_have_is_still_looked_up(client, session_factor
     resp = client.get(f"/trade/{ROW_ID_MAX}/edit", headers=HTML)
 
     assert resp.status_code == 404
+
+
+@pytest.mark.parametrize("year", ["²", "9" * 5000], ids=["superscript-two", "5000-digits"])
+def test_a_return_path_naming_no_real_year_keeps_the_usual_label(
+        client, session_factory, signed_in, year):
+    """An FY page's back label is read from the path. "²" passes `isdigit()`
+    and `int()` refuses it, as it does 5000 digits: both were a 500."""
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        acme = s.scalars(select(Instrument).where(Instrument.ticker == "ACME")).one()
+        fac.add_trade(s, acme, "2026-01-05", "buy", 10, "5.00")
+        s.commit()
+
+    resp = client.get("/holding/ACME", params={"return": f"/?fy={year}"}, headers=HTML)
+
+    assert resp.status_code == 200 and "&larr; Portfolio</button>" in resp.text
 
 
 def test_a_bare_nan_in_api_json_is_a_422_not_a_500(client, session_factory, signed_in):

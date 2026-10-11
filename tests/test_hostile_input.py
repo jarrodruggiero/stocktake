@@ -86,6 +86,12 @@ HOSTILE = {
     # of digits into an int.
     "2**63": str(2**63),
     "5000 digits": "9" * 5000,
+    # A digit to `isdigit()` and not to `int()`, so a check of the first before
+    # the second let it through as a 500. Then the same in the two shapes the
+    # app parses ids and years out of: a move form's tick and an FY page's path.
+    "superscript two": "²",
+    "a tick naming no row": "trade:²",
+    "an FY path naming no year": "/?fy=²",
     # #60: a maxlength holds back a browser, not a POST.
     "5000 characters": "x" * 5000,
     # One character as typed, two once lowercased: fits a check made before
@@ -143,6 +149,17 @@ def _reads_body_by_hand(route: APIRoute) -> bool:
     return "request.json()" in source or "request.form()" in source
 
 
+def _query_read_by_hand(route: APIRoute) -> list[str]:
+    """Query parameters a handler reads itself, which FastAPI cannot list:
+    `?return=` on the pages with a back button, and `?portfolio=`, which
+    `auth.api_session` reads for every API route."""
+    names = set(re.findall(r'request\.query_params\.get\("(\w+)"',
+                           inspect.getsource(route.endpoint)))
+    if route.path.startswith("/api/"):
+        names.add("portfolio")
+    return sorted(names)
+
+
 # Routes that read their body themselves instead of declaring it, so FastAPI
 # cannot say what they take. Each lists what its handler reads.
 BY_HAND: dict[str, list[Field]] = {
@@ -179,6 +196,8 @@ def _fields(route: APIRoute) -> list[Field]:
             out += [Field(n, "json") for n in annotation.model_fields]
         else:
             out.append(Field(p.name, "json"))
+    declared = {f.name for f in out}
+    out += [Field(n, "query") for n in _query_read_by_hand(route) if n not in declared]
     return out + BY_HAND.get(route.path, [])
 
 
@@ -428,6 +447,7 @@ def _typed(world: World, route: APIRoute, n: int, made: dict) -> dict:
         "new_ticker": f"NEW{n}", "new_name": "New company", "new_yahoo": f"NEW{n}.AX",
         "new_asset_class": "share",
         "role": "member", "scopes": "read", "portfolios": [str(world.portfolio_id)],
+        "portfolio": str(world.portfolio_id), "return": "/holdings",
         "portfolio_id": str(world.other_portfolio_id), "target": str(world.other_portfolio_id),
         "timezone": "Australia/Sydney", "reporting_currency": "AUD", "jurisdiction": "AU",
         "theme": "auto", "nav_style": "both", "times_in": "market",

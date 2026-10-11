@@ -259,10 +259,13 @@ def test_naming_a_portfolio_chooses_it(client, session_factory, two):
                       headers=bearer(raw)).json()["trades"] == []
 
 
-@pytest.mark.parametrize("given", ["stranger", "nope", "-1"])
+@pytest.mark.parametrize("given", ["stranger", "nope", "-1", "²", "9" * 5000],
+                         ids=["stranger", "nope", "-1", "superscript-two", "5000-digits"])
 def test_a_portfolio_the_key_was_not_given_is_a_404(client, session_factory, two, given):
     """A real portfolio somebody else owns answers exactly as a made-up id
-    does, so a key cannot be used to learn which ids exist."""
+    does, so a key cannot be used to learn which ids exist. "²" passes
+    `isdigit()` and `int()` refuses it, as it does 5000 digits: both were a
+    500."""
     first, _second, user_id = two
     with session_factory() as s:
         stranger = fac.make_user(s, "stranger@example.test")

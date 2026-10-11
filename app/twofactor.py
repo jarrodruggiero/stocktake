@@ -14,6 +14,7 @@ import datetime as dt
 import hashlib
 import hmac
 import io
+import re
 import secrets
 
 from sqlalchemy import or_, select, update
@@ -80,7 +81,9 @@ def matching_step(secret: str | None, code: str) -> int | None:
     if not secret or not code:
         return None
     cleaned = code.replace(" ", "").strip()
-    if not cleaned.isdigit():
+    # ASCII digits: isdigit() also takes "²", and compare_digest raises on any
+    # string that is not ASCII.
+    if not re.fullmatch(r"[0-9]+", cleaned):
         return None
     totp = _pyotp().TOTP(secret)
     now = totp.timecode(_utcnow())

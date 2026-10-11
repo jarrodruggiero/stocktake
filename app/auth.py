@@ -39,6 +39,7 @@ from .models import (
     PortfolioMember,
     User,
     UserSession,
+    row_id,
 )
 from .settings import PortfolioSettings
 
@@ -704,11 +705,12 @@ def _chosen_portfolio(request: Request, reach: list[tuple[Portfolio, str | None]
         raise HTTPException(
             400, "this key reaches more than one portfolio: say which with "
                  "?portfolio=<id> (GET /api/v1/portfolios lists them)")
-    if not given.isdigit() or int(given) not in linked:
+    chosen = row_id(given)
+    if chosen is None or chosen not in linked:
         # One answer for "not one of this key's" and "no such portfolio", so a
         # key cannot be used to learn which ids exist.
         raise HTTPException(404, "this key does not reach that portfolio")
-    return int(given)
+    return chosen
 
 
 @contextmanager
