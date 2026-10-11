@@ -203,12 +203,13 @@ async def csv_preview(request: Request, file: UploadFile, broker: str = Form(...
 
 
 def _counts(candidates: list, imports) -> dict:
-    """What the commit button would write, and how many rows hold it back: the
-    ones committing would refuse."""
-    held_back = sum(1 for c in candidates if c.status == "refused" or (
-        c.status == "unknown-instrument" and not imports.allow_new_instruments))
+    """What the commit button would write, and the rows that hold it back:
+    the ones committing would refuse, by why."""
+    short = sum(1 for c in candidates if c.status == "refused")
+    unlisted = sum(1 for c in candidates if c.status == "unknown-instrument"
+                   and not imports.allow_new_instruments)
     return {"insertable": sum(1 for c in candidates if c.status != "duplicate"),
-            "held_back": held_back}
+            "held_back": short + unlisted, "short": short, "unlisted": unlisted}
 
 
 @router.post("/imports-exports/csv/{uid}/resolve", response_class=HTMLResponse)

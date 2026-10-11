@@ -346,6 +346,10 @@ def test_committing_refuses_unknown_instruments_by_default(client, session_facto
     resp = upload_csv(client, session_factory)
     assert "unknown-instrument" in resp.text
     assert "/commit" not in resp.text
+    # What to do about it, where the commit button would be.
+    assert ('Add the marked instruments on <a href="/holdings">Manage holdings</a>, then '
+            'upload the file again.') in resp.text
+    assert "Record the buys" not in resp.text
 
     committed = client.post(f"/imports-exports/csv/{_newest_staged(staging_dir)}/commit",
                             data={"_csrf": session_csrf(session_factory)},
@@ -376,6 +380,10 @@ def test_a_file_selling_more_than_is_held_cannot_be_committed(client, session_fa
     assert 'badge-refused' in resp.text
     assert "more than the 100 units of ACME held on 2025-03-02" in resp.text
     assert "/commit" not in resp.text
+    # An export that starts after the shares were bought is the usual cause,
+    # and there was no way past it on the page, or a word on what to do.
+    assert "Record the buys the marked sales come from, then upload the file again." in resp.text
+    assert "Add the marked instruments" not in resp.text
     committed = client.post(f"/imports-exports/csv/{_newest_staged(staging_dir)}/commit",
                             data={"_csrf": session_csrf(session_factory)},
                             headers=HTML, follow_redirects=False)
