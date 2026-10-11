@@ -1743,6 +1743,78 @@ def test_no_wizard_path_loops(client, session_factory):
         assert resp.status_code == 200, (path, cur, resp.status_code)
 
 
+# --------------------------------------------------------------------------- #
+# Every step's POST is gated, not only its page
+# --------------------------------------------------------------------------- #
+# The pages' gates were tested by GET. Removing `_wizard_step` from a POST
+# passed everything, and on a finished install an anonymous POST could then
+# repoint the database or start a draft that sends everybody to the wizard
+# (decisions.md #92). Each request below is one the step would act on, with a
+# genuine token, so only the gate stands in the way.
+
+FIRST_STEPS = ["/setup", "/setup/database", "/setup/database/test", "/setup/profile"]
+LATER_STEPS = ["/setup/portfolio", "/setup/features", "/setup/environment", "/setup/2fa",
+               "/setup/2fa/skip", "/setup/finish"]
+EVERY_FIELD = {"kind": "sqlite", "name": "Owner", "email": "late@example.test",
+               "password": PASSWORD, "timezone": "Europe/Dublin", "price_feed": "on",
+               "code": "123456", "trusted_proxies": "", "external_url": "",
+               "feature": "plan"}
+
+
+@pytest.mark.parametrize("path", FIRST_STEPS)
+def test_a_finished_install_refuses_the_first_steps_to_anybody(client, session_factory,
+                                                               tmp_path, monkeypatch, path):
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(tmp_path / "config.yaml"))
+    with session_factory() as s:
+        s.add(User(email="owner@example.test", name="Owner", password_hash="x"))
+        s.commit()
+    token = _token(client, "/login")                   # a genuine pre-auth token
+
+    resp = client.post(path, headers=HTML, follow_redirects=False, data={
+        **EVERY_FIELD, "path": str(tmp_path / "elsewhere.db"), "_csrf": token})
+
+    assert (resp.status_code, resp.headers.get("location")) == (303, "/login")
+    assert not setupwizard.in_progress()
+    assert not (tmp_path / "config.yaml").exists() and not (tmp_path / "elsewhere.db").exists()
+
+
+@pytest.mark.parametrize("path", LATER_STEPS)
+def test_a_finished_install_refuses_the_later_steps_even_signed_in(client, session_factory,
+                                                                   tmp_path, monkeypatch, path):
+    """Signed in, with the session's own token: still nothing, because the
+    wizard is over. Without the gate, finishing again rewrote config.yaml."""
+    from test_routes import make_login, session_csrf
+
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(tmp_path / "config.yaml"))
+    make_login(client, session_factory)
+
+    resp = client.post(path, headers=HTML, follow_redirects=False, data={
+        **EVERY_FIELD, "_csrf": session_csrf(session_factory)})
+
+    assert (resp.status_code, resp.headers.get("location")) == (303, "/")
+    assert not setupwizard.in_progress()
+    assert not (tmp_path / "config.yaml").exists()
+
+
+@pytest.mark.parametrize("path", LATER_STEPS)
+def test_an_open_wizards_later_steps_need_the_sessions_token(client, tmp_path, monkeypatch,
+                                                             path):
+    """While the wizard is open these steps check the session's token like
+    any page; the app-wide CSRF sweep cannot reach them, because a finished
+    install closes the wizard first."""
+    import copy
+
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(tmp_path / "config.yaml"))
+    _through_the_account(client, want_2fa=path.startswith("/setup/2fa"))
+    before = copy.deepcopy(setupwizard.draft())
+
+    resp = client.post(path, headers=HTML, follow_redirects=False, data=EVERY_FIELD)
+
+    assert resp.status_code == 403, (path, resp.status_code, resp.text[:120])
+    assert setupwizard.draft() == before
+    assert not (tmp_path / "config.yaml").exists()
+
+
 def test_a_back_button_never_points_at_a_step_that_has_closed(client):
     """welcome, database and account shut the moment an account exists, so
     offering one as a destination is offering the loop above."""

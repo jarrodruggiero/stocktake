@@ -18,7 +18,9 @@ fails here, naming itself.
 
 from __future__ import annotations
 
+import ast
 import inspect
+import textwrap
 
 import pytest
 
@@ -34,10 +36,19 @@ import pytest
 #   _wizard_step          — the first-run wizard, which owns its own gate
 #
 # Add to this list only alongside the thing that does the guarding, never to
-# make a failure go away. `verify_csrf` is a substring of the pre-auth name, so
-# the two are listed for the reader rather than for the match.
-SELF_GUARDING = ("verify_csrf", "verify_pre_auth_csrf", "verify_logout_token",
-                 "api_session", "_wizard_step")
+# make a failure go away. A guard counts when the handler CALLS it: the sweep
+# used to match the names as text, so a handler that only mentioned one, in a
+# docstring say, passed.
+SELF_GUARDING = {"verify_csrf", "verify_pre_auth_csrf", "verify_logout_token",
+                 "api_session", "_wizard_step"}
+
+
+def _calls(handler) -> set[str]:
+    """Every name the handler calls, read off its syntax tree."""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(handler)))
+    return {node.func.attr if isinstance(node.func, ast.Attribute)
+            else getattr(node.func, "id", "")
+            for node in ast.walk(tree) if isinstance(node, ast.Call)}
 
 
 @pytest.fixture(scope="module")
@@ -67,14 +78,8 @@ def test_there_are_public_posts_to_check(main):
 
 
 def test_every_public_post_authenticates_itself(main):
-    naked = []
-    for path, handler in _public_post_routes(main):
-        try:
-            source = inspect.getsource(handler)
-        except OSError:  # pragma: no cover - a handler with no readable source
-            continue
-        if not any(guard in source for guard in SELF_GUARDING):
-            naked.append(path)
+    naked = [path for path, handler in _public_post_routes(main)
+             if not _calls(handler) & SELF_GUARDING]
 
     assert not naked, (
         "these POST routes are public to the middleware and guard nothing: "
@@ -104,9 +109,17 @@ def test_the_guard_notices_a_naked_public_post(main, monkeypatch):
     main.app.router.routes.append(_Route())
     try:
         naked = [path for path, handler in _public_post_routes(main)
-                 if not any(g in inspect.getsource(handler)
-                            for g in SELF_GUARDING)]
+                 if not _calls(handler) & SELF_GUARDING]
     finally:
         main.app.router.routes[:] = original
 
     assert naked == ["/a-new-public-thing"]
+
+
+def test_a_guard_named_but_never_called_is_no_guard():
+    """The text match passed a handler that only mentioned a guard."""
+    async def says_it_guards():  # pragma: no cover - never called
+        """Checked with verify_csrf, like the others."""
+        return {}
+
+    assert not _calls(says_it_guards) & SELF_GUARDING
