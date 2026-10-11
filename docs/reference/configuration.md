@@ -23,7 +23,10 @@ secret or a Kubernetes Secret without ever being written to disk in the clear.
     has chosen one. If `APP_DATABASE__*` is set, or the file already has a
     `database:` block, the wizard reports what it found and moves on: the
     process is already connected to it, and offering to change it would be
-    offering to lose a database.
+    offering to lose a database. The password, port and SSL mode say how to
+    reach a database, not which one, so set alone they leave the step offered;
+    the wizard then tests and saves with that password, and keeps it out of
+    the file.
 
 !!! warning "Unknown keys are rejected"
     A key the app does not recognise is a startup error, not a warning — a
