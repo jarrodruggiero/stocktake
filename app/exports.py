@@ -54,7 +54,7 @@ def _total(parts) -> Decimal | None:
     return None if any(p is None for p in parts) else sum(parts, ZERO)
 
 
-def _aud(value: Decimal | None, fx: Decimal | None) -> Decimal | None:
+def _aud(value: Decimal, fx: Decimal | None) -> Decimal | None:
     """Convert, or return None so the cell comes out blank.
 
     Multiplying by 1 when the rate is unknown would put a native-currency
@@ -62,7 +62,7 @@ def _aud(value: Decimal | None, fx: Decimal | None) -> Decimal | None:
     that column. Blank is the honest answer; the caller resolves what it can
     through `queries.FxBook` before getting here.
     """
-    if value is None or fx is None:
+    if fx is None:
         return None
     return value * fx
 
@@ -250,7 +250,9 @@ def unrealised_cgt(session: Session, **_) -> Report:
             # 1:1 — the same refusal the dashboard makes via `totals.excluded`.
             cost = None if unit_cost is None else units * unit_cost
             value = None if fx_now is None else units * price * fx_now
-            gain = None if (cost is None or value is None) else value - cost
+            # `cost` is None only for a currency with no rate stored at all,
+            # and then there is no rate for `value` either.
+            gain = None if value is None else value - cost
             eligible = today > fyreport._one_year_after(acquired)
             discount = (gain / 2) if (gain is not None and eligible and gain > 0) else ZERO
             rows.append([
@@ -319,7 +321,7 @@ def closed_positions(session: Session, **_) -> Report:
         pref = prefs.get(inst.id)
         rows.append([
             inst.ticker, inst.name or "", _d(units, "0.00000001"),
-            min(buys).isoformat() if buys else "",
+            min(buys).isoformat(),          # a closed position was bought first
             max(d.date for d in disposals).isoformat(),
             _d(cost_base), _d(proceeds), _d(dividends_aud), _d(gross), _d(discount),
             _d(None if gross is None or discount is None else gross - discount),
@@ -426,8 +428,8 @@ so it is blank on those rows too rather than repeating the cash figure.
 
 def build(session: Session, reports: list[str], fy: int | None = None,
           ticker: str | None = None) -> dict[str, Report]:
+    # The route refuses a report it does not know before it gets here.
     return {
         TITLES[key]: BUILDERS[key](session, fy=fy, ticker=ticker)
         for key in reports
-        if key in BUILDERS
     }
