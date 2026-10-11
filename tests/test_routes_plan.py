@@ -264,7 +264,7 @@ def test_completing_the_wrong_buy_is_refused(client, session_factory, holdings):
                        headers=HTML)
 
     assert resp.status_code == 409
-    assert "next buy is now" in resp.text
+    assert "Next buy is now" in resp.text
 
 
 @freeze_time(TODAY)
