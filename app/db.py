@@ -27,6 +27,11 @@ log = logging.getLogger(__name__)
 
 ENV_PREFIX = "APP_DATABASE__"
 
+# Seconds to wait for a database server before calling it unreachable. With no
+# limit, a server that took the connection and said nothing held the wizard's
+# probe for as long as the operating system would wait: minutes.
+CONNECT_TIMEOUT = 10
+
 NOT_CONFIGURED = "not configured"
 FROM_ENVIRONMENT = "environment"
 FROM_FILE = "config file"
@@ -109,7 +114,9 @@ def probe(db: DatabaseSettings) -> Probe:
 
     engine = None
     try:
-        engine = create_engine(db.url, pool_pre_ping=True)
+        # SQLite opens a file and has nothing to wait for.
+        limit = {} if db.type == "sqlite" else {"connect_timeout": CONNECT_TIMEOUT}
+        engine = create_engine(db.url, pool_pre_ping=True, connect_args=limit)
         with engine.connect() as conn:
             if db.type == "sqlite":
                 conn.execute(text("select 1"))

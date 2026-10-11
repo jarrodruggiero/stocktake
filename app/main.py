@@ -1214,7 +1214,10 @@ async def setup_database_test(request: Request):
         chosen = _database_from_form(form)
     except ValueError as exc:
         return _database_form_page(request, form, str(exc), False)
-    result = database.probe(chosen)
+    # Off the event loop: anybody can press this before the first account
+    # exists, and a slow server would otherwise stop every other request,
+    # /healthz included, until the liveness probe restarted the pod.
+    result = await asyncio.to_thread(database.probe, chosen)
     return _database_form_page(request, form, result.detail, result.ok)
 
 
@@ -1234,11 +1237,12 @@ async def setup_database_save(request: Request):
         chosen = _database_from_form(form)
     except ValueError as exc:
         return _database_form_page(request, form, str(exc), False)
-    result = database.probe(chosen)
+    # Both off the event loop, as the test button is: connecting migrates.
+    result = await asyncio.to_thread(database.probe, chosen)
     if not result.ok:
         return _database_form_page(request, form, result.detail, False)
     try:
-        database.connect(chosen)
+        await asyncio.to_thread(database.connect, chosen)
     except Exception as exc:
         log.exception("wizard could not connect the chosen database")
         return _database_form_page(
