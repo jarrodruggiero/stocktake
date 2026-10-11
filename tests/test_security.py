@@ -356,6 +356,27 @@ def test_a_password_hashed_to_an_older_standard_is_rehashed_at_sign_in(client, s
     assert auth.verify_password(stored, PASSWORD)
 
 
+def test_a_password_hash_that_is_current_is_left_alone_at_sign_in(client, session_factory):
+    """Rehashing is for an older standard; doing it every time would rewrite
+    the stored hash on every sign-in for nothing."""
+    from app import auth
+    from app.models import User
+    from test_routes import PASSWORD, pre_auth_csrf
+
+    current = auth.hash_password(PASSWORD)
+    with session_factory() as s:
+        fac.make_user(s, "user@example.test", password_hash=current)
+        s.commit()
+
+    resp = client.post("/login", follow_redirects=False, headers={"accept": "text/html"},
+                       data={"email": "user@example.test", "password": PASSWORD,
+                             "_csrf": pre_auth_csrf(client)})
+
+    assert resp.status_code == 303, "the premise: the sign-in went through"
+    with session_factory() as s:
+        assert s.query(User).one().password_hash == current
+
+
 @pytest.mark.parametrize("secure", [False, True])
 def test_the_remembered_portfolio_cookie_is_httponly_and_kept_a_year(client, session_factory,
                                                                      app_module, monkeypatch,
@@ -413,3 +434,18 @@ def test_live_prices_are_fetched_only_while_they_are_on(app_module, monkeypatch,
     asyncio.run(sign_in_moment())
 
     assert ran.wait(2 if enabled else 0.3) is enabled
+
+
+def test_a_reason_sent_back_to_the_sign_in_page_is_shown(client, session_factory):
+    """A provider sign-in happens off-site; when it fails, the sign-in page
+    is the only place the reason can be said."""
+    import re
+
+    with session_factory() as s:
+        fac.make_user(s, "user@example.test")            # past the first-run wizard
+        s.commit()
+
+    page = client.get("/login", params={"error": "The provider refused the sign-in."},
+                      headers={"accept": "text/html"}).text
+
+    assert re.search(r'class="panel error">\s*The provider refused the sign-in\.', page)

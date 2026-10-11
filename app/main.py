@@ -526,7 +526,6 @@ templates.env.globals["docs_url"] = DOCS_URL
 # A fresh id each time a creating form renders — see app/submissions.py.
 templates.env.globals["submission_id"] = submissions.mint
 templates.env.globals["role_labels"] = ROLE_LABELS
-templates.env.globals["role_blurbs"] = ROLE_BLURBS
 # Spreadsheet column letters: A..Z, AA, AB. Nobody counts to the 29th column.
 templates.env.globals["column_letter"] = brokerdesign.column_letter
 # A trade's moment on the exchange's clock, offset attached, for a <time
