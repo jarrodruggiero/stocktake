@@ -411,7 +411,22 @@ def test_a_trade_and_a_distribution_both_stand_in_the_way(client, session_factor
                        data={"_csrf": session_csrf(session_factory)})
 
     assert resp.status_code == 409
-    assert "2 trade(s) or dividend(s)" in resp.text
+    assert "2 trades or distributions" in resp.text
+
+
+def test_one_thing_in_the_way_is_one(client, session_factory):
+    make_login(client, session_factory)
+    with session_factory() as s:
+        portfolio = s.scalar(select(fac.Portfolio))
+        alpha = fac.make_instrument(s, "ALPHA")
+        fac.add_dividend(s, alpha, "2026-02-05", "3.00", portfolio_id=portfolio.id)
+        s.commit()
+        alpha_id = alpha.id
+
+    resp = client.post(f"/holdings/{alpha_id}/remove", headers=HTML, follow_redirects=False,
+                       data={"_csrf": session_csrf(session_factory)})
+
+    assert "ALPHA still has 1 trade or distribution recorded against it." in resp.text
 
 
 def test_a_removal_mentions_the_plan_only_when_the_plan_lost_it(client, session_factory):

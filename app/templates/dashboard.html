@@ -39,7 +39,8 @@
       </form>
       {% endif %}
       <a href="/charts"><button type="button" class="secondary">View charts</button></a>
-      {% if auth.can_write %}
+      {# Not on a first run: the panel below offers it, as the page's one primary. #}
+      {% if auth.can_write and not first_run %}
       <button type="button" id="opentrade" class="primary">Record trade</button>
       {% endif %}
     </div>
@@ -54,9 +55,11 @@
        test. #}
     <div class="feedline">
       <details class="feedstatus statusmenu menu">
-        <summary class="{{ 'ok' if feed.ok or (not feed.finished and not feed.running) else 'bad' }}"
+        {# A feed that has not run yet is neither fine nor failing. #}
+        {% set ran = feed.finished and not feed.running %}
+        <summary class="{{ ('ok' if feed.ok else 'bad') if ran else '' }}"
                  aria-label="Price feed status: {% if feed.running %}refreshing now{% elif not feed.finished %}has not run since startup{% elif feed.ok %}ok{% else %}failed{% endif %}">
-          {% if feed.running %}…{% elif feed.ok or not feed.finished %}✓{% else %}✗{% endif %}
+          {% if feed.running %}…{% elif not feed.finished %}–{% elif feed.ok %}✓{% else %}✗{% endif %}
         </summary>
         {# Two times and nothing else. They are separate runs — the daily one
            records closes, the poll shows the unfinished session — and naming
@@ -177,7 +180,7 @@
 </section>
 {% if totals.excluded %}
 <p class="note">Totals exclude {{ totals.excluded | join(', ') }} — no price or
-exchange rate stored yet. The next refresh fills it in.</p>
+exchange rate stored.</p>
 {% endif %}
 {% if totals.dividends_excluded %}
 <p class="note">Dividends received leaves out {{ totals.dividends_excluded | join(', ') }} —
@@ -311,7 +314,7 @@ short by those holdings, not by a rounding.</p>
         {%- for c in cols %}{% set v = c.value(h) %}
         {%- if c.render == 'ticker' %}
         <td><a href="{{ holding_href(h.instrument.ticker, h.instrument.exchange) }}">{{ h.instrument.ticker }}</a>
-            {% if h.instrument.currency != 'AUD' %}<span class="ccy">{{ h.instrument.currency }}</span>{% endif %}</td>
+            {% if h.instrument.currency != reporting_ccy %}<span class="ccy">{{ h.instrument.currency }}</span>{% endif %}</td>
         {%- elif c.render == 'gain' %}
         {%- set pct = h.gain_pct if c.key == 'gain_reporting' else h.day_pct %}
         {# Direction is carried by the arrow as well as the colour: red/green

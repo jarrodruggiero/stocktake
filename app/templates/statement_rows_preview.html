@@ -50,7 +50,8 @@ should match “units in app”; a mismatch means missing trades.</p>
         <input type="checkbox" name="save" value="{{ i }}" aria-label="Save {{ r.ticker }}"
                {% if r.status != 'new' %}disabled{% elif r.ticked %}checked{% endif %}>
       </td>
-      <td>{{ r.ticker }} <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
+      <td>{{ r.ticker }} <span class="badge badge-{{ r.status }}">{{
+        {"unknown-instrument": "not in this portfolio", "duplicate": "already recorded"}.get(r.status, r.status) }}</span>
         {% if r.choices %}
         <select name="ticker-{{ i }}" aria-label="Listing for {{ r.ticker }}">
           <option value="" {{ 'selected' if not r.listing }} disabled>— select —</option>

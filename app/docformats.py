@@ -112,7 +112,7 @@ class RowSpec:
         unknown = [t for t in tokens if t not in SHAPE_TOKENS]
         if unknown:
             raise TemplateError(
-                f"unknown row shape token(s) {unknown}; expected from "
+                f"unknown row shape {'token' if len(unknown) == 1 else 'tokens'} {unknown}; expected from "
                 f"{', '.join(sorted(SHAPE_TOKENS))}"
             )
         if len(tokens) != len(self.columns):

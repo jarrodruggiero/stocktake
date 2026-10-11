@@ -248,7 +248,7 @@ def test_the_commit_button_counts_only_what_it_would_write(client, session_facto
         fac.add_trade(s, acme, "2025-01-06", "buy", 100, "5.00", brokerage="9.50")
         s.commit()
 
-    assert "Commit 1 trade(s)" in upload_csv(client, session_factory).text
+    assert "Commit 1 trade<" in upload_csv(client, session_factory).text
 
 
 def test_with_creation_allowed_a_new_ticker_is_offered_and_committed(client, session_factory,
@@ -260,7 +260,7 @@ def test_with_creation_allowed_a_new_ticker_is_offered_and_committed(client, ses
     monkeypatch.setattr(main_mod.settings.imports, "allow_new_instruments", True)
     make_login(client, session_factory)
     resp = upload_csv(client, session_factory)          # ACME is in no catalogue
-    assert "Commit 2 trade(s)" in resp.text
+    assert "Commit 2 trades" in resp.text
 
     committed = client.post(f"/imports-exports/csv/{staged_id(resp)}/commit",
                             data={"_csrf": session_csrf(session_factory)},

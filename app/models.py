@@ -688,6 +688,10 @@ class WebauthnChallenge(Base):
     )
 
 
+# An instrument's class as stored, and as a person reads it.
+ASSET_CLASSES = {"etf": "ETF", "share": "Share", "crypto": "Crypto"}
+
+
 class Instrument(Base):
     """Shared catalogue entry for a tradeable thing. NOT user-scoped — see the
     module docstring. `drp` is the default for a new holder; the per-user answer

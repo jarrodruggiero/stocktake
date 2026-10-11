@@ -63,7 +63,7 @@
       {# "unknown-instrument" is the internal state; on the page it is the
          ordinary case of a ticker this install has not seen before. #}
       <td><span class="badge badge-{{ c.status }}">{{
-        "new instrument" if c.status == "unknown-instrument" else c.status }}</span></td>
+        {"unknown-instrument": "new instrument", "duplicate": "already recorded"}.get(c.status, c.status) }}</span></td>
       <td>{{ c.date }}</td>
       <td>{{ c.ticker }}</td>
       <td>{{ c.type }}</td>
@@ -86,7 +86,7 @@
 {% elif uid and insertable %}
 <form action="/imports-exports/csv/{{ uid }}/commit" method="post" class="commitbar">
   <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-  <button type="submit">Commit {{ insertable }} trade(s)</button>
+  <button type="submit">Commit {{ insertable | plural('trade') }}</button>
   <a href="/imports-exports">Cancel</a>
 </form>
 {% elif not insertable %}
@@ -95,7 +95,7 @@
 {% endif %}
 
 {% if skipped %}
-<details><summary>{{ skipped | length }} non-trade row(s) skipped</summary>
+<details><summary>{{ skipped | length | plural('non-trade row') }} skipped</summary>
 <ul class="note">{% for s in skipped %}<li><code>{{ s }}</code></li>{% endfor %}</ul>
 </details>
 {% endif %}

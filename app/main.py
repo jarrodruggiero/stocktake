@@ -92,6 +92,7 @@ from . import (
     textfield,
     theming,
     twofactor,
+    wording,
 )
 from . import (
     db as database,
@@ -99,6 +100,7 @@ from . import (
 from .api import router as api_router
 from .imports_web import router as imports_router
 from .models import (
+    ASSET_CLASSES,
     MARKET_OPEN,
     MEMBER_ROLES,
     NAV_STYLES,
@@ -558,6 +560,9 @@ def _arrow(value):
 
 
 templates.env.filters["trend"] = _trend
+templates.env.filters["plural"] = wording.plural
+templates.env.globals["fy_label"] = fyreport.fy_label
+templates.env.globals["class_label"] = lambda value: ASSET_CLASSES.get(value, value)
 templates.env.filters["arrow"] = _arrow
 templates.env.filters["money"] = _money
 templates.env.filters["cash"] = _cash
@@ -4181,6 +4186,11 @@ def _plan_start(raw: str) -> tuple[dt.date | None, str | None]:
     return start, None
 
 
+def _unknown_tickers(unknown) -> str:
+    names = sorted(set(unknown))
+    return f"Not in this portfolio: {', '.join(names)}"
+
+
 def _rotation(db: DbSession, tickers: str) -> tuple[list[Instrument], list[str], list[Instrument]]:
     """The holdings a rotation names, in order; the names that are no holding;
     and, for a bare ticker held on two exchanges, its listings. Such a ticker
@@ -4233,7 +4243,7 @@ async def plan_preview(
         chosen, unknown, twice = _rotation(db, tickers)
         if unknown:
             return JSONResponse(
-                {"rows": [], "why": f"unknown ticker(s): {', '.join(sorted(set(unknown)))}"})
+                {"rows": [], "why": _unknown_tickers(unknown)})
         if twice:
             return JSONResponse({"rows": [], "why": queries.held_twice(twice)})
 
@@ -4279,7 +4289,7 @@ async def plan_save(
         chosen, unknown, twice = _rotation(db, tickers)
         if unknown:
             raise HTTPException(
-                400, f"unknown ticker(s): {', '.join(sorted(set(unknown)))} — add them first"
+                400, f"{_unknown_tickers(unknown)}. Add {'it' if len(set(unknown)) == 1 else 'them'} first."
             )
         if twice:
             raise HTTPException(400, queries.held_twice(twice))
@@ -4484,7 +4494,8 @@ def export_download(
     wanted = [report] if report != "all" else list(exports.TITLES)
     unknown = [r for r in wanted if r not in exports.TITLES]
     if unknown:
-        raise HTTPException(400, f"unknown report(s): {', '.join(unknown)}")
+        raise HTTPException(400, f"Unknown {'report' if len(unknown) == 1 else 'reports'}: "
+                                 f"{', '.join(unknown)}.")
     if report == "all" and fmt == "csv":
         raise HTTPException(400, "choose Excel for the combined workbook")
 
@@ -5492,8 +5503,9 @@ async def instrument_remove(request: Request, instrument_id: RowId):
         if blocking.get("total"):
             raise HTTPException(
                 409,
-                f"{inst.ticker} still has {blocking['total']} trade(s) or "
-                f"dividend(s) recorded against it. Delete those first.",
+                f"{inst.ticker} still has "
+                f"{wording.plural(blocking['total'], 'trade or distribution', 'trades or distributions')} "
+                "recorded against it. Delete those first.",
             )
         unplanned = plans.remove_instrument(db, instrument_id)
         for pref in db.scalars(

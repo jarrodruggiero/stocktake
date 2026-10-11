@@ -21,11 +21,9 @@
 {% endfor %}
 
 {% if excluded %}
-{# Says what is missing and that it fixes itself. The previous version spent
-   four lines explaining the mechanism, which is the over-defensive habit the
-   tone sweep exists to remove: nobody has to do anything here. #}
-<p class="note">Excludes {{ excluded | join(', ') }} — no exchange rate stored
-yet. The next price refresh fills it in.</p>
+{# Says what is missing, and no more: a rate for a pair no provider has is
+   never filled, so saying the next refresh would supply it was a promise. #}
+<p class="note">Excludes {{ excluded | join(', ') }} — no exchange rate stored.</p>
 {% endif %}
 
 <div class="chartgrid" id="chartgrid">

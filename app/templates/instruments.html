@@ -76,7 +76,7 @@
                  onchange="savePref(this.form)"></td>
       {% else %}
       <td>{{ i.name or '' }}</td>
-      <td>{{ i.asset_class }}</td>
+      <td>{{ class_label(i.asset_class) }}</td>
       <td>{{ i.currency }}</td>
       {% endif %}
       {# Shown for everything, held or not: a position you exited is still one

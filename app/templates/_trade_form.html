@@ -42,7 +42,7 @@
      traded, then the trade. #}
   <div class="tradepick">
   {% if edit %}
-  <p class="meta">{{ inst.ticker }} — {{ inst.name or inst.asset_class }}{% if inst.currency != 'AUD' %} ({{ inst.currency }}){% endif %}</p>
+  <p class="meta">{{ inst.ticker }} — {{ inst.name or class_label(inst.asset_class) }}{% if inst.currency != reporting_ccy %} ({{ inst.currency }}){% endif %}</p>
   {% else %}
   <label>Instrument
     <select name="instrument_id" id="instpick" required>
@@ -56,7 +56,7 @@
         {% if form.instrument_id and form.instrument_id|string == i.id|string %}selected
         {% elif ticker and i.ticker == ticker and (not exchange or i.exchange == exchange) %}selected
         {% elif prefill and not form and prefill.instrument_id == i.id %}selected{% endif %}>
-        {{ i.ticker }} — {{ i.name or i.asset_class }}{% if i.currency != reporting_ccy %} ({{ i.currency }}){% endif %}
+        {{ i.ticker }} — {{ i.name or class_label(i.asset_class) }}{% if i.currency != reporting_ccy %} ({{ i.currency }}){% endif %}
       </option>
       {% endfor %}
       <option value="new" {% if form.instrument_id == 'new' %}selected{% endif %}>+ Something not listed…</option>
@@ -91,7 +91,7 @@
           <option value="crypto" {% if form.new_asset_class == 'crypto' %}selected{% endif %}>Crypto</option>
         </select>
       </label>
-      <label>Currency <input name="new_currency" value="{{ form.new_currency or 'AUD' }}" size="4"></label>
+      <label>Currency <input name="new_currency" value="{{ form.new_currency or reporting_ccy }}" size="4"></label>
     </div>
     <label>Name <span class="sub">optional</span>
       <input name="new_name" value="{{ form.new_name or '' }}" placeholder="Vanguard Australian Shares Index ETF">

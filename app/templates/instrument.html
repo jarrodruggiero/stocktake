@@ -12,7 +12,7 @@
 
 <h1>{{ inst.ticker }} <small>{{ inst.name or '' }}</small></h1>
 <p class="meta">
-  {{ inst.exchange }} · {{ inst.asset_class }} · {{ inst.currency }}
+  {{ inst.exchange }} · {{ class_label(inst.asset_class) }} · {{ inst.currency }}
   {% if holding.drp %} · DRP{% endif %}
   {% if not inst.active %} · <span class="badge">closed</span>{% endif %}
   {% for o in others %} · also on <a href="{{ holding_href(o.ticker, o.exchange) }}">{{ o.exchange }}</a>{% endfor %}
