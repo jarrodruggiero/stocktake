@@ -10,7 +10,7 @@
       action="/trade/{{ edit.id }}/move" autocomplete="off">
   <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
 
-  {% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+  {% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
 
   <label>Move to
     <select name="target" required>

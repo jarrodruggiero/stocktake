@@ -12,7 +12,7 @@
 <p class="note">Everyone here shares this portfolio — a trade one person records shows up for
 all of them.</p>
 
-{% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+{% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
 
 {% if auth.is_admin %}
 <section class="narrow">

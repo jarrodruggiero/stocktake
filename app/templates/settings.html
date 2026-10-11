@@ -19,7 +19,7 @@ preferences live on <a href="/profile">your profile</a>.</p>
   is next restarted; everything else applied immediately.
   {% else %}Applied immediately.{% endif %}</p>
 {% endif %}
-{% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+{% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
 
 {% if not writable.writable %}
 {# Read-only is a normal, deliberate deployment shape — explain it rather than

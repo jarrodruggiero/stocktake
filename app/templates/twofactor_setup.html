@@ -2,7 +2,7 @@
 {% block title %}Two-factor authentication — Stocktake{% endblock %}
 {% block content %}
 <h1>Two-factor authentication</h1>
-{% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+{% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
 <section class="narrow">
   {% include "_twofactor_enrol.html" %}
 </section>

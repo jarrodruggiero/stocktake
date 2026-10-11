@@ -8,13 +8,13 @@
   </h1>
 
   {% if refused %}
-  <p class="panel error">{{ refused }}</p>
+  <p role="alert" class="panel error">{{ refused }}</p>
   <p class="note"><a href="/login">Go to sign in</a></p>
 
   {% else %}
   <p class="wizintro">You've been invited to <strong>{{ invite.portfolio }}</strong>
   as a {{ invite.role }}.</p>
-  {% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+  {% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
 
   {% if auth %}
   <form class="panel" method="post" action="/invite/{{ token }}/accept">

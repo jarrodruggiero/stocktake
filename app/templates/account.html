@@ -6,7 +6,7 @@
 <p class="meta">{{ auth.user.name }} · {{ auth.user.email }}{% if auth.is_admin %} · admin{% endif %}</p>
 
 {% if auth.user.must_change_password %}
-<p class="panel error">Your password was set by an admin. Choose your own to continue.</p>
+<p role="alert" class="panel error">Your password was set by an admin. Choose your own to continue.</p>
 {% endif %}
 {% if saved == 'password' %}<p class="panel ok">Password changed. Other devices have been signed out.</p>{% endif %}
 {% if saved == 'appearance' %}<p class="panel ok">Appearance saved.</p>{% endif %}
@@ -21,10 +21,10 @@
   <code class="reveal">{{ new_key }}</code>
 </p>
 {% endif %}
-{% if error == 'password' %}<p class="panel error">That password isn't right.</p>
-{% elif error == 'code' %}<p class="panel error">That code isn't right.</p>
-{% elif error == 'current-session' %}<p class="panel error">That's the session you're using — use Log out instead.</p>
-{% elif error %}<p class="panel error">{{ error }}</p>{% endif %}
+{% if error == 'password' %}<p role="alert" class="panel error">That password isn't right.</p>
+{% elif error == 'code' %}<p role="alert" class="panel error">That code isn't right.</p>
+{% elif error == 'current-session' %}<p role="alert" class="panel error">That's the session you're using — use Log out instead.</p>
+{% elif error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
 
 {# Shown once, immediately after enabling. There is no way back to this list:
    only hashes are stored, exactly as for session tokens. #}

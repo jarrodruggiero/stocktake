@@ -7,7 +7,7 @@
 <h1>CSV preview <small>{{ filename }} ({{ broker }})</small></h1>
 
 {% if errors %}
-<div class="panel error">
+<div role="alert" class="panel error">
   <h2>Errors — nothing can be committed</h2>
   {# Each says what is wrong and what to do; no general advice under them. #}
   <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
