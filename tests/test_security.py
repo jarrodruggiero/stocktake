@@ -10,10 +10,13 @@ is why the templates use it.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from sqlalchemy import select
 
 import factories as fac
+from app import tenancy
 from app.models import Instrument, exchange_problem, ticker_problem
 from test_routes import bind_to_only_portfolio, make_login, reading, session_csrf
 
@@ -197,17 +200,34 @@ def _plant_hostile_instrument(session_factory) -> None:
         s.commit()
 
 
-@pytest.mark.parametrize("path", ["/charts", "/charts/build", "/holding/ACME"])
+@pytest.mark.parametrize("path", ["/charts", "/charts/build?edit={chart}", "/holding/ACME"])
 def test_a_script_breakout_in_stored_data_is_escaped(client, session_factory, path):
+    """The instrument's name is shown on its holding page and a saved chart's
+    on the two chart pages. Every place each appears is checked: the old
+    check passed if any encoded bracket was anywhere on the page, and the
+    chart pages never showed the name at all."""
+    from app.models import SavedChart
+
     make_login(client, session_factory)
     _plant_hostile_instrument(session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        chart = tenancy.owned(s, SavedChart(name=BREAKOUT, position=0, spec={
+            "grain": "positions", "x": "ticker", "measures": ["pos_value"], "type": "bar"}))
+        s.add(chart)
+        s.commit()
+        chart_id = chart.id
 
-    body = client.get(path, headers={"accept": "text/html"}).text
+    body = client.get(path.format(chart=chart_id), headers={"accept": "text/html"}).text
 
     # The literal closing tag must never appear — that is what ends the block.
     assert "</script><script>alert(1)</script>" not in body
-    # Anywhere the value is rendered, its angle brackets are encoded.
-    assert "alert(1)" not in body or "\\u003c" in body or "&lt;" in body
+    # Wherever the value is rendered, its brackets are encoded: as an entity
+    # in markup, or as \u003c in a JSON block.
+    before = [body[max(0, at - 30):at] for at in
+              (m.start() for m in re.finditer(re.escape("alert(1)"), body))]
+    assert before, "the premise: the planted value is on the page"
+    assert all(b.endswith(("&lt;script&gt;", "\\u003cscript\\u003e")) for b in before), before
 
 
 def test_the_chart_payload_is_still_valid_json(client, session_factory):
