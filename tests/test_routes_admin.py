@@ -8,6 +8,8 @@ every other device. Those are the ones worth reading.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from sqlalchemy import select
 
@@ -340,6 +342,25 @@ def test_a_members_role_can_be_changed(client, session_factory):
 
     with session_factory() as s:
         assert s.get(PortfolioMember, member_id).role == "member"
+
+
+def test_a_role_changes_only_when_its_button_is_pressed(client, session_factory):
+    """The select submitted on change: an arrow key moving through it changed
+    somebody's rights at the first press, and without scripting there was no
+    way to submit it at all."""
+    make_login(client, session_factory)
+    friend = add_stranger(session_factory)
+    client.post("/members/add", data={"user_id": str(friend), "role": "viewer",
+                                      "_csrf": csrf(session_factory)}, headers=HTML)
+
+    page = client.get("/members", headers=HTML).text
+
+    forms = re.findall(r'<form method="post" action="/members/\d+/role".*?</form>', page, re.S)
+    assert forms
+    for form in forms:
+        assert "onchange" not in form
+        assert re.search(r'<select name="role" aria-label="Role for [^"]+">', form)
+        assert re.search(r'<button type="submit" class="secondary small">Change</button>', form)
 
 
 def test_you_cannot_demote_yourself_out_of_ownership(client, session_factory):

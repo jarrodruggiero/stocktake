@@ -88,9 +88,12 @@ all of them.</p>
           {% if auth.is_owner %}
           <form method="post" action="/members/{{ m.id }}/role" class="inline">
             <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-            <select name="role" onchange="this.form.submit()">
+            {# A button, not a change: an arrow key moving through the list
+               would otherwise change somebody's rights at the first press. #}
+            <select name="role" aria-label="Role for {{ u.name }}">
               {% for r in roles %}<option value="{{ r }}" {% if m.role == r %}selected{% endif %}>{{ role_labels[r] }}</option>{% endfor %}
             </select>
+            <button type="submit" class="secondary small">Change</button>
           </form>
           {% else %}{{ role_labels[m.role] }}{% endif %}
         </td>
