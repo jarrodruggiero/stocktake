@@ -53,7 +53,8 @@
         fill("yahoo", d.symbol);
         fill("yahoo_symbol", d.symbol);
         if (status) {
-          status.textContent = d.found
+          status.textContent = d.off ? "not looked up: the price feed is off"
+            : d.found
             ? "found: " + (d.name || d.symbol) + (d.currency ? " (" + d.currency + ")" : "")
             : "no match for " + d.symbol + " — check the ticker and exchange";
         }

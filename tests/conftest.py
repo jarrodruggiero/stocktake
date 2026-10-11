@@ -355,6 +355,17 @@ def app_module(template_db):
 
 
 @pytest.fixture
+def feed_on(app_module, monkeypatch):
+    """The price feed on, for a test that stubs what the feed would be asked.
+
+    The test config turns it off, and the feed governs every outbound request
+    (#9): a stub behind it is never reached, and a test of what the feed says
+    passes having checked nothing.
+    """
+    monkeypatch.setattr(app_module.settings.price_feed, "enabled", True)
+
+
+@pytest.fixture
 def client(app_module, session_factory, db_path):
     """A TestClient whose app talks to this test's database.
 

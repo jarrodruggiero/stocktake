@@ -75,7 +75,7 @@ def test_adding_a_holding_still_takes_a_code_in_lower_case(client, session_facto
 
 
 def test_a_currency_from_yahoo_that_is_not_a_code_is_not_used(
-        client, session_factory, monkeypatch):
+        client, session_factory, monkeypatch, feed_on):
     """Yahoo's answer is a suggestion, held to the same rule as typing."""
     monkeypatch.setattr(pricefeed, "lookup", lambda ticker, exchange: {
         "symbol": "ZULU.AX", "name": "Zulu Ltd", "currency": MARKUP, "found": True})
