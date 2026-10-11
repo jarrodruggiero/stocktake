@@ -570,6 +570,47 @@ def test_a_database_the_deployment_chose_is_NOT_written():
     assert "database" not in setupwizard.config_values(setupwizard.Draft())
 
 
+@pytest.mark.parametrize("env, chosen", [
+    ({"APP_DATABASE__PASSWORD": "pw"}, False),
+    ({"APP_DATABASE__PASSWORD": "pw", "APP_DATABASE__PORT": "6543",
+      "APP_DATABASE__SSLMODE": "require"}, False),
+    ({"APP_DATABASE__TYPE": "postgres"}, True),
+    ({"APP_DATABASE__HOST": "db"}, True),
+])
+def test_how_to_reach_a_database_does_not_choose_one(app_module, monkeypatch, env, chosen):
+    """The database step's tip says to put the password in the environment and
+    leave its field empty. With no config file yet, that counted as choosing a
+    database, the default one: SQLite. The step that would have chosen Postgres
+    was skipped, and the data went into an empty file (#75)."""
+    for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
+        monkeypatch.delenv(name)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(configfile, "load", lambda: {})
+
+    assert database.source(app_module.settings).configured is chosen
+
+
+@pytest.mark.parametrize("typed", ["", "typed-here"])
+def test_the_password_in_the_environment_is_the_one_tried_and_kept_out_of_the_file(
+        client, unconfigured, monkeypatch, typed):
+    """It wins at startup, as the tip says, but the step tested and saved what
+    the form held: with the field left empty, as the tip says, a server that
+    wants a password refused the test, and the step could not be saved."""
+    monkeypatch.setenv("APP_DATABASE__PASSWORD", "from-the-secret")
+    tried = []
+    monkeypatch.setattr(database, "probe",
+                        lambda chosen: tried.append(chosen.password) or database.Probe(True, "ok"))
+
+    client.post("/setup/database", headers=HTML, data={
+        "_csrf": _token(client), "kind": "postgres", "host": "db", "port": "5432",
+        "name": "portfolio", "user": "portfolio", "password": typed})
+
+    assert tried == ["from-the-secret"]
+    assert [chosen.password for chosen in unconfigured] == ["from-the-secret"]
+    assert "password" not in setupwizard.config_values(setupwizard.draft())["database"]
+
+
 def test_an_https_url_turns_on_the_secure_cookie():
     draft = setupwizard.Draft(external_url="https://portfolio.example.com")
 
@@ -2139,7 +2180,8 @@ def test_a_port_of_only_spaces_is_the_default():
                                          user="portfolio", password="x").port == 5432
 
 
-def test_the_postgres_fields_lose_the_spaces_around_them():
+def test_the_postgres_fields_lose_the_spaces_around_them(monkeypatch):
+    monkeypatch.delenv("APP_DATABASE__PASSWORD", raising=False)    # set on the Postgres run
     chosen = setupwizard.postgres_settings(host=" pg.local ", port="5432", name=" portfolio ",
                                            user=" app ", password=" kept as typed ")
 
@@ -2196,7 +2238,8 @@ def test_with_every_step_done_the_next_step_is_finish():
         setupwizard.discard()
 
 
-def test_a_postgres_choice_is_written_as_postgres():
+def test_a_postgres_choice_is_written_as_postgres(monkeypatch):
+    monkeypatch.delenv("APP_DATABASE__PASSWORD", raising=False)    # set on the Postgres run
     chosen = setupwizard.postgres_settings(host="pg.local", port="5433", name="stocktake",
                                            user="app", password="secret")
 

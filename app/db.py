@@ -26,6 +26,12 @@ from . import tenancy
 log = logging.getLogger(__name__)
 
 ENV_PREFIX = "APP_DATABASE__"
+ENV_PASSWORD = ENV_PREFIX + "PASSWORD"
+# How to reach a database, not which one: set alone, these choose nothing. The
+# wizard's tip says to put the password here and leave its field empty, and with
+# no config file yet that counted as choosing the default, SQLite, so the step
+# that would have chosen Postgres was skipped (#75).
+REACH_ONLY = frozenset({ENV_PASSWORD, ENV_PREFIX + "PORT", ENV_PREFIX + "SSLMODE"})
 
 # Seconds to wait for a database server before calling it unreachable. With no
 # limit, a server that took the connection and said nothing held the wizard's
@@ -62,7 +68,7 @@ def source(settings) -> Source:
     every value would be ignored.
     """
     env_names = sorted(name for name in os.environ if name.startswith(ENV_PREFIX))
-    if env_names:
+    if set(env_names) - REACH_ONLY:
         return Source(FROM_ENVIRONMENT,
                       f"set by the {', '.join(env_names)} environment "
                       f"variable{'s' if len(env_names) > 1 else ''}")

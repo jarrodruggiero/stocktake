@@ -19,12 +19,15 @@ from __future__ import annotations
 import datetime as dt
 import ipaddress
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from appcore.config import DatabaseSettings
+
+from .db import ENV_PASSWORD
 
 log = logging.getLogger(__name__)
 
@@ -201,6 +204,9 @@ def postgres_settings(*, host: str, port: str, name: str, user: str,
         raise ValueError("The port must be a whole number.") from None
     if not 1 <= port_number <= 65535:
         raise ValueError("The port must be between 1 and 65535.")
+    # The environment's password wins at startup, so it is the one to test and
+    # to save with. `database_config` keeps it out of the file.
+    password = os.environ.get(ENV_PASSWORD) or password
     return DatabaseSettings(type="postgres", host=host, port=port_number,
                             name=name, user=user, password=password)
 
@@ -213,16 +219,16 @@ def database_config(db: DatabaseSettings) -> dict:
 
     A deployment that would rather keep the password in a Secret sets
     `APP_DATABASE__PASSWORD`, which wins at runtime because environment beats
-    the config file. It does NOT change this page: the field is still shown and
-    whatever is typed is still written here, so leave it blank to keep the
-    password out of the file. "Test connection" probes with the form's values
-    rather than the environment, so with the field blank it will fail against a
-    server that wants one — trust the app's own startup instead.
+    the config file. Then it is the password the step tests and saves with,
+    whatever the field holds, and the block is written without one.
     """
     if db.type == "sqlite":
         return {"type": "sqlite", "path": db.path}
-    return {"type": "postgres", "host": db.host, "port": db.port,
-            "name": db.name, "user": db.user, "password": db.password}
+    block = {"type": "postgres", "host": db.host, "port": db.port,
+             "name": db.name, "user": db.user}
+    if not os.environ.get(ENV_PASSWORD):
+        block["password"] = db.password
+    return block
 
 
 # --------------------------------------------------------------------------- #
