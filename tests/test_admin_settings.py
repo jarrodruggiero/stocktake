@@ -21,6 +21,8 @@ import pytest
 from app import configfile, lifecycle
 from app.settings import PortfolioSettings
 
+HTML = {"accept": "text/html"}
+
 DOCUMENTED = """\
 # The application's configuration. Every option is documented here.
 app_name: portfolio
@@ -732,7 +734,117 @@ def test_what_startup_reads_is_said_to_wait_for_a_restart(live_settings, monkeyp
 
     startup = read & set(configfile.BY_NAME)
     assert {"price_feed.enabled", "maintenance.enabled"} <= startup
-    assert [name for name in sorted(startup) if not configfile.BY_NAME[name].restart] == []
+    # Both ways: what waits for a restart is exactly what the app reads as it
+    # starts, and the log level, read when the module is imported. Everything
+    # else is read when it is used: the tests below show each.
+    assert {o.name for o in configfile.OPTIONS if o.restart} == startup | {"log_level"}
+
+
+def test_housekeeping_moved_from_the_page_moves_the_next_run(live_settings, monkeypatch):
+    live, _ = live_settings
+    live.price_feed.timezone = "Australia/Melbourne"
+    live.maintenance.hour, live.maintenance.minute = 3, 0
+
+    waits = _waits(monkeypatch, "_maintenance_loop", lambda: configfile.apply_live(
+        live, {"maintenance.hour": 4, "maintenance.minute": 30}))
+
+    first, second = (NOW + dt.timedelta(seconds=w) for w in waits)
+    melbourne = ZoneInfo("Australia/Melbourne")
+    assert (first.astimezone(melbourne).time(), second.astimezone(melbourne).time()) == (
+        dt.time(3, 0), dt.time(4, 30))
+
+
+def test_metrics_switched_on_from_the_page_serve_at_once(client, live_settings):
+    live, _ = live_settings
+    live.metrics.enabled = False
+    assert client.get("/metrics").status_code == 404
+
+    configfile.apply_live(live, {"metrics.enabled": True})
+
+    assert client.get("/metrics").status_code == 200
+
+
+def test_single_sign_on_set_up_from_the_page_is_offered_at_once(client, session_factory,
+                                                                 live_settings):
+    import factories as fac
+
+    live, _ = live_settings
+    live.auth.oidc.enabled = False
+    with session_factory() as s:
+        fac.make_user(s, "someone@example.test")       # past the first-run wizard
+        s.commit()
+    assert "Sign in with Home" not in client.get("/login", headers=HTML).text
+
+    configfile.apply_live(live, {
+        "auth.oidc.enabled": True, "auth.oidc.issuer": "https://id.example.test",
+        "auth.oidc.client_id": "stocktake", "auth.oidc.client_auth": "none",
+        "auth.oidc.redirect_uri": "https://stocktake.example.test/auth/oidc/callback",
+        "auth.oidc.button_label": "Sign in with Home"})
+
+    assert "Sign in with Home" in client.get("/login", headers=HTML).text
+
+
+def test_passkeys_switched_on_from_the_page_are_offered_at_once(client, session_factory,
+                                                                live_settings):
+    from test_routes import make_login
+
+    live, _ = live_settings
+    live.auth.webauthn.enabled = False
+    make_login(client, session_factory)
+    before = client.get("/profile", headers=HTML).text
+
+    configfile.apply_live(live, {
+        "auth.webauthn.enabled": True, "auth.webauthn.rp_id": "stocktake.example.test",
+        "auth.webauthn.origins": ["https://stocktake.example.test"]})
+
+    after = client.get("/profile", headers=HTML).text
+    assert "Turn on passkeys in Admin" in before
+    assert "Turn on passkeys in Admin" not in after and "available via HTTPS" in after
+
+
+def test_a_proxy_trusted_from_the_page_is_believed_at_once(client, session_factory,
+                                                           live_settings):
+    """The next request through it is taken as HTTPS, so signing in with
+    HTTPS-only cookies stops being refused. (`client` points the app at the
+    test database; the requests come from the proxy's address instead.)"""
+    from fastapi.testclient import TestClient
+
+    import factories as fac
+    from app import main as main_mod
+
+    live, _ = live_settings
+    live.auth.cookie_secure, live.auth.trusted_proxies = True, []
+    with session_factory() as s:
+        fac.make_user(s, "someone@example.test")
+        s.commit()
+    proxied = TestClient(main_mod.app, client=("10.0.0.5", 50000))
+    headers = {**HTML, "x-forwarded-proto": "https"}
+    assert "cookie_secure" in proxied.get("/login", headers=headers).text
+
+    configfile.apply_live(live, {"auth.trusted_proxies": ["10.0.0.0/8"]})
+
+    assert "cookie_secure" not in proxied.get("/login", headers=headers).text
+
+
+def test_ocr_switched_off_from_the_page_is_off_at_once(client, session_factory, live_settings,
+                                                       monkeypatch):
+    from app import statements
+    from test_routes import make_login, session_csrf
+
+    live, _ = live_settings
+    live.imports.ocr.enabled = True
+    monkeypatch.setattr(statements, "_pdf_text", lambda data: "")       # a scan
+    monkeypatch.setattr(statements.ocr, "available", lambda: False)
+    make_login(client, session_factory)
+
+    def upload() -> str:
+        return client.post("/imports-exports/statement", headers=HTML,
+                           files={"file": ("scan.pdf", b"%PDF-1.4", "application/pdf")},
+                           data={"_csrf": session_csrf(session_factory)}).text
+
+    assert "turned off on this install" not in upload()
+    configfile.apply_live(live, {"imports.ocr.enabled": False})
+    assert "turned off on this install" in upload()
 
 
 # --------------------------------------------------------------------------- #

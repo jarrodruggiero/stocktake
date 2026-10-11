@@ -93,45 +93,44 @@ OPTIONS: tuple[Option, ...] = (
     Option(("auth", "trusted_proxies"), "Trusted proxies", "list",
            "Addresses or ranges whose X-Forwarded-For and X-Forwarded-Proto "
            "headers are believed. One per line.",
-           optional=True, restart=True),
+           optional=True),
 
     Option(("auth", "webauthn", "enabled"), "Passkeys", "bool",
            "Whether passkeys can be added and used to sign in. Needs HTTPS and "
-           "the two settings below.", restart=True),
+           "the two settings below."),
     Option(("auth", "webauthn", "rp_id"), "Passkey domain", "text",
            "The domain passkeys are bound to. Change it and every existing passkey "
            "stops working.",
-           optional=True, restart=True),
+           optional=True),
     Option(("auth", "webauthn", "rp_name"), "Passkey prompt name", "text",
            "What the browser's passkey prompt calls this site.",
-           optional=True, restart=True),
+           optional=True),
     Option(("auth", "webauthn", "origins"), "Passkey origins", "list",
            "The full URLs passkeys may be used from. One per line.",
-           optional=True, restart=True),
+           optional=True),
 
     Option(("auth", "oidc", "enabled"), "Single sign-on", "bool",
-           "Whether sign-in can be handed to an external identity provider.",
-           restart=True),
+           "Whether sign-in can be handed to an external identity provider."),
     Option(("auth", "oidc", "issuer"), "Provider URL", "text",
            "The provider's issuer URL. Its configuration is read from here.",
-           optional=True, restart=True),
+           optional=True),
     Option(("auth", "oidc", "client_id"), "Client ID", "text",
            "The client ID the provider issued for Stocktake.",
-           optional=True, restart=True),
+           optional=True),
     Option(("auth", "oidc", "client_auth"), "Client authentication", "choice",
            "How the token request proves who it is. Basic sends the client "
            "secret; none is a public client, which has no secret and relies on "
-           "PKCE alone.", choices=("basic", "none"), restart=True),
+           "PKCE alone.", choices=("basic", "none")),
     Option(("auth", "oidc", "redirect_uri"), "Redirect URL", "text",
            "Where the provider sends people back to. Must match what it has "
-           "registered.", optional=True, restart=True),
+           "registered.", optional=True),
     Option(("auth", "oidc", "button_label"), "Sign-in button", "text",
            "What the button on the login page says.", optional=True),
     Option(("auth", "oidc", "provisioning"), "Who may sign in", "choice",
            "Linked accounts only, holders of an invite, or anyone the provider "
-           "authenticates.", choices=("off", "invite", "open"), restart=True),
+           "authenticates.", choices=("off", "invite", "open")),
     Option(("auth", "oidc", "scopes"), "Scopes", "list",
-           "Requested at sign-in. One per line.", restart=True),
+           "Requested at sign-in. One per line."),
 
     Option(("price_feed", "quotes_enabled"), "Live quotes", "bool",
            "Whether prices refresh while a market is open, as well as at the "
@@ -148,9 +147,9 @@ OPTIONS: tuple[Option, ...] = (
            "attempts, half-finished imports.", restart=True),
     Option(("maintenance", "hour"), "Housekeeping hour", "int",
            "Hour of the nightly sweep.",
-           minimum=0, maximum=23, restart=True),
+           minimum=0, maximum=23),
     Option(("maintenance", "minute"), "Housekeeping minute", "int",
-           "Minute of the nightly sweep.", minimum=0, maximum=59, restart=True),
+           "Minute of the nightly sweep.", minimum=0, maximum=59),
     Option(("maintenance", "attempt_retention_days"), "Keep sign-in attempts (days)",
            "int", "How long failed sign-ins are kept. They drive lockout; they "
            "are not an audit log.", minimum=1, maximum=365),
@@ -160,14 +159,13 @@ OPTIONS: tuple[Option, ...] = (
 
     Option(("metrics", "enabled"), "Prometheus metrics", "bool",
            "Whether /metrics is served. It publishes machine health only — no "
-           "holdings, no values.", restart=True),
+           "holdings, no values."),
 
     Option(("imports", "max_upload_mb"), "Maximum upload (MB)", "int",
            "The largest file an import will accept.", minimum=1, maximum=200),
     Option(("imports", "ocr", "enabled"), "Read scanned PDFs", "bool",
            "Whether image-only PDFs are put through local OCR. Nothing is sent "
-           "anywhere.",
-           restart=True),
+           "anywhere."),
 
     Option(("imports", "allow_new_instruments"), "Create instruments on import", "bool",
            "Whether an import may create instruments it doesn't recognise. Off "
