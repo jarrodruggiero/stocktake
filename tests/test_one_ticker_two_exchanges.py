@@ -189,3 +189,31 @@ def test_recording_a_trade_from_a_listings_page_picks_that_listing(client, sessi
 
     assert record == "/trade/new?ticker=BHP&exchange=NYSE"
     assert picked == [str(ids["nyse"])]
+
+
+def test_the_apis_exchange_filter_takes_the_exchange_however_it_is_typed(client, session_factory):
+    make_login(client, session_factory)
+    ids = _both(session_factory)
+    raw = issue_key(session_factory, ids["mine"], created_by=ids["owner"])
+
+    listed = client.get("/api/v1/trades", params={"ticker": "BHP", "exchange": " nyse "},
+                        headers=bearer(raw)).json()["trades"]
+
+    assert [t["exchange"] for t in listed] == ["NYSE"]
+
+
+@freeze_time(TODAY)
+def test_each_upcoming_buy_carries_its_own_entrys_exchange(client, session_factory):
+    """Three in the rotation, so a slot read from the wrong entry shows."""
+    from app import plans
+
+    make_login(client, session_factory)
+    ids = _both(session_factory)
+    assert save_plan(client, session_factory, tickers="BHP:ASX, ACME, BHP:NYSE").status_code == 303
+
+    with session_factory() as s:
+        tenancy.bind(s, ids["mine"], ids["owner"])
+        coming = plans.schedule(s, upcoming=3)["next"]
+
+    assert [(b.ticker, b.exchange) for b in coming] == [("BHP", "ASX"), ("ACME", "ASX"),
+                                                        ("BHP", "NYSE")]
