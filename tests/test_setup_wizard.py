@@ -1062,7 +1062,7 @@ def test_a_logged_out_visitor_cannot_reach_the_settings_steps(client):
 # Finishing
 # --------------------------------------------------------------------------- #
 
-def _to_the_finish(client) -> None:
+def _to_the_finish(client, *, external_url: str = "") -> None:
     _through_the_account(client)
     client.post("/setup/portfolio",
                 data={"_csrf": _token(client, "/setup/portfolio"), "name": "Mine",
@@ -1070,7 +1070,7 @@ def _to_the_finish(client) -> None:
                 headers=HTML, follow_redirects=False)
     client.post("/setup/environment",
                 data={"_csrf": _token(client, "/setup/environment"),
-                      "trusted_proxies": "", "external_url": ""},
+                      "trusted_proxies": "", "external_url": external_url},
                 headers=HTML, follow_redirects=False)
 
 
@@ -1165,22 +1165,48 @@ def test_the_environment_step_is_skipped_when_the_config_cannot_be_written(
     assert resp.headers["location"] == "/setup/finish"
 
 
-def test_the_restart_page_asks_the_process_to_stop_after_rendering(
-        client, monkeypatch):
-    """Rendered first, THEN the SIGTERM. The other order sends the signal
-    before the browser has the page telling it what is happening."""
+def test_finishing_into_a_restart_draws_the_waiting_page_and_then_stops(
+        client, tmp_path, monkeypatch):
+    """The Finish step's own answer, drawn first and THEN the SIGTERM: the other
+    order sends the signal before the browser has the page telling it what is
+    happening. Where the page goes next is worked out here, from the external
+    URL the wizard was given."""
     from app import lifecycle
 
     order = []
     monkeypatch.setattr(lifecycle, "request_stop", lambda reason: order.append(reason))
-    _through_the_account(client)
+    monkeypatch.setattr(lifecycle, "supervision", lambda: lifecycle.Supervision(
+        restarts=True, certain=True, platform="Kubernetes", detail="Back in a moment."))
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(tmp_path / "config.yaml"))
+    _to_the_finish(client, external_url="https://x.example.test")
 
-    page = client.get("/setup/restarting?to=https%3A%2F%2Fx.example.test%2F",
-                      headers=HTML)
+    page = client.post("/setup/finish", data={"_csrf": _token(client, "/setup/finish")},
+                       headers=HTML, follow_redirects=False)
 
     assert page.status_code == 200
-    assert "https://x.example.test/" in page.text
-    assert len(order) == 1
+    assert 'data-target="https://x.example.test/"' in page.text
+    assert order == ["setup wizard finished"]
+
+
+@pytest.mark.parametrize("set_up", [True, False], ids=["set up", "first run"])
+@pytest.mark.parametrize("query", ["", "?to=javascript%3Aalert(1)",
+                                   "?to=https%3A%2F%2Felsewhere.example%2F"])
+def test_an_address_cannot_stop_the_app_or_choose_where_it_goes(
+        client, session_factory, monkeypatch, set_up, query):
+    """The waiting page was a GET of its own, and took where to go next from
+    the address. Finish draws it now, and the address does nothing."""
+    from app import lifecycle
+    from test_routes import make_login
+
+    order = []
+    monkeypatch.setattr(lifecycle, "request_stop", lambda reason: order.append(reason))
+    if set_up:
+        make_login(client, session_factory)
+
+    page = client.get("/setup/restarting" + query, headers=HTML)
+
+    assert order == []
+    assert "elsewhere.example" not in page.text and "javascript:" not in page.text
 
 
 # The database step's routes. conftest always configures a database, so these

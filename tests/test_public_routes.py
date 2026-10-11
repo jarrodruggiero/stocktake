@@ -123,3 +123,30 @@ def test_a_guard_named_but_never_called_is_no_guard():
         return {}
 
     assert not _calls(says_it_guards) & SELF_GUARDING
+
+
+def _public_get_routes(main):
+    """(path, handler) for every GET the middleware does not protect."""
+    return [(route.path, route.endpoint) for route in main.app.routes
+            if "GET" in (getattr(route, "methods", None) or set())
+            and (route.path in main.PUBLIC_PATHS or route.path.startswith(main.PUBLIC_PREFIXES))]
+
+
+def test_no_get_stops_the_app(main):
+    """A GET is followed by links and prefetches; stopping the app belongs to
+    a POST that checks its token."""
+    gets = [route for route in main.app.routes
+            if "GET" in (getattr(route, "methods", None) or set())]
+
+    assert len(gets) > 50, "the sweep is not empty"
+    assert [route.path for route in gets if "request_stop" in _calls(route.endpoint)] == []
+
+
+def test_every_public_get_under_setup_is_a_wizard_step(main):
+    """`/setup/` is public so the wizard can run before any account exists, and
+    each step guards itself (decisions.md #92)."""
+    steps = [(path, handler) for path, handler in _public_get_routes(main)
+             if path.startswith("/setup/")]
+
+    assert len(steps) > 5, "the sweep is not empty"
+    assert [path for path, handler in steps if "_wizard_step" not in _calls(handler)] == []

@@ -231,8 +231,7 @@ SIGNED_OUT = {"/login", "/login/recover", "/login/code", "/login/passkey",
               "/oidc/backchannel-logout", "/invite/{token}", "/invite/{token}/signup"}
 # The wizard's first steps run while there is no account at all; the rest run
 # inside it, after the account step.
-FIRST_RUN = {"/setup", "/setup/database", "/setup/database/test", "/setup/profile",
-             "/setup/restarting"}
+FIRST_RUN = {"/setup", "/setup/database", "/setup/database/test", "/setup/profile"}
 MID_WIZARD = {"/setup/2fa", "/setup/2fa/skip", "/setup/portfolio", "/setup/features",
               "/setup/environment", "/setup/finish"}
 SCHEDULE = {"/schedule/complete", "/schedule/skip", "/schedule/delete"}
