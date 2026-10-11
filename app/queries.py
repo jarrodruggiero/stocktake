@@ -10,7 +10,8 @@ from __future__ import annotations
 import bisect
 import datetime as dt
 import json
-from collections import Counter
+import threading
+from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
 from decimal import Decimal
 from urllib.parse import urlencode
@@ -712,7 +713,11 @@ def cached_holdings(session: Session) -> list[Holding]:
     return list(holdings)
 
 
-_grouped_cache: dict[tuple, tuple[tuple, dict]] = {}
+# Least recently used goes first. The key includes the filters, and the chart
+# builder's preview asks for a new set at every change, each a whole series.
+GROUPED_CACHE_SIZE = 8
+_grouped_cache: OrderedDict[tuple, tuple[tuple, dict]] = OrderedDict()
+_grouped_lock = threading.Lock()
 
 
 def cached_grouped_series(session: Session, by: str, filters: dict | None = None) -> dict:
@@ -722,11 +727,17 @@ def cached_grouped_series(session: Session, by: str, filters: dict | None = None
 
     key = (current_portfolio_id(session), by, json.dumps(filters or {}, sort_keys=True))
     fingerprint = _series_fingerprint(session)
-    hit = _grouped_cache.get(key)
-    if hit is not None and hit[0] == fingerprint:
-        return hit[1]
+    with _grouped_lock:
+        hit = _grouped_cache.get(key)
+        if hit is not None and hit[0] == fingerprint:
+            _grouped_cache.move_to_end(key)
+            return hit[1]
     series = grouped_series(session, by, filters)
-    _grouped_cache[key] = (fingerprint, series)
+    with _grouped_lock:
+        _grouped_cache[key] = (fingerprint, series)
+        _grouped_cache.move_to_end(key)
+        while len(_grouped_cache) > GROUPED_CACHE_SIZE:
+            _grouped_cache.popitem(last=False)
     return series
 
 
