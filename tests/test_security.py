@@ -404,6 +404,24 @@ def test_the_remembered_portfolio_cookie_is_httponly_and_kept_a_year(client, ses
     assert (cookie.get("secure") is True) is secure
 
 
+def test_a_sign_in_with_no_portfolio_to_open_remembers_none(client, session_factory,
+                                                            app_module):
+    """Nothing to remember is no cookie, not one holding the word "None"."""
+    from app.auth import hash_password
+    from test_routes import PASSWORD, pre_auth_csrf
+
+    with session_factory() as s:
+        fac.make_user(s, "user@example.test", password_hash=hash_password(PASSWORD))
+        s.commit()
+    resp = client.post("/login", follow_redirects=False, headers={"accept": "text/html"},
+                       data={"email": "user@example.test", "password": PASSWORD,
+                             "_csrf": pre_auth_csrf(client)})
+
+    assert resp.status_code == 303, "the premise: the sign-in went through"
+    remembered = app_module.settings.auth.cookie_name + "_portfolio="
+    assert not [c for c in resp.headers.get_list("set-cookie") if c.startswith(remembered)]
+
+
 def test_signing_in_asks_for_live_prices(client, session_factory, app_module, monkeypatch):
     """The one line every way in shares: without it the first page shows
     yesterday's close for up to a whole polling interval."""

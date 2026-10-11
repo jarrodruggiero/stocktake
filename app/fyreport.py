@@ -474,8 +474,11 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
             withheld.add(inst.ticker)
         value = gain = None
         if price is not None and rate is not None:
+            # `invested` is never None here: it is None only for a currency
+            # with no rate stored at all, and FxBook gives every date a rate
+            # once a currency has one.
             value = units * price * rate
-            gain = None if invested is None else value - invested
+            gain = value - invested
         snapshot.append(
             SnapshotRow(
                 instrument=inst,

@@ -672,8 +672,7 @@ def _render(request: Request, ctx, name: str, extra: dict) -> HTMLResponse:
             "idle_warning_seconds": settings.auth.idle_warning_seconds,
             # Set here rather than per route: it belongs to every page, and an
             # inline style outranks both `:root` and `body[data-theme=...]`.
-            "theme_style": theming.css_variables(
-                getattr(ctx.user, "theme_colors", None) if ctx else None),
+            "theme_style": theming.css_variables(ctx.user.theme_colors),
             **extra,
         },
     )
@@ -1675,11 +1674,11 @@ def _row_id(raw: str) -> int | None:
     return int(raw) if re.fullmatch(r"[0-9]{1,18}", raw) else None
 
 
-def _remembered_portfolio(request: Request | None) -> int | None:
-    return _row_id(request.cookies.get(_portfolio_cookie(), "") if request is not None else "")
+def _remembered_portfolio(request: Request) -> int | None:
+    return _row_id(request.cookies.get(_portfolio_cookie(), ""))
 
 
-def _landing_portfolio(db: DbSession, user: User, request: Request | None = None) -> int | None:
+def _landing_portfolio(db: DbSession, user: User, request: Request) -> int | None:
     """Where a sign-in lands. Shared by every way in, so they cannot drift.
 
     The portfolio chosen in the profile; else the last one opened on this
@@ -1704,12 +1703,12 @@ def _landing_portfolio(db: DbSession, user: User, request: Request | None = None
     )
 
 
-def _code_form(request: Request, error: str | None = None, used_recovery: bool = False):
+def _code_form(request: Request, error: str | None = None):
     token = auth.ensure_pre_auth_csrf(request)
     resp = templates.TemplateResponse(
         request,
         "login_code.html",
-        {"auth": None, "csrf": token, "error": error, "used_recovery": used_recovery},
+        {"auth": None, "csrf": token, "error": error},
     )
     _set_pre_auth_csrf(resp, token)
     return resp
