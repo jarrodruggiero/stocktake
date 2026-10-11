@@ -404,6 +404,21 @@ def test_the_remembered_portfolio_cookie_is_httponly_and_kept_a_year(client, ses
     assert (cookie.get("secure") is True) is secure
 
 
+def test_the_sign_in_forms_csrf_cookie_is_httponly(client, session_factory):
+    """A double-submit token: the page carries the same value in a hidden
+    field, which is what every script reads, so none needs the cookie."""
+    from app import auth
+
+    with session_factory() as s:
+        fac.make_user(s, "user@example.test")            # past the first-run wizard
+        s.commit()
+
+    cookie = _cookie(client.get("/login", headers={"accept": "text/html"}),
+                     auth.PRE_AUTH_CSRF_COOKIE)
+
+    assert cookie.get("httponly") is True
+
+
 def test_a_sign_in_with_no_portfolio_to_open_remembers_none(client, session_factory,
                                                             app_module):
     """Nothing to remember is no cookie, not one holding the word "None"."""
