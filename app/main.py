@@ -124,6 +124,7 @@ from .models import (
     UserSession,
     currency_problem,
     exchange_problem,
+    row_id,
     ticker_problem,
 )
 from .settings import PortfolioSettings
@@ -1667,15 +1668,8 @@ def _remember_portfolio(resp: Response, portfolio_id: int | None) -> None:
                     path="/")
 
 
-def _row_id(raw: str) -> int | None:
-    """An id as a form or a cookie sends it, else None. ASCII digits only:
-    isdigit() also passes "²", which int() cannot parse, and 5000 digits,
-    which it refuses."""
-    return int(raw) if re.fullmatch(r"[0-9]{1,18}", raw) else None
-
-
 def _remembered_portfolio(request: Request) -> int | None:
-    return _row_id(request.cookies.get(_portfolio_cookie(), ""))
+    return row_id(request.cookies.get(_portfolio_cookie(), ""))
 
 
 def _landing_portfolio(db: DbSession, user: User, request: Request) -> int | None:
@@ -3376,7 +3370,7 @@ def _back_label(path: str, fallback: str) -> str:
     # than in the table — there is one per year and they are generated.
     if path.startswith("/?fy="):
         year = path.removeprefix("/?fy=")
-        if year.isdigit():
+        if re.fullmatch(r"[0-9]{4}", year):
             return fyreport.fy_label(int(year))
     return navigation.back_label(path, fallback)
 
@@ -3530,7 +3524,7 @@ async def account_appearance(
         # Only offered with more than one portfolio, so only changed when sent.
         if "default_portfolio" in form:
             wanted = str(form.get("default_portfolio") or "")
-            chosen = _row_id(wanted)
+            chosen = row_id(wanted)
             if not wanted:
                 ctx.user.default_portfolio_id = None          # the last one opened
             elif chosen in {m.portfolio_id for m in ctx.memberships}:
@@ -4922,12 +4916,13 @@ def _parse_rows(values: list[str]) -> tuple[set[int], set[int]]:
     dividends: set[int] = set()
     for value in values:
         kind, _, raw = value.partition(":")
-        if not raw.isdigit():
+        ident = row_id(raw)
+        if ident is None:
             continue
         if kind == "trade":
-            trades.add(int(raw))
+            trades.add(ident)
         elif kind == "dividend":
-            dividends.add(int(raw))
+            dividends.add(ident)
     return trades, dividends
 
 

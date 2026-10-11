@@ -17,6 +17,7 @@ import datetime as dt
 import re
 from decimal import Decimal
 
+import pytest
 from freezegun import freeze_time
 from sqlalchemy import select
 
@@ -260,6 +261,28 @@ def test_moving_a_trade_reassigns_it(client, session_factory):
     resp = client.post(
         f"/trade/{rows['buy']}/move",
         data={"target": str(target), "row": [f"trade:{rows['buy']}"],
+              "_csrf": session_csrf(session_factory)},
+        headers=HTML, follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    with session_factory() as s:
+        tenancy.bind(s, target, None)
+        assert s.scalars(select(Trade)).one().quantity == Decimal("100")
+
+
+@pytest.mark.parametrize("junk", ["trade:²", "dividend:" + "9" * 5000],
+                         ids=["superscript-two", "5000-digits"])
+def test_a_tick_that_names_no_id_is_ignored(client, session_factory, junk):
+    """"²" passes `isdigit()` and `int()` refuses it, as it does 5000 digits.
+    The ticks are user input, so junk among them is dropped, not a 500."""
+    make_login(client, session_factory)
+    rows = _furnish(session_factory)
+    target = _second_portfolio(session_factory)
+
+    resp = client.post(
+        f"/trade/{rows['buy']}/move",
+        data={"target": str(target), "row": [junk, f"trade:{rows['buy']}"],
               "_csrf": session_csrf(session_factory)},
         headers=HTML, follow_redirects=False,
     )

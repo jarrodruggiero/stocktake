@@ -69,7 +69,7 @@ def test_a_wrong_code_does_not(pf):
     assert twofactor.matching_step(secret, "000000") is None
 
 
-@pytest.mark.parametrize("code", ["", "   ", "abcdef", "12345", None])
+@pytest.mark.parametrize("code", ["", "   ", "abcdef", "12345", None, "²²²²²²"])
 def test_junk_is_rejected_without_reaching_the_library(code):
     """Empty and non-numeric input is refused here rather than letting pyotp
     decide what an empty code means."""
