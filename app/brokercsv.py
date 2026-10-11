@@ -2,8 +2,9 @@
 
 Neither broker offers an API, so the flow is: download the CSV → upload it on
 /imports-exports → review the parsed preview
-(duplicates and unknown tickers are flagged) → commit. Column layouts live in
-config.yaml (`imports.brokers`), so a changed export format is a YAML fix.
+(duplicates and unknown tickers are flagged) → commit. Column layouts are
+format files: shipped in app/formats/brokers, or written by the in-app
+mapper (Map a new broker CSV), so a changed export format is mapped again.
 
 Parsing is strict on purpose: an unrecognised header or row fails loudly with
 the offending text rather than guessing — first runs against a new broker
@@ -42,6 +43,16 @@ COMMSEC_DETAILS = re.compile(
 # The suffixes are tried in order after the bare format, longest first so
 # "%H:%M:%S" is not matched as "%H:%M" with seconds left over.
 TIME_SUFFIXES = (" %H:%M:%S", " %H:%M", "T%H:%M:%S", "T%H:%M")
+
+
+# A strptime pattern as a person reads it, for saying which a date missed.
+_WRITTEN = {"%d": "DD", "%m": "MM", "%Y": "YYYY", "%y": "YY", "%b": "Mon", "%B": "Month",
+            "%H": "hh", "%I": "hh", "%M": "mm", "%S": "ss", "%p": "AM/PM"}
+
+
+def written_as(date_format: str) -> str:
+    """`%d/%m/%Y` as `DD/MM/YYYY`."""
+    return re.sub(r"%[a-zA-Z]", lambda m: _WRITTEN.get(m.group(0), m.group(0)), date_format)
 
 
 def strptime_any(text: str, date_format: str) -> dt.datetime:
@@ -181,8 +192,8 @@ def parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
     server error rather than a sentence about the file."""
     try:
         return _parse_csv(text, broker, fmt)
-    except csv.Error as exc:
-        return ParseResult(errors=[f"the file could not be read as a CSV ({exc})"])
+    except csv.Error:
+        return ParseResult(errors=["The file could not be read as a CSV."])
 
 
 def _parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
@@ -191,7 +202,7 @@ def _parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
     # handing None to the first `.strip()`.
     reader = csv.DictReader(io.StringIO(text), restval="")
     if reader.fieldnames is None:
-        return ParseResult(errors=["empty file"])
+        return ParseResult(errors=["The file is empty."])
     # "Date, Code" names its columns with the spaces. The rows are read by
     # the names the header check and the broker designer use: without them.
     reader.fieldnames = headers = [h.strip() for h in reader.fieldnames]
@@ -201,9 +212,9 @@ def _parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
         missing = [v for v in fmt.columns.values() if v not in headers]
         if missing:
             result.errors.append(
-                f"{broker}: expected columns {missing} not in CSV header {headers} — "
-                f"fix the mapping under imports.brokers.{broker}.columns in config.yaml"
-            )
+                f"This file has no {', '.join(missing)} column{'s' if len(missing) > 1 else ''}, "
+                f"which the {broker} format reads. Pick the broker it came from, or map its "
+                "columns with Map a new broker CSV.")
             return result
         col = fmt.columns
         for i, row in enumerate(reader, start=2):
@@ -222,7 +233,13 @@ def _parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
                         f"line {i}: DRP allotment with no price — import the "
                         f"dividend statement, which carries the cost base")
                     continue
-                when, clock = parse_when(row[col["date"]], fmt.date_format)
+                written = row[col["date"]]
+                try:
+                    when, clock = parse_when(written, fmt.date_format)
+                except ValueError:
+                    result.errors.append(f"line {i}: {written.strip()!r} is not a date "
+                                         f"written as {written_as(fmt.date_format)}")
+                    continue
                 if clock and fmt.times_zone:
                     when, clock = to_market(clock, when, fmt.times_zone, fmt.exchange)
                 clock, moved = in_trading_hours(clock, fmt.exchange)
@@ -245,18 +262,16 @@ def _parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
                         exchange=fmt.exchange,
                     )
                 )
-            except money.FigureError as exc:
+            except (money.FigureError, KeyError, ValueError) as exc:
                 result.errors.append(f"line {i}: {exc}")
-            except (KeyError, ValueError) as exc:
-                result.errors.append(f"line {i}: {exc!r} in {row}")
         return result
 
     if fmt.kind == "commsec_transactions":
         if "Details" not in headers or "Debit($)" not in headers:
             result.errors.append(
-                f"commsec: expected the transactions export header (Date, Reference, "
-                f"Details, Debit($), Credit($), Balance($)); got {headers}"
-            )
+                "This is not CommSec's transactions export header, which reads Date, "
+                "Reference, Details, Debit($), Credit($), Balance($). Pick the broker the "
+                "file came from.")
             return result
         for i, row in enumerate(reader, start=2):
             details = (row.get("Details") or "").strip()
@@ -272,7 +287,12 @@ def _parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
                 # Brokerage isn't a column: recover it from the cash movement.
                 # buy: debit = qty*price + brokerage; sell: credit = qty*price - brokerage.
                 gross = qty * price
-                when, clock = parse_when(row["Date"], fmt.date_format)
+                try:
+                    when, clock = parse_when(row["Date"], fmt.date_format)
+                except ValueError:
+                    result.errors.append(f"line {i}: {row['Date'].strip()!r} is not a date "
+                                         f"written as {written_as(fmt.date_format)}")
+                    continue
                 clock, moved = in_trading_hours(clock, fmt.exchange)
                 result.adjusted += moved
                 cash = (_num(row.get("Debit($)") or "0", Trade.quantity, "Debit")
@@ -298,10 +318,8 @@ def _parse_csv(text: str, broker: str, fmt: BrokerFormat) -> ParseResult:
                         exchange=fmt.exchange,
                     )
                 )
-            except money.FigureError as exc:
+            except (money.FigureError, ValueError) as exc:
                 result.errors.append(f"line {i}: {exc}")
-            except ValueError as exc:
-                result.errors.append(f"line {i}: {exc!r} in {row}")
         return result
 
     result.errors.append(f"unknown broker format kind {fmt.kind!r}")
@@ -373,11 +391,9 @@ def annotate(session: Session, candidates: list[CandidateTrade], imports: Import
         ).first()
         if inst is None:
             c.status = "unknown-instrument"
-            c.detail = (
-                "will be created"
-                if imports.allow_new_instruments
-                else "not in the instrument list; imports.allow_new_instruments is off"
-            )
+            # Refused when new instruments are off: the note under the table
+            # says what to do, so the row says only what is true of it.
+            c.detail = "will be created" if imports.allow_new_instruments else "not in this portfolio"
             continue
         matching.append((c, list(session.scalars(
             select(Trade).where(

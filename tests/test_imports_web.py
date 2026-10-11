@@ -1068,6 +1068,19 @@ def test_a_figure_typed_as_spaces_is_left_blank(client, session_factory, with_ac
     assert (dividend.franking_credits, dividend.note) == (None, "from dividend statement")
 
 
+def test_an_unreadable_file_says_what_to_do_rather_than_where_the_config_is(
+        client, session_factory):
+    """The page told everybody to adjust `imports.brokers.<broker>` in
+    config.yaml, for formats that ship as files, under every error."""
+    make_login(client, session_factory)
+
+    page = upload_csv(client, session_factory, b"Date,Amount\n06/01/2025,5.00\n").text
+
+    assert "This file has no Trade Date, Buy/Sell, Code, Units, Price, Brokerage columns" in page
+    assert "config.yaml" not in page
+    assert "<code>This file" not in page, "a sentence, not code"
+
+
 def test_a_file_with_nothing_to_import_stages_nothing(client, session_factory, with_acme,
                                                       staging_dir):
     make_login(client, session_factory)
