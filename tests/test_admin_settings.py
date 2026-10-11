@@ -927,3 +927,141 @@ def test_no_file_at_all_reads_as_nothing_written(tmp_path, monkeypatch):
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(tmp_path / "absent.yaml"))
 
     assert configfile.load() == {}
+
+
+# --------------------------------------------------------------------------- #
+# Probing and writing the file, and the page's limits: the last pass's survivors
+# --------------------------------------------------------------------------- #
+
+def test_probing_leaves_nothing_behind(config_file, tmp_path, monkeypatch):
+    """The settings page probes on every load, and the wizard probes a folder
+    that may not exist yet. A probe left behind is litter beside somebody's
+    configuration."""
+    configfile.writability()
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(tmp_path / "fresh" / "config.yaml"))
+
+    assert configfile.creatable().writable is True
+    assert sorted(p.name for p in tmp_path.rglob("*")) == ["config.yaml", "fresh"]
+
+
+def test_a_read_only_file_in_a_writable_folder_cannot_be_saved(config_file):
+    """Its folder takes the probe, so only the file's own permission says no.
+    The wizard asks the same of a file that is already there."""
+    os.chmod(config_file, 0o400)
+    try:
+        saved, created = configfile.writability(), configfile.creatable()
+    finally:
+        os.chmod(config_file, 0o600)
+
+    assert (saved.writable, created.writable) == (False, False)
+    assert "read-only, which is normal" in saved.reason
+
+
+@pytest.mark.parametrize("error, shown", [
+    (OSError(30, "Read-only file system"), "read-only (Read-only file system), which"),
+    (OSError(), "read-only, which"),
+], ids=["with-words", "without"])
+def test_the_reason_carries_the_systems_own_words_when_it_has_some(config_file, monkeypatch,
+                                                                    error, shown):
+    def refuse(*args, **kwargs):
+        raise error
+    monkeypatch.setattr(configfile.tempfile, "NamedTemporaryFile", refuse)
+
+    assert shown in configfile.writability().reason
+
+
+@pytest.mark.parametrize("error, detail", [
+    (OSError(13, "Permission denied"), " (Permission denied)"), (OSError(), ""),
+], ids=["with-words", "without"])
+def test_the_wizards_reason_carries_the_systems_own_words_when_it_has_some(
+        tmp_path, monkeypatch, error, detail):
+    import pathlib
+
+    folder = tmp_path / "absent"
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(folder / "config.yaml"))
+
+    def refuse(self, *args, **kwargs):
+        raise error
+    monkeypatch.setattr(pathlib.Path, "mkdir", refuse)
+
+    assert f"in {folder}{detail}. That is normal" in configfile.creatable().reason
+
+
+@pytest.mark.parametrize("write", ["save", "write_tree"])
+def test_a_write_that_fails_leaves_no_half_written_file(config_file, monkeypatch, write):
+    """The new file is written beside the old and swapped in. A failure part
+    way must not leave the half-written one, which holds the configuration."""
+    from ruamel.yaml import YAML
+
+    def full_disk(self, data, stream):
+        stream.write("half")
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(YAML, "dump", full_disk)
+
+    with pytest.raises(OSError):
+        if write == "save":
+            configfile.save({"auth.session_ttl_days": 14})
+        else:
+            configfile.write_tree({"timezone": "Asia/Tokyo"})
+
+    assert [p.name for p in config_file.parent.iterdir()] == ["config.yaml"]
+    assert config_file.read_text() == DOCUMENTED
+
+
+def test_a_file_of_nothing_but_comments_reads_as_nothing_and_takes_a_write(tmp_path,
+                                                                           monkeypatch):
+    """Every line commented out reads as no document at all rather than an
+    empty mapping: the reader and the wizard's merge both have to see one."""
+    path = tmp_path / "config.yaml"
+    path.write_text("# everything here is commented out\n# timezone: Asia/Tokyo\n")
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(path))
+
+    assert configfile.load() == {}
+    configfile.write_tree({"timezone": "Asia/Tokyo"})
+    assert configfile.load()["timezone"] == "Asia/Tokyo"
+
+
+@pytest.mark.parametrize("name", ["price_feed.hour", "price_feed.minute",
+                                  "maintenance.hour", "maintenance.minute"])
+def test_a_time_of_day_takes_every_value_a_clock_has_and_no_other(name):
+    """The loops schedule with exactly what `datetime.time` takes."""
+    field = name.rsplit(".", 1)[-1]
+    limit = {"hour": 24, "minute": 60}[field]
+
+    accepted = []
+    for value in range(-1, limit + 1):
+        try:
+            configfile.coerce(option(name), str(value))
+        except ValueError:
+            continue
+        accepted.append(value)
+        dt.time(**{field: value})                 # and the loop can schedule it
+
+    assert accepted == list(range(limit))
+
+
+@pytest.mark.parametrize("name", [
+    "auth.session_ttl_days", "auth.session_absolute_days", "auth.session_idle_minutes",
+    "auth.rate_limit.max_attempts", "auth.rate_limit.window_minutes",
+    "auth.rate_limit.lockout_minutes", "maintenance.attempt_retention_days",
+    "maintenance.staged_upload_hours", "price_feed.quote_interval_minutes",
+    "imports.max_upload_mb"])
+def test_a_length_or_a_count_takes_one_and_refuses_nothing(name):
+    """Nothing would sign everyone straight back out, lock them out on no
+    attempts, or refuse every upload. One is the strictest setting there is."""
+    assert configfile.coerce(option(name), "1") == 1
+    with pytest.raises(ValueError, match="at least 1"):
+        configfile.coerce(option(name), "0")
+
+
+def test_no_idle_warning_at_all_is_a_choice():
+    assert configfile.coerce(option("auth.idle_warning_seconds"), "0") == 0
+
+
+def test_a_blank_button_label_goes_back_to_the_default():
+    assert configfile.coerce(option("auth.oidc.button_label"), "  ") is None
+
+
+@pytest.mark.parametrize("name", ["auth.trusted_proxies", "auth.webauthn.origins"])
+def test_a_blank_list_is_saved_as_none_at_all(name):
+    assert configfile.coerce(option(name), "") == []

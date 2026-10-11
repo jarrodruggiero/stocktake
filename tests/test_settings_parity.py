@@ -197,3 +197,18 @@ def test_every_default_config_yaml_writes_down_is_the_default():
 def test_every_example_in_the_list_is_still_in_the_file():
     stale = sorted(set(EXAMPLES) - set(_documented_defaults()))
     assert not stale, f"EXAMPLES names lines config.yaml no longer has: {stale}"
+
+
+def test_the_feed_time_the_shipped_file_sets_is_the_codes_own():
+    """The daily run's time is written out uncommented, so it is not among the
+    commented defaults above: an install without the file must still run at
+    the same time as one with it."""
+    from pathlib import Path
+
+    import yaml
+
+    shipped = yaml.safe_load((Path(__file__).resolve().parent.parent / "config.yaml").read_text())
+    defaults = PortfolioSettings.model_construct().price_feed
+
+    assert (shipped["price_feed"]["hour"], shipped["price_feed"]["minute"]) == (
+        defaults.hour, defaults.minute)

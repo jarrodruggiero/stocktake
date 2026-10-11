@@ -32,7 +32,7 @@ class Option:
     kind: str                  # text | int | bool | date | choice | list
     blurb: str
     restart: bool = False      # does a change wait for a restart?
-    optional: bool = False     # may be left empty, and is then written as unset
+    optional: bool = False     # a text field that may be left empty, written as unset (a list may always be)
     # An authoritative reference, where one exists and beats explaining. The
     # blurb is escaped in the template, so a link cannot live inside it.
     link: str = ""
@@ -92,8 +92,7 @@ OPTIONS: tuple[Option, ...] = (
            "screen.", minimum=0, maximum=3600),
     Option(("auth", "trusted_proxies"), "Trusted proxies", "list",
            "Addresses or ranges whose X-Forwarded-For and X-Forwarded-Proto "
-           "headers are believed. One per line.",
-           optional=True),
+           "headers are believed. One per line."),
 
     Option(("auth", "webauthn", "enabled"), "Passkeys", "bool",
            "Whether passkeys can be added and used to sign in. Needs HTTPS and "
@@ -106,8 +105,7 @@ OPTIONS: tuple[Option, ...] = (
            "What the browser's passkey prompt calls this site.",
            optional=True),
     Option(("auth", "webauthn", "origins"), "Passkey origins", "list",
-           "The full URLs passkeys may be used from. One per line.",
-           optional=True),
+           "The full URLs passkeys may be used from. One per line."),
 
     Option(("auth", "oidc", "enabled"), "Single sign-on", "bool",
            "Whether sign-in can be handed to an external identity provider."),

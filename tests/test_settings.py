@@ -357,3 +357,42 @@ def test_the_sections_walked_are_the_ones_there_are():
     walked = {".".join(p) for p in _sections(PortfolioSettings)}
     assert {"database", "auth.oidc", "auth.webauthn", "imports.ocr",
             "imports.brokers", "price_feed"} <= walked
+
+
+# --------------------------------------------------------------------------- #
+# What the last mutation pass found unchecked
+# --------------------------------------------------------------------------- #
+
+def test_a_broker_formats_currency_is_taken_however_it_is_typed():
+    from app.settings import BrokerFormat
+
+    assert BrokerFormat(kind="mapped", currency=" usd ").currency == "USD"
+
+
+def test_an_imports_block_written_down_is_kept(tmp_path, monkeypatch):
+    """The other half of an emptied section meaning its defaults: a section
+    with something in it is not emptied."""
+    _isolate_database_env(monkeypatch)
+    path = tmp_path / "config.yaml"
+    path.write_text("imports:\n  ocr:\n    enabled: false\n")
+
+    class Written(PortfolioSettings):
+        model_config = SettingsConfigDict(yaml_file=str(path))
+
+    assert Written().imports.ocr.enabled is False
+
+
+def test_an_installed_broker_format_the_model_refuses_is_skipped_and_named(tmp_path, caplog):
+    import logging
+
+    from app.settings import ImportSettings
+
+    (tmp_path / "brokers").mkdir()
+    (tmp_path / "brokers" / "bad.yaml").write_text(
+        "kind: mapped\nexchange: ASX\ncurrency: AUSD\ncolumns: {}\n")
+    caplog.set_level(logging.WARNING, logger="app.settings")
+
+    formats = ImportSettings(templates_dir=str(tmp_path)).brokers_available()
+
+    assert "bad" not in formats
+    assert any(r.getMessage().startswith("ignoring broker format bad: ") for r in caplog.records)
