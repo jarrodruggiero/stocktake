@@ -145,7 +145,7 @@ def test_no_template_writes_a_currency_symbol_next_to_the_money_filter():
     """
     offenders = []
     for path in sorted(TEMPLATES.glob("*.html")):
-        for found in re.finditer(r"[$€£¥]\s*\{\{[^}]*\|\s*(money|cash)", path.read_text()):
+        for found in re.finditer(r"[$€£¥]\s*\{\{[^}]*\|\s*(money|cash)", path.read_text(encoding="utf-8")):
             offenders.append(f"{path.name}: {found.group(0)!r}")
 
     assert not offenders, (

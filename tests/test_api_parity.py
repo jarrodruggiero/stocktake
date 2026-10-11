@@ -324,7 +324,7 @@ def test_every_setting_appears_in_the_configuration_reference():
     from app.settings import PortfolioSettings
 
     doc = Path(__file__).resolve().parent.parent / "docs/reference/configuration.md"
-    text = doc.read_text()
+    text = doc.read_text(encoding="utf-8")
     missing = [k for k in _setting_keys(PortfolioSettings) if k.split(".")[-1] not in text]
     assert not missing, f"undocumented settings: {missing}"
 
@@ -343,7 +343,7 @@ def test_every_setting_appears_in_the_shipped_config_file():
     from app.settings import PortfolioSettings
 
     shipped = Path(__file__).resolve().parent.parent / "config.yaml"
-    text = shipped.read_text()
+    text = shipped.read_text(encoding="utf-8")
     missing = [k for k in _setting_keys(PortfolioSettings)
                if k.split(".")[-1] not in text]
 
@@ -389,7 +389,7 @@ def test_the_documented_routes_exist():
     docs = Path(__file__).resolve().parent.parent / "docs"
     bad = []
     for page in sorted(docs.rglob("*.md")):
-        for token in re.findall(r"`(/[a-z0-9/_-]*)`", page.read_text()):
+        for token in re.findall(r"`(/[a-z0-9/_-]*)`", page.read_text(encoding="utf-8")):
             # Only app routes: no file extension, not a container mount path.
             if re.search(r"\.\w+$", token) or token.startswith(("/data", "/config",
                                                                 "/scratch", "/dev",
@@ -407,7 +407,7 @@ def test_every_module_appears_on_the_architecture_map():
     import pathlib
 
     root = pathlib.Path(__file__).resolve().parent.parent
-    doc = (root / "docs/contributing/architecture.md").read_text()
+    doc = (root / "docs/contributing/architecture.md").read_text(encoding="utf-8")
     modules = sorted(
         p.stem for p in (root / "app").glob("*.py") if p.stem != "__init__"
     )
@@ -423,6 +423,6 @@ def test_the_decisions_record_is_reachable_from_the_agent_notes():
     assert (root / "docs/contributing/decisions.md").exists()
     for pointer in ("AGENTS.md", "docs/contributing/index.md",
                     "docs/contributing/style.md"):
-        assert "decisions.md" in (root / pointer).read_text(), (
+        assert "decisions.md" in (root / pointer).read_text(encoding="utf-8"), (
             f"{pointer} does not point at decisions.md"
         )

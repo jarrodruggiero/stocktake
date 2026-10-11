@@ -148,7 +148,7 @@ def test_rss_is_read_from_the_cgroup_when_there_is_one(monkeypatch, tmp_path):
     """The cgroup figure, not VmRSS: that is the number the limit is enforced
     against, and the one that gets the pod OOM-killed."""
     current = tmp_path / "memory.current"
-    current.write_text(str(200 * 1048576))
+    current.write_text(str(200 * 1048576), encoding="utf-8")
     monkeypatch.setattr(memory, "_CGROUP_CURRENT", str(current))
 
     assert memory.rss_mib() == 200.0
@@ -166,7 +166,7 @@ def test_rss_falls_back_to_proc_when_there_is_no_cgroup(monkeypatch, tmp_path):
 
 def test_a_garbled_cgroup_file_is_ignored_rather_than_fatal(monkeypatch, tmp_path):
     current = tmp_path / "memory.current"
-    current.write_text("not a number")
+    current.write_text("not a number", encoding="utf-8")
     monkeypatch.setattr(memory, "_CGROUP_CURRENT", str(current))
 
     value = memory.rss_mib()
@@ -175,16 +175,16 @@ def test_a_garbled_cgroup_file_is_ignored_rather_than_fatal(monkeypatch, tmp_pat
 
 
 def test_the_limit_is_read_when_one_is_set(monkeypatch, tmp_path):
-    (tmp_path / "memory.current").write_text("1")
-    (tmp_path / "memory.max").write_text(str(512 * 1048576))
+    (tmp_path / "memory.current").write_text("1", encoding="utf-8")
+    (tmp_path / "memory.max").write_text(str(512 * 1048576), encoding="utf-8")
     monkeypatch.setattr(memory, "_CGROUP_CURRENT", str(tmp_path / "memory.current"))
 
     assert memory.limit_mib() == 512.0
 
 
 def test_an_unlimited_cgroup_reports_no_limit(monkeypatch, tmp_path):
-    (tmp_path / "memory.current").write_text("1")
-    (tmp_path / "memory.max").write_text("max")
+    (tmp_path / "memory.current").write_text("1", encoding="utf-8")
+    (tmp_path / "memory.max").write_text("max", encoding="utf-8")
     monkeypatch.setattr(memory, "_CGROUP_CURRENT", str(tmp_path / "memory.current"))
 
     assert memory.limit_mib() is None

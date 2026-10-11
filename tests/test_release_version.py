@@ -32,7 +32,7 @@ needs_helm = pytest.mark.skipif(
 
 def test_the_project_takes_its_version_from_the_tag():
     """A number here is one more to forget at a release; this one already was."""
-    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     project = pyproject["project"]
 
     assert "version" not in project, (
@@ -43,7 +43,7 @@ def test_the_project_takes_its_version_from_the_tag():
 
 def test_the_chart_here_names_no_release():
     """The chart in the tree is the source the release packages, not a release."""
-    chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
+    chart = yaml.safe_load((CHART / "Chart.yaml").read_text(encoding="utf-8"))
 
     assert "appVersion" not in chart, (
         f"Chart.yaml names appVersion {chart['appVersion']!r}; the release sets it")
@@ -76,7 +76,7 @@ def test_the_chart_here_refuses_to_guess_an_image():
 
 
 def _chart_step() -> dict | None:
-    document = yaml.safe_load(RELEASE.read_text())
+    document = yaml.safe_load(RELEASE.read_text(encoding="utf-8"))
     steps = [step for job in document["jobs"].values() for step in job.get("steps", [])]
     return next((s for s in steps if s.get("id") == "chart"), None)
 
@@ -92,7 +92,7 @@ def test_the_released_chart_runs_its_own_release(tmp_path):
     helm = bin_dir / "helm"
     helm.write_text("#!/bin/sh\n"
                     'case "$1" in push|registry) cat > /dev/null; exit 0;; esac\n'
-                    f'exec "{HELM}" "$@"\n')
+                    f'exec "{HELM}" "$@"\n', encoding="utf-8")
     helm.chmod(0o755)
 
     result = subprocess.run(

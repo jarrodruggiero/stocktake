@@ -244,7 +244,7 @@ def _polled_paths() -> dict[str, str]:
     """
     found: dict[str, str] = {}
     for script in sorted((APP_ROOT / "app" / "static").glob("*.js")):
-        source = script.read_text()
+        source = script.read_text(encoding="utf-8")
         repeats = "setInterval(" in source or re.search(
             r"setTimeout\(\s*poll", source)
         if not repeats:

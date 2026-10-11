@@ -143,7 +143,7 @@ def test_a_stray_file_beside_the_sessions_is_neither_swept_nor_counted(store, mo
                                                                        app_module):
     fake_render(monkeypatch)
     live = pagemap.create(app_module.settings, user_id=1, data=b"%PDF")
-    (store / "notes.txt").write_text("not a session")
+    (store / "notes.txt").write_text("not a session", encoding="utf-8")
 
     assert pagemap.sweep(app_module.settings) == 0
     assert (store / "notes.txt").exists() and (store / live).exists()
@@ -236,7 +236,7 @@ def test_the_token_check_is_what_refuses_a_traversal(store, app_module):
     outside = store.parent / "elsewhere"
     outside.mkdir()
     (outside / "session.json").write_text(json.dumps(
-        {"user_id": 1, "touched": _REAL_TIME(), "text": "secret", "pages": []}))
+        {"user_id": 1, "touched": _REAL_TIME(), "text": "secret", "pages": []}), encoding="utf-8")
 
     assert pagemap.load(app_module.settings, "../elsewhere", user_id=1) is None
     # And the planted session really is loadable when named properly, so the
@@ -605,7 +605,7 @@ def test_the_shipped_manifests_mount_the_directory_the_app_writes_to():
     root = Path(__file__).resolve().parent.parent
     mount = "/" + ImportSettings().visual_dir.strip("/").split("/")[0]
 
-    dockerfile = (root / "Dockerfile").read_text()
+    dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
     assert "mkdir -p" in dockerfile and mount in dockerfile, (
         f"the image never creates {mount}, so uid 1000 cannot write there"
     )
@@ -621,11 +621,11 @@ def test_the_shipped_manifests_mount_the_directory_the_app_writes_to():
         f"works under any --user; owning it differently only moves the failure"
     )
 
-    manifest = (root / "deploy/kubernetes/stocktake.yaml").read_text()
+    manifest = (root / "deploy/kubernetes/stocktake.yaml").read_text(encoding="utf-8")
     assert f"mountPath: {mount}" in manifest
     assert "emptyDir" in manifest, "scratch must not be a PersistentVolumeClaim"
 
-    helm = (root / "deploy/helm/stocktake/templates/deployment.yaml").read_text()
+    helm = (root / "deploy/helm/stocktake/templates/deployment.yaml").read_text(encoding="utf-8")
     assert f"mountPath: {mount}" in helm
     assert "emptyDir" in helm
 

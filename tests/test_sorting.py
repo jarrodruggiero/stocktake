@@ -552,7 +552,7 @@ def test_no_template_puts_markup_in_its_title_block():
     templates = _Path(__file__).resolve().parent.parent / "app" / "templates"
     for path in sorted(templates.glob("*.html")):
         block = _re.search(r"{% block title %}(.*?){% endblock %}",
-                           path.read_text(), _re.S)
+                           path.read_text(encoding="utf-8"), _re.S)
         if block:
             assert "<" not in block.group(1), f"{path.name}: markup inside <title>"
 

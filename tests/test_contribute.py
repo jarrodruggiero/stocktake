@@ -364,7 +364,7 @@ def test_a_designed_template_installs_on_this_machine(client, session_factory,
     assert response.status_code == 303
     written = (tmp_path / "statements" / "acme-registry.yaml")
     assert written.exists()
-    assert "Payment date" in written.read_text()
+    assert "Payment date" in written.read_text(encoding="utf-8")
 
 
 def test_installing_a_designed_template_is_admin_only(client, session_factory,

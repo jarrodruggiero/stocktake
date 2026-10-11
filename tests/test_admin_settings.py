@@ -46,7 +46,7 @@ auth:
 def config_file(tmp_path, monkeypatch):
     """A real config file on disk, pointed at by the module under test."""
     path = tmp_path / "config.yaml"
-    path.write_text(DOCUMENTED)
+    path.write_text(DOCUMENTED, encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(path))
     return path
 
@@ -109,7 +109,7 @@ def test_saving_keeps_every_comment(config_file):
     written to. A plain YAML dump would strip all of this."""
     configfile.save({"price_feed.hour": 9})
 
-    written = config_file.read_text()
+    written = config_file.read_text(encoding="utf-8")
     assert "# The application's configuration. Every option is documented here." in written
     assert "# Every date decision is made in this zone." in written
     assert "# after the market closes" in written
@@ -142,7 +142,7 @@ def test_a_key_absent_from_the_file_is_created(config_file):
 def test_a_date_is_written_as_a_plain_string(config_file):
     configfile.save({"price_feed.backfill_start": dt.date(2015, 6, 1)})
 
-    assert "2015-06-01" in config_file.read_text()
+    assert "2015-06-01" in config_file.read_text(encoding="utf-8")
     assert str(configfile.load()["price_feed"]["backfill_start"]) == "2015-06-01"
 
 
@@ -303,7 +303,7 @@ def test_a_read_only_deployment_shows_the_values_but_no_save_button(client, sess
     conf_dir = tmp_path / "config"
     conf_dir.mkdir()
     path = conf_dir / "config.yaml"
-    path.write_text(DOCUMENTED)
+    path.write_text(DOCUMENTED, encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(path))
     make_login(client, session_factory, admin=True)
     original = stat.S_IMODE(os.stat(conf_dir).st_mode)
@@ -330,7 +330,7 @@ def test_saving_through_a_read_only_file_is_refused(client, session_factory,
     conf_dir = tmp_path / "config"
     conf_dir.mkdir()
     path = conf_dir / "config.yaml"
-    path.write_text(DOCUMENTED)
+    path.write_text(DOCUMENTED, encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(path))
     make_login(client, session_factory, admin=True)
     csrf = session_csrf(session_factory)
@@ -432,7 +432,7 @@ def test_save_and_restart_does_both(client, session_factory, monkeypatch, tmp_pa
     conf_dir = tmp_path / "config"
     conf_dir.mkdir()
     path = conf_dir / "config.yaml"
-    path.write_text(DOCUMENTED)
+    path.write_text(DOCUMENTED, encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(path))
     asked = []
     monkeypatch.setattr(lifecycle, "request_stop", lambda reason: asked.append(reason))
@@ -457,7 +457,7 @@ def test_saving_without_the_restart_flag_does_not_restart(client, session_factor
     conf_dir = tmp_path / "config"
     conf_dir.mkdir()
     path = conf_dir / "config.yaml"
-    path.write_text(DOCUMENTED)
+    path.write_text(DOCUMENTED, encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(path))
     asked = []
     monkeypatch.setattr(lifecycle, "request_stop", lambda reason: asked.append(reason))
@@ -479,7 +479,7 @@ def test_restart_is_offered_even_when_the_config_is_read_only(client, session_fa
     conf_dir = tmp_path / "config"
     conf_dir.mkdir()
     path = conf_dir / "config.yaml"
-    path.write_text(DOCUMENTED)
+    path.write_text(DOCUMENTED, encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(path))
     make_login(client, session_factory, admin=True)
     original = stat.S_IMODE(os.stat(conf_dir).st_mode)
@@ -577,7 +577,7 @@ def test_a_feed_timezone_left_to_follow_still_follows_after_a_save(client, sessi
     from test_routes import make_login
 
     live, path = live_settings
-    path.write_text(DOCUMENTED)                          # no feed timezone of its own
+    path.write_text(DOCUMENTED, encoding="utf-8")                          # no feed timezone of its own
     live.timezone = live.price_feed.timezone = "Australia/Melbourne"   # as loaded from it
     make_login(client, session_factory, admin=True)
 
@@ -592,7 +592,7 @@ def test_a_feed_timezone_set_on_purpose_stays_set(client, session_factory, live_
     from test_routes import make_login
 
     live, path = live_settings
-    path.write_text(DOCUMENTED.replace("  minute: 30\n", "  minute: 30\n  timezone: Asia/Tokyo\n"))
+    path.write_text(DOCUMENTED.replace("  minute: 30\n", "  minute: 30\n  timezone: Asia/Tokyo\n"), encoding="utf-8")
     live.timezone, live.price_feed.timezone = "Australia/Melbourne", "Asia/Tokyo"
     make_login(client, session_factory, admin=True)
 
@@ -604,7 +604,7 @@ def test_a_feed_timezone_set_on_purpose_stays_set(client, session_factory, live_
 
 def test_a_feed_timezone_from_the_environment_shows_as_set(live_settings, monkeypatch):
     live, path = live_settings
-    path.write_text(DOCUMENTED)
+    path.write_text(DOCUMENTED, encoding="utf-8")
     monkeypatch.setenv("APP_PRICE_FEED__TIMEZONE", "Asia/Tokyo")
     live.price_feed.timezone = "Asia/Tokyo"
 
@@ -617,7 +617,7 @@ def test_a_feed_section_left_empty_shows_its_timezone_following(live_settings):
     """Every line under `price_feed:` commented out reads as nothing at all,
     not as a block: the zone is not written there, so it follows."""
     live, path = live_settings
-    path.write_text("timezone: Australia/Melbourne\nprice_feed:\n  # hour: 18\n")
+    path.write_text("timezone: Australia/Melbourne\nprice_feed:\n  # hour: 18\n", encoding="utf-8")
 
     assert configfile.shown(live, configfile.BY_NAME["price_feed.timezone"]) is None
 
@@ -889,7 +889,7 @@ def test_every_offered_choice_is_accepted(opt):
 
 
 def test_saving_into_an_empty_file_works(config_file):
-    config_file.write_text("")
+    config_file.write_text("", encoding="utf-8")
 
     configfile.save({"price_feed.hour": 9})
 
@@ -899,7 +899,7 @@ def test_saving_into_an_empty_file_works(config_file):
 def test_saving_under_a_section_left_empty_works(config_file):
     """The shipped file leaves `oidc:` with every line under it commented
     out, which YAML reads as nothing at all."""
-    config_file.write_text("auth:\n  oidc:\n    # enabled: true\n")
+    config_file.write_text("auth:\n  oidc:\n    # enabled: true\n", encoding="utf-8")
 
     configfile.save({"auth.oidc.button_label": "Sign in with Home"})
 
@@ -915,11 +915,11 @@ def test_a_save_changes_its_own_line_and_no_other(config_file):
               "    - 10.0.0.0/8\n"
               "    - \"192.168.0.0/16\"\n"
               "  session_ttl_days: 30\n")
-    config_file.write_text(before)
+    config_file.write_text(before, encoding="utf-8")
 
     configfile.save({"auth.session_ttl_days": 14})
 
-    assert config_file.read_text() == before.replace("session_ttl_days: 30",
+    assert config_file.read_text(encoding="utf-8") == before.replace("session_ttl_days: 30",
                                                      "session_ttl_days: 14")
 
 
@@ -1005,7 +1005,7 @@ def test_a_write_that_fails_leaves_no_half_written_file(config_file, monkeypatch
             configfile.write_tree({"timezone": "Asia/Tokyo"})
 
     assert [p.name for p in config_file.parent.iterdir()] == ["config.yaml"]
-    assert config_file.read_text() == DOCUMENTED
+    assert config_file.read_text(encoding="utf-8") == DOCUMENTED
 
 
 def test_a_file_of_nothing_but_comments_reads_as_nothing_and_takes_a_write(tmp_path,
@@ -1013,7 +1013,7 @@ def test_a_file_of_nothing_but_comments_reads_as_nothing_and_takes_a_write(tmp_p
     """Every line commented out reads as no document at all rather than an
     empty mapping: the reader and the wizard's merge both have to see one."""
     path = tmp_path / "config.yaml"
-    path.write_text("# everything here is commented out\n# timezone: Asia/Tokyo\n")
+    path.write_text("# everything here is commented out\n# timezone: Asia/Tokyo\n", encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(path))
 
     assert configfile.load() == {}

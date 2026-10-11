@@ -30,7 +30,7 @@ RELEASE = ROOT / ".github" / "workflows" / "release.yml"
 
 def _steps(workflow: Path):
     """Every step of every job, with the job name, as (job, step) pairs."""
-    document = yaml.safe_load(workflow.read_text())
+    document = yaml.safe_load(workflow.read_text(encoding="utf-8"))
     for job_name, job in (document.get("jobs") or {}).items():
         for step in job.get("steps") or []:
             yield job_name, step
@@ -149,7 +149,7 @@ def test_the_release_check_says_whether_one_exists(tmp_path, listed, gh_exit, ex
     assert check is not None, "nothing looks for a release that already exists"
     fake = tmp_path / "gh"
     fake.write_text(f"#!/bin/sh\nprintf '%s\\n' \"$@\" > {tmp_path}/args\n"
-                    f"printf '%s' '{listed}'\nexit {gh_exit}\n")
+                    f"printf '%s' '{listed}'\nexit {gh_exit}\n", encoding="utf-8")
     fake.chmod(0o755)
     output = tmp_path / "github_output"
     output.touch()
@@ -161,21 +161,21 @@ def test_the_release_check_says_whether_one_exists(tmp_path, listed, gh_exit, ex
 
     # Every release, every page: the lookup by tag skips drafts, and one page
     # stops at 30 releases, so a re-run for an older tag would miss its own.
-    asked = (tmp_path / "args").read_text().splitlines()
+    asked = (tmp_path / "args").read_text(encoding="utf-8").splitlines()
     assert "repos/o/r/releases" in asked and "--paginate" in asked, asked
     if expected is None:
         assert result.returncode != 0
-        assert "found=" not in output.read_text()
+        assert "found=" not in output.read_text(encoding="utf-8")
     else:
         assert result.returncode == 0, result.stderr
-        assert output.read_text().strip() == expected
+        assert output.read_text(encoding="utf-8").strip() == expected
 
 
 def _action_refs(workflow: Path) -> list[str]:
     """Every action and reusable workflow a workflow runs, read from the parsed
     YAML, so text that merely says `uses:` (a CodeQL query suite inside an
     input) is not mistaken for one. Local `./` actions are this repository's."""
-    jobs = (yaml.safe_load(workflow.read_text()).get("jobs") or {}).values()
+    jobs = (yaml.safe_load(workflow.read_text(encoding="utf-8")).get("jobs") or {}).values()
     refs = [job["uses"] for job in jobs if "uses" in job]
     refs += [step["uses"] for _job, step in _steps(workflow) if "uses" in step]
     return [ref for ref in refs if not ref.startswith("./")]
@@ -187,7 +187,7 @@ def test_every_action_is_pinned_to_a_commit(workflow: Path):
     repository, and the next run here would run it with this repository's
     tokens. A commit cannot be moved. Dependabot keeps the pins current, and
     the comment says which release each one is, so a pin stays reviewable."""
-    text = workflow.read_text()
+    text = workflow.read_text(encoding="utf-8")
     # `owner/repo@<40-hex commit>  # vX.Y.Z`, as Dependabot writes and updates them.
     loose = [ref for ref in _action_refs(workflow)
              if not re.fullmatch(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}", ref)
@@ -227,7 +227,7 @@ def test_the_release_publishes_the_chart_at_the_tags_version(tmp_path):
     fake.write_text("#!/bin/sh\n"
                     f"printf '%s\\n' \"$*\" >> {tmp_path}/calls\n"
                     f'[ "$1" = registry ] && cat > {tmp_path}/stdin\n'
-                    "exit 0\n")
+                    "exit 0\n", encoding="utf-8")
     fake.chmod(0o755)
     result = subprocess.run(
         ["bash", "-e", "-c", chart["run"]], capture_output=True, text=True,
@@ -236,7 +236,7 @@ def test_the_release_publishes_the_chart_at_the_tags_version(tmp_path):
              "VERSION": "1.2.3", "OWNER": "o", "ACTOR": "a", "TOKEN": "t"})
     assert result.returncode == 0, result.stderr
 
-    calls = [line.split() for line in (tmp_path / "calls").read_text().splitlines()]
+    calls = [line.split() for line in (tmp_path / "calls").read_text(encoding="utf-8").splitlines()]
     package = next(c for c in calls if c[0] == "package")
     assert package[1] == "deploy/helm/stocktake"
     assert _flag(package, "--version") == "1.2.3"
@@ -244,5 +244,5 @@ def test_the_release_publishes_the_chart_at_the_tags_version(tmp_path):
     assert ["push", f"{tmp_path}/stocktake-1.2.3.tgz", "oci://ghcr.io/o/charts"] in calls
     login = next(c for c in calls if c[:2] == ["registry", "login"])
     # The token on stdin, never in the arguments, where a process list shows it.
-    assert "t" not in login and (tmp_path / "stdin").read_text() == "t"
+    assert "t" not in login and (tmp_path / "stdin").read_text(encoding="utf-8") == "t"
     assert calls.index(login) < calls.index(next(c for c in calls if c[0] == "push"))

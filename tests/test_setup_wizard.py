@@ -72,7 +72,7 @@ def test_a_config_file_entry_is_reported_as_the_source(monkeypatch, tmp_path, ap
     for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
         monkeypatch.delenv(name, raising=False)
     path = tmp_path / "config.yaml"
-    path.write_text("app_name: portfolio\ndatabase:\n  type: sqlite\n  path: /data/x.db\n")
+    path.write_text("app_name: portfolio\ndatabase:\n  type: sqlite\n  path: /data/x.db\n", encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(path))
 
     source = database.source(settings)
@@ -104,7 +104,7 @@ def test_a_config_file_without_a_database_block_is_not_configured(
     for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
         monkeypatch.delenv(name, raising=False)
     path = tmp_path / "config.yaml"
-    path.write_text("app_name: portfolio\ntimezone: Australia/Perth\n")
+    path.write_text("app_name: portfolio\ntimezone: Australia/Perth\n", encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(path))
 
     assert database.source(settings).configured is False
@@ -274,7 +274,7 @@ def test_an_unwritable_existing_sqlite_file_is_refused(tmp_path):
     import stat
 
     target = tmp_path / "portfolio.db"
-    target.write_text("")
+    target.write_text("", encoding="utf-8")
     original = stat.S_IMODE(os.stat(target).st_mode)
     os.chmod(target, 0o400)
     try:
@@ -292,7 +292,7 @@ def test_a_malformed_config_file_does_not_stop_the_wizard_starting(
     for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
         monkeypatch.delenv(name, raising=False)
     path = tmp_path / "config.yaml"
-    path.write_text("auth: [this is not\n  valid: yaml\n")
+    path.write_text("auth: [this is not\n  valid: yaml\n", encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(path))
 
     assert database.source(app_module.settings).configured is False
@@ -593,7 +593,7 @@ def test_a_new_config_is_created_from_the_annotated_default(tmp_path, monkeypatc
 
     configfile.write_tree({"timezone": "Europe/Dublin"})
 
-    written = target.read_text()
+    written = target.read_text(encoding="utf-8")
     assert "timezone: Europe/Dublin" in written
     assert written.count("#") > 20        # the shipped commentary came with it
 
@@ -617,12 +617,12 @@ def test_writing_merges_rather_than_replacing_a_block(tmp_path, monkeypatch):
         "  # how long a session lasts\n"
         "  session_ttl_days: 30\n"
         "  cookie_secure: false\n"
-    )
+    , encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(target))
 
     configfile.write_tree({"auth": {"trusted_proxies": ["10.0.0.0/8"]}})
 
-    written = target.read_text()
+    written = target.read_text(encoding="utf-8")
     assert "session_ttl_days: 30" in written
     assert "# how long a session lasts" in written
     assert "trusted_proxies" in written
@@ -630,13 +630,13 @@ def test_writing_merges_rather_than_replacing_a_block(tmp_path, monkeypatch):
 
 def test_writing_replaces_a_value_that_is_already_there(tmp_path, monkeypatch):
     target = tmp_path / "config.yaml"
-    target.write_text("timezone: Australia/Perth\n")
+    target.write_text("timezone: Australia/Perth\n", encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(target))
 
     configfile.write_tree({"timezone": "Europe/Dublin"})
 
-    assert "Europe/Dublin" in target.read_text()
-    assert "Australia/Perth" not in target.read_text()
+    assert "Europe/Dublin" in target.read_text(encoding="utf-8")
+    assert "Australia/Perth" not in target.read_text(encoding="utf-8")
 
 
 def test_a_writable_directory_with_no_file_is_creatable(tmp_path, monkeypatch):
@@ -749,7 +749,7 @@ def test_the_privacy_promise_is_made_where_the_choice_is(client):
     from app.main import DOCS_URL
     assert f'href="{DOCS_URL}/guides/market-data/"' in page
 
-    guide = (APP_ROOT / "docs" / "guides" / "market-data.md").read_text()
+    guide = (APP_ROOT / "docs" / "guides" / "market-data.md").read_text(encoding="utf-8")
     assert "ticker symbols and nothing else" in guide
 
 
@@ -1033,7 +1033,7 @@ def test_finishing_writes_the_config_and_closes_the_wizard(client, tmp_path, mon
 
     assert resp.headers["location"] == "/"
     assert target.is_file()
-    assert "Europe/Dublin" in target.read_text()
+    assert "Europe/Dublin" in target.read_text(encoding="utf-8")
     assert setupwizard.in_progress() is False
 
 
@@ -1426,7 +1426,7 @@ def test_the_zone_the_log_level_and_the_console_are_set_as_the_app_starts(tmp_pa
     """Three lines at import every test inherits already run, with a zone and
     a level the defaults happen to match: removing any of them left the suite
     green. Here the configuration differs from every default."""
-    (tmp_path / "config.yaml").write_text("timezone: Asia/Tokyo\nlog_level: ERROR\n")
+    (tmp_path / "config.yaml").write_text("timezone: Asia/Tokyo\nlog_level: ERROR\n", encoding="utf-8")
     script = textwrap.dedent(f"""
         import logging, os, sys
         for name in [k for k in os.environ if k.startswith("APP_")]:
@@ -1907,7 +1907,7 @@ def test_a_read_only_config_that_already_matches_asks_for_nothing(
     against the file.
     """
     config = tmp_path / "config.yaml"
-    config.write_text("timezone: Australia/Melbourne\nprice_feed:\n  enabled: true\n")
+    config.write_text("timezone: Australia/Melbourne\nprice_feed:\n  enabled: true\n", encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(config))
     monkeypatch.setattr(configfile, "creatable",
                         lambda: configfile.Writability(False, "It is read-only."))
@@ -1930,7 +1930,7 @@ def test_a_read_only_config_asks_only_for_what_is_missing(
     client, tmp_path, monkeypatch
 ):
     config = tmp_path / "config.yaml"
-    config.write_text("timezone: Australia/Melbourne\n")
+    config.write_text("timezone: Australia/Melbourne\n", encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(config))
     monkeypatch.setattr(configfile, "creatable",
                         lambda: configfile.Writability(False, "It is read-only."))
@@ -2091,7 +2091,7 @@ def test_the_wizard_writes_auth_into_the_shipped_files_commented_block(tmp_path,
     configfile.write_tree({"auth": {"cookie_secure": True,
                                     "trusted_proxies": ["10.0.0.0/8", "2001:0:0:0:0:0:0:1"]}})
 
-    read = pyyaml.safe_load(target.read_text())
+    read = pyyaml.safe_load(target.read_text(encoding="utf-8"))
     assert read["auth"]["cookie_secure"] is True
     assert read["auth"]["trusted_proxies"] == ["10.0.0.0/8", "2001:0:0:0:0:0:0:1"]
 

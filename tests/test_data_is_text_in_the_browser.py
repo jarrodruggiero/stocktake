@@ -64,11 +64,11 @@ def _in_chrome(page: str, tmp_path: Path) -> str:
         # idle.js signs the page out after a while; nothing to measure here.
         if match.group(1) == "idle.js" or not path.is_file():
             return ""
-        return "<script>" + path.read_text() + "</script>"
+        return "<script>" + path.read_text(encoding="utf-8") + "</script>"
 
     page = re.sub(r'<script src="/static/([^"?]+)[^"]*"[^>]*></script>', inline, page)
     target = tmp_path / "page.html"
-    target.write_text(page)
+    target.write_text(page, encoding="utf-8")
     return subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", "--virtual-time-budget=4000",

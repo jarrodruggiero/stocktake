@@ -63,7 +63,7 @@ def test_a_refused_field_says_why(client, session_factory, tmp_path):
         s.commit()
     page = client.get("/holdings", headers=HTML)
     target = tmp_path / "holdings.html"
-    target.write_text(_standalone(page.text, DRIVER).replace("<head>", "<head>" + SERVER, 1))
+    target.write_text(_standalone(page.text, DRIVER).replace("<head>", "<head>" + SERVER, 1), encoding="utf-8")
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", "--window-size=1400,1000",

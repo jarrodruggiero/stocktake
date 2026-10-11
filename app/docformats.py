@@ -290,7 +290,7 @@ def parse_statement_template(key: str, text: str) -> StatementTemplate:
 
 
 def load_statement_template(path: Path, source: str = "builtin") -> StatementTemplate:
-    return replace(parse_statement_template(path.stem, path.read_text()), source=source)
+    return replace(parse_statement_template(path.stem, path.read_text(encoding="utf-8")), source=source)
 
 
 def load_statement_templates(extra_dir: Path | None = None) -> list[StatementTemplate]:
@@ -628,7 +628,7 @@ def load_broker_formats(extra_dir: Path | None = None) -> dict[str, dict]:
             continue
         for path in sorted(directory.glob("*.yaml")):
             try:
-                data = _yaml().load(path.read_text()) or {}
+                data = _yaml().load(path.read_text(encoding="utf-8")) or {}
                 if not isinstance(data, dict) or not data.get("kind"):
                     raise TemplateError("a broker format needs a `kind`")
             except Exception as exc:  # noqa: BLE001 - yaml errors vary by cause

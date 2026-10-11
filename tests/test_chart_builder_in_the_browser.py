@@ -269,7 +269,7 @@ def _run(client, session_factory, tmp_path, seeds, delay="Math.floor(rand() * 60
     target = tmp_path / "builder.html"
     driver = WALK.replace("SEEDS", json.dumps(seeds)).replace("STEPS", "40")
     target.write_text(_standalone(_page(client, session_factory), driver)
-                      .replace("<head>", "<head>" + STUBS.replace("DELAY", delay), 1))
+                      .replace("<head>", "<head>" + STUBS.replace("DELAY", delay), 1), encoding="utf-8")
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", "--window-size=1400,1000",
@@ -328,7 +328,7 @@ def test_a_preview_that_arrives_late_does_not_replace_a_newer_one(client, sessio
                                                                  tmp_path):
     target = tmp_path / "builder.html"
     target.write_text(_standalone(_page(client, session_factory), RACE).replace(
-        "<head>", "<head>" + STUBS.replace("DELAY", "window.asked.length % 2 ? 800 : 10"), 1))
+        "<head>", "<head>" + STUBS.replace("DELAY", "window.asked.length % 2 ? 800 : 10"), 1), encoding="utf-8")
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", "--window-size=1400,1000",
@@ -381,7 +381,7 @@ window.addEventListener("load", async function () {
 def test_a_split_the_chart_cannot_draw_is_not_placed(client, session_factory, tmp_path):
     target = tmp_path / "builder.html"
     target.write_text(_standalone(_page(client, session_factory), SPLITS).replace(
-        "<head>", "<head>" + STUBS.replace("DELAY", "0"), 1))
+        "<head>", "<head>" + STUBS.replace("DELAY", "0"), 1), encoding="utf-8")
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", "--window-size=1400,1000",

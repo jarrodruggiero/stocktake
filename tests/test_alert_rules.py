@@ -34,7 +34,7 @@ OPERATOR = MONITORING / "prometheusrule.yaml"
 def load(path: Path):
     from ruamel.yaml import YAML
 
-    return YAML(typ="safe").load(path.read_text())
+    return YAML(typ="safe").load(path.read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
@@ -149,6 +149,6 @@ def test_gauge_comparisons_wait_before_firing(rules):
 def test_the_readme_documents_every_alert():
     """A rule nobody can look up gets deleted by the next person to see it
     fire at 3am."""
-    readme = (MONITORING / "README.md").read_text()
+    readme = (MONITORING / "README.md").read_text(encoding="utf-8")
     for rule in [r for g in load(PLAIN)["groups"] for r in g["rules"]]:
         assert rule["alert"] in readme, f"{rule['alert']} is not in the README"

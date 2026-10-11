@@ -397,7 +397,7 @@ def _walk(client, session_factory, tmp_path, monkeypatch, app_module, seeds=(), 
                      "dates": json.dumps(DATES), "symbols": json.dumps(symbols)}
     head = STUB % {"answers": json.dumps(answers)}
     target = tmp_path / "dashboard.html"
-    target.write_text(_standalone(page.text, driver).replace("<head>", "<head>" + head, 1))
+    target.write_text(_standalone(page.text, driver).replace("<head>", "<head>" + head, 1), encoding="utf-8")
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", "--window-size=1400,1000",
@@ -522,7 +522,7 @@ def test_an_answer_that_arrives_late_does_not_overwrite_a_newer_one(
     driver = RACE % {"nova": listed["NOVA"][0], "d1": D1, "d2": D2}
     head = STUB % {"answers": json.dumps(answers)}
     target = tmp_path / "dashboard.html"
-    target.write_text(_standalone(page, driver).replace("<head>", "<head>" + head, 1))
+    target.write_text(_standalone(page, driver).replace("<head>", "<head>" + head, 1), encoding="utf-8")
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", "--window-size=1400,1000",

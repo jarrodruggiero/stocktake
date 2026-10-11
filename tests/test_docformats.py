@@ -324,7 +324,7 @@ def test_an_operator_template_overrides_a_shipped_one(tmp_path):
     """Local files win, the same direction the settings layer overrides."""
     (tmp_path / "generic-au.yaml").write_text(
         "name: Mine\nfields:\n  net_amount:\n    after: ['grand total']\n    type: money\n"
-    )
+    , encoding="utf-8")
 
     templates = {t.key: t for t in fmt.load_statement_templates(extra_dir=tmp_path)}
 
@@ -334,10 +334,10 @@ def test_an_operator_template_overrides_a_shipped_one(tmp_path):
 def test_one_broken_template_does_not_stop_the_others(tmp_path, caplog):
     """A drop-in directory will eventually contain something half-edited. That
     must not take the app down at startup."""
-    (tmp_path / "broken.yaml").write_text("fields:\n  x:\n    type: nonsense\n")
+    (tmp_path / "broken.yaml").write_text("fields:\n  x:\n    type: nonsense\n", encoding="utf-8")
     (tmp_path / "fine.yaml").write_text(
         "name: Fine\nfields:\n  net_amount:\n    after: ['total']\n    type: money\n"
-    )
+    , encoding="utf-8")
 
     keys = {t.key for t in fmt.load_statement_templates(extra_dir=tmp_path)}
 
@@ -618,7 +618,7 @@ def test_the_exported_template_is_loadable_and_works(tmp_path):
         name="Example Registry",
         fields={"net_amount": {"after": ["net amount paid"], "type": "money"}},
         match=["COMPUTERSHARE"],
-    ))
+    ), encoding="utf-8")
 
     loaded = fmt.load_statement_template(path)
 
@@ -635,7 +635,7 @@ def test_what_was_typed_stays_text_in_the_exported_template(tmp_path):
     path = tmp_path / "typed.yaml"
     path.write_text(fmt.template_yaml(
         name=name, fields={"net_amount": {"after": labels, "type": "money"}},
-        match=["true"]))
+        match=["true"]), encoding="utf-8")
 
     loaded = fmt.load_statement_template(path)
 
@@ -755,7 +755,7 @@ def test_the_designer_exports_a_working_template(client, session_factory, tmp_pa
     assert "example-registry.yaml" in resp.headers["content-disposition"]
 
     path = tmp_path / "example-registry.yaml"
-    path.write_text(resp.text)
+    path.write_text(resp.text, encoding="utf-8")
     loaded = fmt.load_statement_template(path)
     assert loaded.extract(SAMPLE)["net_amount"] == Decimal("1042.75")
 
@@ -811,7 +811,7 @@ def test_the_shipped_config_does_not_override_the_shipped_broker_formats():
 
     root = Path(__file__).resolve().parent.parent
     for name in ("config.yaml", "deploy/compose/config.yaml"):
-        data = yaml.safe_load((root / name).read_text()) or {}
+        data = yaml.safe_load((root / name).read_text(encoding="utf-8")) or {}
         overrides = (data.get("imports") or {}).get("brokers")
         assert not overrides, (
             f"{name} pins broker formats that ship as files: {sorted(overrides)}"
@@ -855,8 +855,8 @@ def test_a_field_given_only_its_labels_reads_text_and_one_without_labels_is_refu
 def test_a_broker_format_without_a_kind_is_passed_over(tmp_path, caplog):
     """Passed over, and the log says why: it is the only place a format that
     never reaches the imports page explains itself."""
-    (tmp_path / "nokind.yaml").write_text("name: No kind\nexchange: ASX\n")
-    (tmp_path / "mine.yaml").write_text("name: Mine\nkind: mapped\nexchange: ASX\n")
+    (tmp_path / "nokind.yaml").write_text("name: No kind\nexchange: ASX\n", encoding="utf-8")
+    (tmp_path / "mine.yaml").write_text("name: Mine\nkind: mapped\nexchange: ASX\n", encoding="utf-8")
 
     formats = fmt.load_broker_formats(extra_dir=tmp_path)
 

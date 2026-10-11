@@ -70,7 +70,7 @@ main._kick_feed = lambda: False
 
 client = TestClient(main.app)
 HTML = {"accept": "text/html"}
-CSS = (APP_ROOT / "app" / "static" / "style.css").read_text()
+CSS = (APP_ROOT / "app" / "static" / "style.css").read_text(encoding="utf-8")
 
 
 STATIC = APP_ROOT / "app" / "static"
@@ -92,10 +92,10 @@ def save(name: str, html: str) -> None:
 
     def inline(match: re.Match) -> str:
         path = STATIC / match.group(1)
-        return "<script>" + path.read_text() + "</script>" if path.is_file() else ""
+        return "<script>" + path.read_text(encoding="utf-8") + "</script>" if path.is_file() else ""
 
     html = re.sub(r'<script src="/static/([^"?]+)[^"]*"[^>]*></script>', inline, html)
-    (OUT / f"{name}.html").write_text(html)
+    (OUT / f"{name}.html").write_text(html, encoding="utf-8")
     print("wrote", OUT / f"{name}.html")
 
 
@@ -261,7 +261,7 @@ def render_all() -> None:
     # page here whose whole job is to look like something.
     # The shipped sample, so this page is drawn from the same invented rows the
     # format tests use rather than a second set to keep in step.
-    designer_csv = (APP_ROOT / "app" / "formats" / "samples" / "selfwealth.csv").read_text()
+    designer_csv = (APP_ROOT / "app" / "formats" / "samples" / "selfwealth.csv").read_text(encoding="utf-8")
     save("18c-broker-designer", client.post(
         "/imports-exports/broker/design",
         data={"_csrf": token("/imports-exports")},

@@ -86,7 +86,7 @@ def test_the_form_fills_the_brokerage_from_the_portfolios_fees(
         s.commit()
     page = client.get("/", headers=HTML)
     target = tmp_path / "dashboard.html"
-    target.write_text(_standalone(page.text, DRIVER))
+    target.write_text(_standalone(page.text, DRIVER), encoding="utf-8")
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", "--window-size=1400,1000",

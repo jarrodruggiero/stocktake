@@ -238,7 +238,7 @@ def test_every_step_lands_in_the_field_in_order(client, session_factory, tmp_pat
     driver = (WALK.replace("SEEDS", json.dumps(seeds)).replace("STEPS", "40")
               .replace("TICKERS", json.dumps(TICKERS)))
     target.write_text(_standalone(_page(client, session_factory), driver)
-                      .replace("<head>", "<head>" + PREVIEW.replace("DELAY", SOMETIMES_SLOW), 1))
+                      .replace("<head>", "<head>" + PREVIEW.replace("DELAY", SOMETIMES_SLOW), 1), encoding="utf-8")
     runs = _result(_chrome(target, "--force-prefers-reduced-motion"))
 
     for run in runs:
@@ -296,7 +296,7 @@ window.addEventListener("load", async function () {
 def test_a_click_that_wobbles_near_the_list_adds_once(client, session_factory, tmp_path):
     target = tmp_path / "plan.html"
     target.write_text(_standalone(_page(client, session_factory), NEAR_THE_LIST)
-                      .replace("<head>", "<head>" + PREVIEW.replace("DELAY", "0"), 1))
+                      .replace("<head>", "<head>" + PREVIEW.replace("DELAY", "0"), 1), encoding="utf-8")
     out = _result(_chrome(target))
 
     assert out["near"], "no palette chip sits within reach of the list at this width"
@@ -331,7 +331,7 @@ def test_a_preview_that_arrives_late_does_not_replace_a_newer_one(client, sessio
     target = tmp_path / "plan.html"
     target.write_text(_standalone(_page(client, session_factory), RACE)
                       .replace("<head>", "<head>" + PREVIEW.replace("DELAY", "n === 0 ? 800 : 10"),
-                               1))
+                               1), encoding="utf-8")
     out = _result(_chrome(target, "--force-prefers-reduced-motion"))
 
     assert len(out["asked"]) == 2, "the click did not ask while the first was out"

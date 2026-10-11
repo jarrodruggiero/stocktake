@@ -98,8 +98,8 @@ def _shoot(html: str, out: Path, width: int, height: int) -> None:
 
 
 def main() -> None:
-    (ROOT / "app/templates/_brand.html").write_text(partial())
-    (ROOT / "app/static/icon.svg").write_text(icon_svg())
+    (ROOT / "app/templates/_brand.html").write_text(partial(), encoding="utf-8")
+    (ROOT / "app/static/icon.svg").write_text(icon_svg(), encoding="utf-8")
 
     square = ('<!doctype html><html><head><meta charset="utf-8"><style>'
               'html,body{margin:0;width:512px;height:512px;background:#eef0f7}'

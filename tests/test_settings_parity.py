@@ -160,7 +160,7 @@ def _documented_defaults() -> dict[str, object]:
 
     import yaml
 
-    text = (Path(__file__).resolve().parent.parent / "config.yaml").read_text()
+    text = (Path(__file__).resolve().parent.parent / "config.yaml").read_text(encoding="utf-8")
     stack: list[tuple[int, str]] = []
     out: dict[str, object] = {}
     line = re.compile(r"^(\s*)(#\s)?(\s*)([a-z_][a-z0-9_]*):(?:\s+(.*?))?(?:\s+#.*)?$")
@@ -207,7 +207,7 @@ def test_the_feed_time_the_shipped_file_sets_is_the_codes_own():
 
     import yaml
 
-    shipped = yaml.safe_load((Path(__file__).resolve().parent.parent / "config.yaml").read_text())
+    shipped = yaml.safe_load((Path(__file__).resolve().parent.parent / "config.yaml").read_text(encoding="utf-8"))
     defaults = PortfolioSettings.model_construct().price_feed
 
     assert (shipped["price_feed"]["hour"], shipped["price_feed"]["minute"]) == (

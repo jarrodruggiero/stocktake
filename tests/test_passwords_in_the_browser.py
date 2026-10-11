@@ -29,7 +29,7 @@ if CHROME is None:
 
 HTML = {"accept": "text/html"}
 STATIC = ROOT / "app" / "static"
-ZXCVBN = (STATIC / "vendor" / "zxcvbn.js").read_text()
+ZXCVBN = (STATIC / "vendor" / "zxcvbn.js").read_text(encoding="utf-8")
 
 
 def _standalone(page: str, driver: str) -> str:
@@ -38,11 +38,11 @@ def _standalone(page: str, driver: str) -> str:
         path = STATIC / match.group(1)
         if match.group(1) == "idle.js" or not path.is_file():
             return ""
-        return "<script>" + path.read_text() + "</script>"
+        return "<script>" + path.read_text(encoding="utf-8") + "</script>"
 
     page = re.sub(r'<script src="/static/([^"?]+)[^"]*"[^>]*></script>', script, page)
     page = re.sub(r'<link rel="stylesheet" href="/static/style\.css[^"]*"[^>]*>',
-                  lambda _m: "<style>" + (STATIC / "style.css").read_text() + "</style>",
+                  lambda _m: "<style>" + (STATIC / "style.css").read_text(encoding="utf-8") + "</style>",
                   page)
     return page.replace("</body>", driver + "</body>")
 
@@ -109,7 +109,7 @@ window.addEventListener("load", async function () {
 
 def _run(page: str, driver: str, tmp_path: Path, head: str = "") -> dict:
     target = tmp_path / "page.html"
-    target.write_text(_standalone(page, driver).replace("<head>", "<head>" + head, 1))
+    target.write_text(_standalone(page, driver).replace("<head>", "<head>" + head, 1), encoding="utf-8")
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", "--window-size=1200,1000",

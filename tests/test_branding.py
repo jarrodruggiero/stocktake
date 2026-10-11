@@ -26,13 +26,13 @@ import render_brand  # noqa: E402
 
 
 def test_the_included_partial_matches_the_source():
-    on_disk = (ROOT / "app/templates/_brand.html").read_text()
+    on_disk = (ROOT / "app/templates/_brand.html").read_text(encoding="utf-8")
     assert on_disk == render_brand.partial(), (
         "app/templates/_brand.html has drifted — run tools/render_brand.py")
 
 
 def test_the_favicon_matches_the_source():
-    on_disk = (ROOT / "app/static/icon.svg").read_text()
+    on_disk = (ROOT / "app/static/icon.svg").read_text(encoding="utf-8")
     assert on_disk == render_brand.icon_svg(), (
         "app/static/icon.svg has drifted — run tools/render_brand.py")
 
@@ -40,7 +40,7 @@ def test_the_favicon_matches_the_source():
 def test_the_base_template_does_not_carry_its_own_copy():
     """The failure this exists to prevent: someone edits the top bar directly
     and the favicon quietly keeps the old drawing."""
-    base = (ROOT / "app/templates/base.html").read_text()
+    base = (ROOT / "app/templates/base.html").read_text(encoding="utf-8")
     assert '{% include "_brand.html" %}' in base
     assert "brandmark" not in base.replace('{% include "_brand.html" %}', ""), (
         "base.html should include the partial, not inline the mark")

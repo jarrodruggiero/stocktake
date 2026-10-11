@@ -118,8 +118,8 @@ def test_stale_staged_uploads_are_swept(db, settings, monkeypatch, tmp_path):
     staging.mkdir()
     fresh = staging / "fresh.json"
     stale = staging / "stale.json"
-    fresh.write_text("{}")
-    stale.write_text("{}")
+    fresh.write_text("{}", encoding="utf-8")
+    stale.write_text("{}", encoding="utf-8")
     # 48 hours old, against a 24-hour window.
     old = time.time() - 48 * 3600
     import os
