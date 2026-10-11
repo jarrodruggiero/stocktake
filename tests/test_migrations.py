@@ -101,18 +101,18 @@ def test_the_whole_chain_runs_from_nothing_to_head(tmp_path: Path):
 
 
 def test_the_models_and_the_migration_have_not_drifted(tmp_path: Path):
-    """`0001_initial` must be exactly what `models.py` describes. Forever.
+    """The database at head must be exactly what `models.py` describes.
 
     **The test that catches drift before it becomes a problem**: eighteen revisions
     of drift — eighteen `server_default`s the models never declared, five
     foreign keys whose `ON DELETE` disagreed outright — and nothing noticed,
     because nothing looked. It also replaces `verify_squash.py`, which compared
     against a chain that no longer exists; the guarantee never needed a chain,
-    only the models and the one migration agreeing.
+    only the models and the migrations agreeing.
 
-    A failure means the migration was hand-edited or `models.py` changed without
-    one. Either way the fix is a migration, never an edit to `0001` —
-    decisions.md #20.
+    A failure means a revision was hand-edited or `models.py` changed without
+    one. Either way the fix is a new revision, never an edit to one that has
+    shipped — decisions.md #20.
     """
     from alembic.autogenerate import compare_metadata
     from alembic.migration import MigrationContext
@@ -130,9 +130,9 @@ def test_the_models_and_the_migration_have_not_drifted(tmp_path: Path):
     engine.dispose()
 
     assert not differences, (
-        "the models and 0001_initial disagree:\n  "
+        "the models and the migrations at head disagree:\n  "
         + "\n  ".join(repr(d) for d in differences)
-        + "\n\nAdd a migration — do not edit 0001_initial by hand."
+        + "\n\nAdd a revision; do not edit one that has shipped."
     )
 
 

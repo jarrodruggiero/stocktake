@@ -19,7 +19,8 @@ and what will the ATO want to know in July.
 app asks a public service what `ALPHA.AX` closed at, and nothing else. No
 quantities, no balances, no identifiers, no telemetry, no update check.
 Dividend statement PDFs are parsed locally: no cloud OCR, no LLM, no upload.
-Turn the price feed off and it makes no outbound requests at all.
+Turn the price feed off and it makes no outbound requests at all, apart
+from signing in through a single sign-on provider, if you set one up.
 
 **It knows about Australian tax.** Financial years, FIFO capital gains with
 per-parcel detail, the CGT discount, franking credits, and exports shaped for

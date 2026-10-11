@@ -4,7 +4,7 @@
 pytest tests/ -q                    # SQLite, ~50s
 pytest tests/ -q --cov              # enforces the coverage gate
 pytest tests/ -m visual             # layout, in a real browser, ~2.5min
-ruff check app appcore tests tools
+ruff check app tests tools
 ```
 
 ## Write the test first

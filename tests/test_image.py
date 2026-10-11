@@ -98,3 +98,11 @@ def test_every_builder_image_a_workflow_uses_is_pinned():
 
     assert len(images) == 5
     assert [ref for ref in images if not re.search(r":[\w.-]+@sha256:[0-9a-f]{64}$", ref)] == []
+
+
+def test_the_image_ships_what_the_migration_commands_need():
+    """docs/reference/cli.md runs `alembic -c alembic.ini` inside the
+    container, and the image had no alembic.ini."""
+    base = _instructions(DOCKERFILE[DOCKERFILE.index(" AS base"):DOCKERFILE.index(" AS test")])
+
+    assert re.search(r"^COPY .*\balembic\.ini\b", base, re.M)

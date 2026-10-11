@@ -47,7 +47,7 @@ Two consequences worth internalising:
 
 | Module | Holds |
 | --- | --- |
-| `brokercsv.py`, `ofx.py`, `importer.py` | Broker exports, OFX, the one-off workbook import. |
+| `brokercsv.py`, `ofx.py` | Broker exports and OFX. |
 | `imports_web.py` | The upload pages themselves. |
 | `statements.py`, `ocr.py`, `pagemap.py` | Dividend statements, including scans. All local. |
 | `docformats.py`, `brokerdesign.py`, `contribute.py` | Formats as data, the click-to-map designer, and turning one into a pull request. |

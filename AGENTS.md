@@ -82,7 +82,7 @@ and `test_a_code_cannot_also_answer_the_2fa_challenge_it_led_to` went red" is.
 
 Run `pytest tests/ -q` **and** the Postgres variant before claiming a change
 works — see `docs/contributing/testing.md` for the command. Run
-`ruff check app appcore tests tools`.
+`ruff check app tests tools`.
 
 If you changed a template or a stylesheet, also run `pytest tests/ -m visual`.
 Those are deselected by default and drive a real browser over every page at
