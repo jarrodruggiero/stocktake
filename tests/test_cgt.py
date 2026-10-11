@@ -713,6 +713,27 @@ def test_a_purchase_with_no_rate_leaves_the_amount_invested_unknown(pf):
     assert (report["total_invested"], report["withheld"]) == (0, ["NOVA"])
 
 
+@freeze_time("2028-07-15")
+@pytest.mark.parametrize("bought, sold, invested, proceeds", [
+    (None, "1.60", Decimal("0"), Decimal("192.00")),
+    ("1.50", None, Decimal("150.00"), Decimal("0")),
+], ids=["rateless-purchase", "rateless-sale"])
+def test_a_year_without_a_cgt_schedule_still_names_a_rateless_trade(pf, bought, sold,
+                                                                     invested, proceeds):
+    """From FY2028 the schedule is refused (decisions.md #26), so it names
+    nobody. Bought and sold inside the year, the holding has no snapshot row
+    either: the year's activity is the only figure the gap reaches."""
+    inst = _usd(pf)
+    add_trade(pf, inst, "2027-08-01", "buy", 10, "10.00", fx_rate=bought)
+    add_trade(pf, inst, "2027-09-01", "sell", 10, "12.00", fx_rate=sold)
+
+    report = fyreport.fy_report(pf, 2028)
+
+    assert report["cgt"].regime_warning and report["snapshot"] == [], "the premise"
+    assert (report["activity"].invested, report["activity"].proceeds) == (invested, proceeds)
+    assert report["withheld"] == ["NOVA"]
+
+
 def test_without_an_fx_book_aud_needs_no_rate_and_a_foreign_row_is_withheld(pf):
     """The direct call, as a test makes it: only the rates on the rows are
     known, and an AUD row needs none (decisions.md #6)."""

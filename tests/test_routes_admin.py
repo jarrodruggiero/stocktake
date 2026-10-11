@@ -594,7 +594,8 @@ def test_a_quote_run_already_going_is_not_waited_for(monkeypatch):
     monkeypatch.setattr(main_mod.pricefeed, "refresh_quotes",
                         lambda s, settings: fetched.append(1) or 0)
     got = []
-    main_mod._quote_lock.acquire()
+    # With a timeout: a run that kept the lock would hang the suite here.
+    assert main_mod._quote_lock.acquire(timeout=2), "the premise: no run is going"
     try:
         worker = threading.Thread(target=lambda: got.append(main_mod._run_quotes()),
                                   daemon=True)
