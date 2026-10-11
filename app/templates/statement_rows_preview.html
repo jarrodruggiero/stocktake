@@ -16,59 +16,84 @@ figure against the document before saving.</p>
 {% if p.problem %}
 <p class="panel error">{{ p.problem }}</p>
 {% endif %}
-<p class="note">One row per fund — check each against the PDF and save the ones you
-want. “Units on statement” should match “units in app”; a mismatch means missing
-trades. Payment date {{ p.payment_date or 'NOT PARSED — set per row' }}.</p>
+{% if not p.payment_date %}
+<p class="panel warn">The payment date wasn't read from this file: enter it on each row.</p>
+{% endif %}
+<p class="note">One row per fund: check each against the PDF. “Units on statement”
+should match “units in app”; a mismatch means missing trades.</p>
 
+{# One form for every fund. Each row was a form of its own that went to its
+   holding when saved, so a five-fund advice took five uploads; and the date
+   was a hidden field, empty when the advice's was not read. #}
+<form action="/imports-exports/statement/rows" method="post">
+<input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+<input type="hidden" name="return" value="{{ return_to }}">
+<input type="hidden" name="filename" value="{{ filename or '' }}">
+<input type="hidden" name="advice_date" value="{{ p.payment_date or '' }}">
+{% if p.used_ocr %}<input type="hidden" name="used_ocr" value="1">{% endif %}
 <div class="tablewrap">
 <table>
-  <thead><tr><th>Fund</th><th class="num">Distribution ($)</th><th class="num">Units allotted</th>
-      <th class="num">DRP price</th><th class="num">Units on statement</th><th class="num">Units in app</th>
-      <th>Carry</th><th></th></tr></thead>
+  <thead><tr><th>Save</th><th>Fund</th><th>Payment date</th><th class="num">Distribution ($)</th>
+      <th class="num">Units allotted</th><th class="num">DRP price</th>
+      <th class="num">Units on statement</th><th class="num">Units in app</th><th>Carry</th></tr></thead>
   <tbody>
     {% for r in p.rows %}
-    <tr class="{{ 'muted' if r.status == 'duplicate' }}">
-      <td>{{ r.ticker }} <span class="badge badge-{{ r.status }}">{{ r.status }}</span></td>
+    {% set i = loop.index0 %}
+    <tr class="{{ 'muted' if r.status != 'new' }}">
+      <td>
+        <input type="hidden" name="row" value="{{ i }}">
+        <input type="hidden" name="fund-{{ i }}" value="{{ r.ticker }}">
+        <input type="hidden" name="amount-{{ i }}" value="{{ r.cash_amount }}">
+        <input type="hidden" name="units-{{ i }}" value="{{ r.drp_units }}">
+        <input type="hidden" name="held-{{ i }}" value="{{ r.units_held }}">
+        <input type="hidden" name="carry-{{ i }}" value="{{ r.carry_note }}">
+        <input type="checkbox" name="save" value="{{ i }}" aria-label="Save {{ r.ticker }}"
+               {% if r.status != 'new' %}disabled{% elif r.ticked %}checked{% endif %}>
+      </td>
+      <td>{{ r.ticker }} <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
+        {% if r.choices %}
+        <select name="ticker-{{ i }}" aria-label="Listing for {{ r.ticker }}">
+          <option value="" {{ 'selected' if not r.listing }} disabled>— select —</option>
+          {% for value, label in r.choices %}<option value="{{ value }}"{{ ' selected' if value == r.listing }}>{{ label }}</option>{% endfor %}
+        </select>
+        {% else %}
+        <input type="hidden" name="ticker-{{ i }}" value="{{ r.ticker }}">
+        {% endif %}
+      </td>
+      <td><input type="date" name="date-{{ i }}" value="{{ r.payment_date }}"
+                 aria-label="Payment date for {{ r.ticker }}"></td>
       <td class="num">{{ r.cash_amount }}</td>
       <td class="num">{{ r.drp_units }}</td>
-      <td class="num">{{ r.drp_price }}</td>
+      {# A price to type where units were allotted: without one the units
+         cannot be booked (decisions.md #100), and there was no box for it. #}
+      <td class="num">{% if r.drp_units not in ('', '0') %}<input name="price-{{ i }}"
+          value="{{ r.drp_price }}" inputmode="decimal" size="8"
+          aria-label="DRP price for {{ r.ticker }}">{% else %}<input type="hidden"
+          name="price-{{ i }}" value="{{ r.drp_price }}">{{ r.drp_price }}{% endif %}</td>
       <td class="num">{{ r.units_held }}</td>
       <td class="num {{ 'down' if r.db_units and r.db_units != r.units_held }}">{{ r.db_units or '—' }}</td>
       <td class="notecell">{{ r.carry_note }}</td>
-      <td>
-        {% if r.status == 'new' %}
-        <form action="/imports-exports/statement/commit" method="post">
-          <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-          {% if r.choices %}
-          <select name="ticker" required aria-label="Listing">
-            <option value="" selected disabled>— select —</option>
-            {% for value, label in r.choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-          </select>
-          {% else %}
-          <input type="hidden" name="ticker" value="{{ r.ticker }}">
-          {% endif %}
-          <input type="hidden" name="payment_date" value="{{ p.payment_date or '' }}">
-          <input type="hidden" name="net_amount" value="{{ r.cash_amount }}">
-          {% if r.drp_units != '0' %}
-          <input type="hidden" name="drp_units" value="{{ r.drp_units }}">
-          <input type="hidden" name="drp_price" value="{{ r.drp_price }}">
-          {% endif %}
-          <input type="hidden" name="note_extra" value="{{ r.carry_note }}">
-          <button type="submit">Save</button>
-        </form>
-        {% endif %}
-      </td>
     </tr>
+    {% if r.problem %}
+    <tr><td colspan="9"><p class="panel error">{{ r.ticker }}: {{ r.problem }}</p></td></tr>
+    {% endif %}
     {% endfor %}
   </tbody>
 </table>
 </div>
+<div class="commitbar">
+  <button type="submit">Save the ticked funds</button>
+  <a href="/imports-exports">Cancel</a>
+</div>
+</form>
 <p class="note">Distributions are saved as the cash amount for the period; allotted
 units become a linked DRP parcel at the statement price (carry-forward balances are
 kept in the note). Rows with 0 allotted are cash-only — the balance stays in the plan.</p>
 
+{% if p.text_sample %}
 <details><summary>Extracted text (first lines)</summary>
 <pre class="note">{{ p.text_sample }}</pre>
 </details>
+{% endif %}
 
 {% endblock %}

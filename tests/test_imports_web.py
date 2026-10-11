@@ -938,6 +938,119 @@ def test_a_combined_advice_previews_as_a_table_of_funds(client, session_factory,
     assert "Units on statement" in page
 
 
+TWO_FUNDS = ("Distribution and Reinvestment Advice\n{date}\n"
+             "Fund Price Held PerSec Tax Amount Brought Allotted Carried\n"
+             "ACME 5.00 10 0.50000000 0.00 5.00 0.00 1 0.00\n"
+             "BETA 2.00 100 0.20000000 0.00 20.00 0.00 0 20.00\n")
+ROWS = "/imports-exports/statement/rows"
+
+
+def _two_funds(client, session_factory, monkeypatch, date="Payment Date: 15 March 2026"):
+    """The preview of a combined advice for ACME, reinvested, and BETA, paid
+    in cash; both held here."""
+    from app import statements
+
+    _holding_acme(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        fac.hold(s, fac.make_instrument(s, "BETA"))
+        s.commit()
+    monkeypatch.setattr(statements, "_pdf_text", lambda data: TWO_FUNDS.format(date=date))
+    return client.post("/imports-exports/statement", headers=HTML,
+                       files={"file": ("advice.pdf", b"%PDF-1.4", "application/pdf")},
+                       data={"_csrf": session_csrf(session_factory)})
+
+
+def _paid(session_factory) -> list:
+    with reading(session_factory) as s:
+        return sorted((d.instrument.ticker, d.date.isoformat(), d.cash_amount,
+                       d.reinvest_trade.quantity if d.reinvest_trade else None)
+                      for d in s.scalars(select(Dividend)))
+
+
+def test_every_fund_on_an_advice_is_saved_from_the_one_upload(client, session_factory,
+                                                              with_acme, monkeypatch):
+    """Each row was a form of its own that went to its holding when saved, so
+    a five-fund advice took five uploads."""
+    preview = _two_funds(client, session_factory, monkeypatch)
+
+    resp = client.post(ROWS, data=as_sent(preview.text, ROWS), headers=HTML,
+                       follow_redirects=False)
+
+    assert resp.status_code == 303
+    assert _paid(session_factory) == [("ACME", "2026-03-15", Decimal("5.00"), 1),
+                                          ("BETA", "2026-03-15", Decimal("20.00"), None)]
+    page = client.get(resp.headers["location"], headers=HTML).text
+    assert "Advice saved: 2 distributions recorded." in page
+
+
+def test_a_refused_row_comes_back_and_saves_without_another_upload(
+        client, session_factory, with_acme, monkeypatch):
+    """No payment date read, and ACME's price missing: the date was a hidden
+    empty field while the page said "set per row", there was no box for the
+    price at all, and either refusal was JSON."""
+    preview = _two_funds(client, session_factory, monkeypatch, date="")
+    sent = {**as_sent(preview.text, ROWS), "price-0": ""}
+    assert sent["date-0"] == sent["date-1"] == ""
+    # Boxes to type in: a date on each row, and a price where units were
+    # allotted. BETA was paid in cash, so it has no price to give.
+    assert re.search(r'<input type="date" name="date-1"', preview.text)
+    assert 'aria-label="DRP price for ACME"' in preview.text
+    assert 'aria-label="DRP price for BETA"' not in preview.text
+
+    refused = client.post(ROWS, data=sent, headers=HTML)
+
+    assert refused.status_code == 400
+    assert "The payment date wasn't read from this file" in refused.text
+    assert "ACME: A payment date is needed." in refused.text
+    assert "BETA: A payment date is needed." in refused.text
+    assert as_sent(refused.text, ROWS) == sent, "everything as it was sent"
+    assert _paid(session_factory) == []
+
+    fixed = {**sent, "date-0": "2026-03-15", "date-1": "2026-03-16"}
+    refused = client.post(ROWS, data=fixed, headers=HTML)
+    assert "ACME: DRP units need their allotment price." in refused.text
+    assert "BETA: " not in refused.text
+
+    saved = client.post(ROWS, data={**fixed, "price-0": "5.00"}, headers=HTML,
+                        follow_redirects=False)
+    assert saved.status_code == 303
+    assert _paid(session_factory) == [("ACME", "2026-03-15", Decimal("5.00"), 1),
+                                          ("BETA", "2026-03-16", Decimal("20.00"), None)]
+
+
+def test_an_unticked_fund_is_left_out(client, session_factory, with_acme, monkeypatch):
+    preview = _two_funds(client, session_factory, monkeypatch)
+    sent = as_sent(preview.text, ROWS)
+    assert sent["save"] == ["0", "1"]
+
+    nothing = client.post(ROWS, data={k: v for k, v in sent.items() if k != "save"},
+                          headers=HTML)
+    client.post(ROWS, data={**sent, "save": ["1"]}, headers=HTML)
+
+    assert nothing.status_code == 400 and "Tick the funds to save." in nothing.text
+    assert _paid(session_factory) == [("BETA", "2026-03-15", Decimal("20.00"), None)]
+
+
+def test_one_distribution_twice_on_an_advice_is_saved_once_or_not_at_all(
+        client, session_factory, with_acme, monkeypatch):
+    """Each row is checked against what is recorded, and two rows saved
+    together are not recorded yet when the second is checked."""
+    preview = _two_funds(client, session_factory, monkeypatch)
+    sent = as_sent(preview.text, ROWS)
+    twice = {**sent, "row": ["0", "1", "2"], "save": ["0", "1", "2"],
+             **{f"{name}-2": sent[f"{name}-0"]
+                for name in ("fund", "ticker", "amount", "units", "price", "held", "carry",
+                             "date")}}
+
+    resp = client.post(ROWS, data=twice, headers=HTML)
+
+    assert resp.status_code == 400
+    assert "ACME: This distribution is on the advice twice." in resp.text
+    assert "wasn't read" not in resp.text, "this advice's date was read"
+    assert _paid(session_factory) == []
+
+
 def test_a_figure_typed_as_spaces_is_left_blank(client, session_factory, with_acme):
     """A space in a box nobody filled in is not a figure, a franked amount,
     or a note."""

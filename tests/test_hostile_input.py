@@ -175,6 +175,10 @@ BY_HAND: dict[str, list[Field]] = {
     "/admin/settings": [Field(o.name, "form") for o in configfile.OPTIONS],
     "/setup/features": [Field("feature", "form")],
     "/imports-exports/csv/{uid}/resolve": [Field("ticker__ALPHA", "form")],
+    # One combined advice row, as its form names the fields.
+    "/imports-exports/statement/rows": [Field(n, "form") for n in (
+        "row", "save", "fund-0", "ticker-0", "amount-0", "units-0", "price-0", "held-0",
+        "carry-0", "date-0", "advice_date", "filename")],
     "/imports-exports/broker/design": [Field(n, "form") for n in (
         "col_date", "col_action", "col_ticker", "col_units", "col_price")],
 }
@@ -475,6 +479,10 @@ def _typed(world: World, route: APIRoute, n: int, made: dict) -> dict:
         values["row"] = [f"trade:{made['trade_id']}"]
     elif path == "/imports-exports/statement/commit":
         values["net_amount"] = f"{10 + n}.00"       # the same dividend twice is refused
+    elif path == "/imports-exports/statement/rows":
+        values.update({"row": "0", "save": "0", "fund-0": "ACME", "ticker-0": "ACME",
+                       "amount-0": f"{10 + n}.00", "units-0": "0", "price-0": "",
+                       "held-0": "10", "carry-0": "", "date-0": WHEN, "advice_date": WHEN})
     elif path == "/charts/preview":
         values.update(values["spec"])
     elif path == "/imports-exports/statement/design/check":

@@ -26,7 +26,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import docformats, ocr, queries
+from . import docformats, money, ocr, queries
 from .models import Dividend, Instrument
 
 
@@ -45,6 +45,11 @@ class StatementRow:
     # A fund held here on more than one exchange: which one the advice means,
     # it does not say, so the row offers each, as (form value, label).
     choices: list[tuple[str, str]] = field(default_factory=list)
+    # Per row, so a date the advice did not give can be typed for each fund.
+    payment_date: str = ""
+    listing: str = ""  # the one of `choices` picked, as TICKER:EXCHANGE
+    ticked: bool = True
+    problem: str = ""  # why saving it was refused
 
 
 @dataclass
@@ -224,46 +229,58 @@ def _rows_from(
     matches = values.get("rows") or []
     if not matches:
         return None
-    from decimal import Decimal
+    rows = []
+    for row_values in matches:
+        brought = row_values["brought_forward"]
+        carried = row_values["carried_forward"]
+        rows.append(StatementRow(
+            ticker=row_values["ticker"],
+            cash_amount=row_values["amount"].replace(",", ""),
+            drp_price=row_values["drp_price"],
+            drp_units=row_values["allotted"],
+            units_held=row_values["units_held"].replace(",", ""),
+            carry_note=f"DRP carry: brought fwd {brought}, carried fwd {carried}",
+            payment_date=payment_date.isoformat() if payment_date else "",
+        ))
+    annotate_rows(session, rows)
+    return rows
 
+
+def annotate_rows(session: Session, rows: list[StatementRow]) -> None:
+    """Each row against this portfolio's holdings: the listings to choose
+    from, the units held here, and whether it is recorded already. Asked
+    again when the rows come back from the form, so they are text."""
     from .models import Trade
 
     own: dict[str, list[Instrument]] = {}
     for inst in own_instruments(session):
         own.setdefault(inst.ticker, []).append(inst)
-    rows = []
-    for row_values in matches:
-        ticker = row_values["ticker"]
-        price = row_values["drp_price"]
-        held = row_values["units_held"]
-        amount = row_values["amount"]
-        brought = row_values["brought_forward"]
-        allotted = row_values["allotted"]
-        carried = row_values["carried_forward"]
-        row = StatementRow(
-            ticker=ticker,
-            cash_amount=amount.replace(",", ""),
-            drp_price=price,
-            drp_units=allotted,
-            units_held=held.replace(",", ""),
-            carry_note=f"DRP carry: brought fwd {brought}, carried fwd {carried}",
-        )
-        listings = own.get(ticker, [])
+    for row in rows:
+        row.status, row.choices, row.db_units = "new", [], None
+        listings = own.get(row.ticker, [])
         if not listings:
             row.status = "unknown-instrument"
-        elif len(listings) > 1:
+            continue
+        if len(listings) > 1:
             row.choices = [_choice(i) for i in listings]
-        else:
-            inst = listings[0]
-            trades = session.scalars(select(Trade).where(Trade.instrument_id == inst.id)).all()
-            units = sum(t.quantity for t in trades if t.type in ("buy", "drp")) - sum(
-                t.quantity for t in trades if t.type == "sell"
-            )
-            row.db_units = f"{units.normalize():f}" if trades else "0"
-            if payment_date and duplicate_of(session, inst, payment_date, Decimal(row.cash_amount)):
-                row.status = "duplicate"
-        rows.append(row)
-    return rows
+            continue
+        inst = listings[0]
+        trades = session.scalars(select(Trade).where(Trade.instrument_id == inst.id)).all()
+        units = sum(t.quantity for t in trades if t.type in ("buy", "drp")) - sum(
+            t.quantity for t in trades if t.type == "sell"
+        )
+        row.db_units = f"{units.normalize():f}" if trades else "0"
+        try:
+            date = dt.date.fromisoformat(row.payment_date)
+            # Read as the save reads it. A figure no column can hold is never
+            # compared with one: Postgres refuses 1E+999999 outright, and one
+            # such row took the whole advice down.
+            amount = money.parse(row.cash_amount.strip().replace(",", "").replace("$", ""),
+                                 Dividend.cash_amount)
+        except ValueError:
+            continue
+        if duplicate_of(session, inst, date, amount):
+            row.status = "duplicate"
 
 
 def parse_statement(data: bytes, session: Session,
