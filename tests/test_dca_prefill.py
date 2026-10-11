@@ -17,6 +17,7 @@ from decimal import Decimal
 
 import pytest
 from freezegun import freeze_time
+from sqlalchemy import select
 
 import factories as fac
 from app import plans
@@ -26,16 +27,18 @@ HTML = {"accept": "text/html"}
 TODAY = "2026-08-08"
 
 
-def _planned(session_factory, *, amount="500", brokerage="9.50", price="142.50"):
+def _planned(session_factory, *, amount="500", brokerage="9.50", price="142.50",
+             currency="AUD"):
     with session_factory() as s:
         bind_to_only_portfolio(s)
-        inst = fac.make_instrument(s, "ALPHA")
+        inst = fac.make_instrument(s, "ALPHA", currency=currency)
         if price is not None:
             fac.add_price(s, inst, "2026-08-07", price)
         from app.models import InvestmentPlan
 
         plan = InvestmentPlan(name="Regular buys", interval_days=28,
-                              amount=Decimal(amount), brokerage=Decimal(brokerage),
+                              amount=Decimal(amount),
+                              brokerage=Decimal(brokerage),
                               start_date=dt.date(2026, 8, 1), active=True)
         s.add(plan)
         s.flush()
@@ -89,7 +92,8 @@ def test_brokerage_comes_off_before_the_division(client, session_factory):
 @pytest.mark.parametrize("kwargs, why", [
     ({"price": None}, "no stored price to divide by"),
     ({"amount": "0"}, "no amount set on the plan"),
-    ({"amount": "5"}, "not enough for even one unit"),
+    ({"amount": "100", "brokerage": "0"}, "not enough for even one unit"),
+    ({"price": "0"}, "a close of nothing to divide by"),
     ({"amount": "10", "brokerage": "10"}, "brokerage swallows the whole buy"),
 ])
 def test_it_declines_rather_than_guessing(client, session_factory, kwargs, why):
@@ -101,6 +105,36 @@ def test_it_declines_rather_than_guessing(client, session_factory, kwargs, why):
     with session_factory() as s:
         bind_to_only_portfolio(s)
         assert plans.prefill(s) is None, f"should have declined: {why}"
+
+
+@freeze_time(TODAY)
+def test_exactly_enough_for_one_unit_buys_one(client, session_factory):
+    make_login(client, session_factory)
+    _planned(session_factory, amount="142.50", brokerage="0")
+
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        assert plans.prefill(s).units == 1
+
+
+@freeze_time(TODAY)
+def test_the_price_is_this_instruments_latest_close(client, session_factory):
+    """Not an older close of it, and not a later one of something else."""
+    make_login(client, session_factory)
+    _planned(session_factory, brokerage="0", currency="USD")    # 142.50 on 7 Aug
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        alpha = s.scalars(select(fac.Instrument).where(fac.Instrument.ticker == "ALPHA")).one()
+        fac.add_price(s, alpha, "2026-08-03", "100.00")          # older
+        fac.add_price(s, fac.make_instrument(s, "OTHER"), "2026-08-08", "1.00")
+        s.commit()
+
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        got = plans.prefill(s)
+
+    assert (got.unit_price, got.price_date, got.units, got.currency) == (
+        Decimal("142.50"), dt.date(2026, 8, 7), 3, "USD")
 
 
 @freeze_time(TODAY)

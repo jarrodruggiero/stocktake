@@ -30,22 +30,15 @@ from .models import (
     Price,
 )
 
-# A plan with no brokerage set is a plan with zero brokerage, not a broken one.
-ZERO = Decimal("0")
-
 
 @dataclass
 class UpcomingBuy:
     ticker: str
     due_date: dt.date
-    entry_id: int | None
-    instrument_id: int | None
+    entry_id: int
+    instrument_id: int
     amount: Decimal | None = None
     exchange: str | None = None
-
-    @property
-    def is_due(self) -> bool:
-        return self.due_date <= clock.today()
 
 
 def active_plan(session: Session) -> InvestmentPlan | None:
@@ -59,20 +52,6 @@ def active_plan(session: Session) -> InvestmentPlan | None:
             )
         )
     ).first()
-
-
-def all_plans(session: Session) -> list[InvestmentPlan]:
-    return list(
-        session.scalars(
-            select(InvestmentPlan)
-            .order_by(InvestmentPlan.id)
-            .options(
-                selectinload(InvestmentPlan.entries).selectinload(
-                    InvestmentPlanEntry.instrument
-                )
-            )
-        ).all()
-    )
 
 
 def suggested_rotation(session: Session) -> list[str]:
@@ -104,17 +83,32 @@ def history(session: Session) -> list[PlannedPurchase]:
     )
 
 
-def _next_position(plan: InvestmentPlan, past: list[PlannedPurchase]) -> int:
-    """Index of the slot to buy next.
+def _next_position(plan: InvestmentPlan | None, past: list[PlannedPurchase],
+                   rotation: list[int] | None = None) -> int:
+    """Index of the slot to buy next, in the plan as it stands or in
+    `rotation`, a draft of instrument ids as it would be saved.
 
     Preferred signal is the last entry actually recorded (its slot + 1). Rows
     imported before `plan_entry_id` existed have none, so fall back to
     counting them — the imported history started at slot 0.
     """
-    size = len(plan.entries)
+    entries = sorted(plan.entries, key=lambda e: e.position) if plan is not None else []
+    if rotation is None:
+        rotation = [e.instrument_id for e in entries]
+    size = len(rotation)
     if not size:
         return 0
-    positions = {e.id: e.position for e in plan.entries}
+    # Where each slot's row sits in `rotation`, placed the way `set_entries`
+    # places it: a row stays with its instrument wherever that moves to, so a
+    # reordered draft's next buy is still the one after the last recorded.
+    unused: dict[int, list[int]] = {}
+    for entry in entries:
+        unused.setdefault(entry.instrument_id, []).append(entry.id)
+    positions: dict[int, int] = {}
+    for position, instrument_id in enumerate(rotation):
+        rows = unused.get(instrument_id)
+        if rows:
+            positions[rows.pop(0)] = position
     for row in reversed(past):
         if row.plan_entry_id in positions:
             return (positions[row.plan_entry_id] + 1) % size
@@ -123,16 +117,15 @@ def _next_position(plan: InvestmentPlan, past: list[PlannedPurchase]) -> int:
 
 def anchor(plan: InvestmentPlan | None, past: list[PlannedPurchase],
            interval_days: int, start_date: dt.date | None,
-           today: dt.date) -> tuple[int, dt.date]:
-    """Where the rotation currently stands: (slot to buy next, date it follows).
+           today: dt.date, rotation: list[int] | None = None) -> tuple[int, dt.date]:
+    """Where the rotation stands: (slot to buy next, date it follows).
 
-    Split out of `schedule` so the live preview can stand on exactly the same
-    two numbers. The rotation itself is NOT an input — a draft rotation is a
-    different length, and `position` is taken modulo that length by the caller,
-    which is what saving would do too (`set_entries` keeps position → id, so a
-    recorded purchase still resolves to the same slot).
+    Split out of `schedule` so the live preview stands on exactly the same two
+    numbers. A draft `rotation` is an input because saving it moves slots with
+    their instruments: carrying the old slot number over to a reordered draft
+    named a different next buy from the one saving produced.
     """
-    position = _next_position(plan, past) if plan is not None else 0
+    position = _next_position(plan, past, rotation)
     if past:
         last_due = past[-1].due_date
     elif start_date:
@@ -163,20 +156,20 @@ def project(tickers: list[str], interval_days: int, *, position: int,
     ]
 
 
-def preview(session: Session, tickers: list[str], interval_days: int,
+def preview(session: Session, rotation: list[tuple[int, str]], interval_days: int,
             start_date: dt.date | None, upcoming: int = 24) -> list[tuple[dt.date, str]]:
-    """What a DRAFT rotation would produce, without saving anything.
+    """What a DRAFT rotation would produce, without saving anything. The draft
+    is (instrument id, how it is shown) per slot.
 
     Reads the existing plan and history only to find where the rotation stands;
     nothing is written, so opening the editor and pulling chips around cannot
     change the schedule people are following.
     """
-    plan = active_plan(session)
     position, last_due = anchor(
-        plan, history(session), interval_days, start_date, clock.today())
-    return project(tickers, interval_days,
-                   position=position % max(len(tickers), 1),
-                   last_due=last_due, upcoming=upcoming)
+        active_plan(session), history(session), interval_days, start_date,
+        clock.today(), rotation=[instrument_id for instrument_id, _ in rotation])
+    return project([shown for _, shown in rotation], interval_days,
+                   position=position, last_due=last_due, upcoming=upcoming)
 
 
 def schedule(session: Session, upcoming: int = 3) -> dict:
@@ -326,11 +319,10 @@ def prefill(session: Session) -> Prefill | None:
     the same idea as a DRP residual, and is worded the same way.
     """
     upcoming = next_buy(session)
-    if upcoming is None or upcoming.instrument_id is None or not upcoming.amount:
+    if upcoming is None or not upcoming.amount:
         return None
 
-    plan = active_plan(session)
-    brokerage = (plan.brokerage if plan and plan.brokerage is not None else ZERO)
+    brokerage = active_plan(session).brokerage      # the plan `upcoming` came from
 
     row = session.execute(
         select(Price.close, Price.date)
@@ -342,11 +334,9 @@ def prefill(session: Session) -> Prefill | None:
         return None
 
     spend = upcoming.amount - brokerage
-    if spend <= 0:
-        return None                     # brokerage swallows the whole buy
     units = int(spend // row.close)
     if units <= 0:
-        return None                     # not enough for one share
+        return None     # not enough for one share, or brokerage swallows the buy
 
     instrument = session.get(Instrument, upcoming.instrument_id)
     return Prefill(
@@ -362,5 +352,5 @@ def prefill(session: Session) -> Prefill | None:
         # amount rarely divides evenly into whole units, and the difference is
         # a fact worth having available rather than a problem to report.
         leftover=spend - (units * row.close),
-        currency=instrument.currency if instrument else "AUD",
+        currency=instrument.currency,
     )

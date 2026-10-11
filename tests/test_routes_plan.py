@@ -18,7 +18,7 @@ from sqlalchemy import select
 
 import factories as fac
 import fixture_portfolio as ref
-from app import chart_templates, tenancy
+from app import chart_templates, plans, tenancy
 from app.models import (
     InvestmentPlan,
     InvestmentPlanEntry,
@@ -305,6 +305,27 @@ def test_skipping_a_buy_records_it_without_a_trade(client, session_factory, hold
 
 
 @freeze_time(TODAY)
+def test_the_preview_of_a_reordered_rotation_agrees_with_saving_it(client, session_factory,
+                                                                   holdings):
+    """Saving keeps a slot's row with its instrument, so after ACME's buy,
+    moving ACME to the end leaves NOVA next. The preview applied the old slot
+    number to the draft instead, and showed ACME."""
+    save_plan(client, session_factory, start_date="2026-07-06")      # ACME, NOVA
+    client.post("/schedule/skip", data={"ticker": "ACME", "due_date": "2026-07-06",
+                                        "_csrf": session_csrf(session_factory)}, headers=HTML)
+
+    preview = client.post("/schedule/preview", headers=HTML, data={
+        "interval_days": "28", "start_date": "", "tickers": "NOVA, ACME",
+        "_csrf": session_csrf(session_factory)}).json()["rows"]
+    save_plan(client, session_factory, start_date="2026-07-06", tickers="NOVA, ACME")
+    with reading(session_factory) as s:
+        saved = plans.next_buy(s)
+
+    assert preview[0] == {"date": "2026-08-03", "ticker": "NOVA"}
+    assert (saved.ticker, saved.due_date.isoformat()) == ("NOVA", "2026-08-03")
+
+
+@freeze_time(TODAY)
 def test_an_overdue_buy_is_on_the_page_to_skip(client, session_factory, holdings):
     """The test above posts the skip straight to the route. From the page it
     could not be done: the overdue buy was left off the list."""
@@ -313,6 +334,7 @@ def test_an_overdue_buy_is_on_the_page_to_skip(client, session_factory, holdings
     page = client.get("/schedule", headers=HTML).text
 
     assert 'name="due_date" value="2026-07-06"' in page
+    assert page.count('<li class="due">') == 1          # marked due, and only it
 
 
 @freeze_time(TODAY)
