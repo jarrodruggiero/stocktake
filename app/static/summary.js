@@ -73,6 +73,9 @@
        portfolio had made 47%. Selecting a range changes the window you are
        looking through, never the number at the right-hand end. */
     var pct = data.gain.slice(start);
+    /* The canvas's text alternative, for the window chosen. */
+    canvas.setAttribute("aria-label", "Gain over time" + (start ? " since " + labels[0] : "") +
+                        ": " + pct[pct.length - 1].toFixed(2) + "% on " + labels[labels.length - 1]);
 
     if (chart) { chart.destroy(); }
     chart = new Chart(canvas.getContext("2d"), {

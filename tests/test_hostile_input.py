@@ -456,7 +456,7 @@ def _typed(world: World, route: APIRoute, n: int, made: dict) -> dict:
         "timezone": "Australia/Sydney", "reporting_currency": "AUD", "jurisdiction": "AU",
         "theme": "auto", "nav_style": "both", "times_in": "market",
         "spec": {"grain": "positions", "x": "ticker", "measures": ["pos_value"], "type": "bar"},
-        "width": "half", "order": [],
+        "width": "half", "order": [], "direction": "later",
         # The importers: the test broker's CSV, and a shipped statement.
         "broker": "testbroker", "text": STATEMENT, "label": "net_amount", "index": "0",
         "mapping": json.dumps({"net_amount": {"after": ["Net Payment"], "type": "money"}}),

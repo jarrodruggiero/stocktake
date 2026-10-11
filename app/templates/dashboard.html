@@ -129,7 +129,10 @@
       {% endfor %}
     </div>
   </header>
-  <div class="plot summaryplot"><canvas id="summarychart"></canvas></div>
+  {# A canvas is nothing to a screen reader: the label says what is drawn and
+     where it ends. summary.js rewrites it for the range chosen. #}
+  <div class="plot summaryplot"><canvas id="summarychart" role="img"
+    aria-label="Gain over time: {{ '%.2f' | format(summary.gain[-1]) }}% on {{ summary.dates[-1] }}"></canvas></div>
 </section>
 <script type="application/json" id="summarydata">{{ summary | tojson }}</script>
 {% endif %}

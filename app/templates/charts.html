@@ -36,6 +36,15 @@ yet. The next price refresh fills it in.</p>
          makes clicking anything a gamble. #}
       <span class="draghandle" title="Drag to move" aria-hidden="true">⠿</span>
       <h2>{{ c.name }}</h2>
+      {# Dragging is mouse-only, so a card also moves by button: by keyboard,
+         by touch, and with scripting off (decisions.md #101). #}
+      <form class="cardmove" method="post" action="/charts/{{ c.id }}/move">
+        <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+        <button type="submit" name="direction" value="earlier" class="secondary small"
+                aria-label="Move {{ c.name }} earlier" {% if loop.first %}disabled{% endif %}>&larr;</button>
+        <button type="submit" name="direction" value="later" class="secondary small"
+                aria-label="Move {{ c.name }} later" {% if loop.last %}disabled{% endif %}>&rarr;</button>
+      </form>
       <a class="editlink" href="/charts/build?edit={{ c.id }}">Edit</a>
     </div>
     {# A table-only chart has nothing to plot: don't reserve canvas height for

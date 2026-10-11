@@ -78,6 +78,7 @@ VIEWER_MAY = {
     # writes nothing of the portfolio's.
     "/charts/order": "their own charts' order", "/charts/preview": "reads",
     "/charts/save": "their own charts", "/charts/{chart_id}/delete": "their own charts",
+    "/charts/{chart_id}/move": "their own charts' order",
 }
 
 SCHEDULED = {"/schedule/complete", "/schedule/skip", "/schedule/delete"}

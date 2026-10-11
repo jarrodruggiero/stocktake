@@ -3902,6 +3902,28 @@ async def charts_order(request: Request):
         return {"ok": True}
 
 
+@app.post("/charts/{chart_id}/move")
+async def chart_move(request: Request, chart_id: RowId, direction: str = Form(...)):
+    """One place earlier or later. Dragging is mouse-only: HTML drag fires for
+    neither a finger nor a keyboard (decisions.md #101), and this is also the
+    way with scripting off. chartgrid.js does the same move in place."""
+    step = {"earlier": -1, "later": 1}.get(direction)
+    if step is None:
+        raise HTTPException(400, "A chart moves earlier or later.")
+    with scoped(request) as (ctx, db):
+        await auth.verify_csrf(request, db)
+        charts = list(db.scalars(select(SavedChart)
+                                 .order_by(SavedChart.position, SavedChart.id)))
+        at = next((i for i, c in enumerate(charts) if c.id == chart_id), None)
+        if at is None:
+            raise HTTPException(404, "no such chart")
+        if 0 <= at + step < len(charts):
+            charts[at], charts[at + step] = charts[at + step], charts[at]
+        for position, chart in enumerate(charts):
+            chart.position = position
+    return _redirect("/charts")
+
+
 # --------------------------------------------------------------------------- #
 # Chart builder
 # --------------------------------------------------------------------------- #

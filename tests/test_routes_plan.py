@@ -14,6 +14,7 @@ import re
 from decimal import Decimal
 
 import pytest
+from formdata import as_sent
 from freezegun import freeze_time
 from sqlalchemy import select
 
@@ -572,6 +573,75 @@ def test_dragging_charts_into_a_new_order_persists_it(client, session_factory):
     with reading(session_factory) as s:
         reordered = [c.id for c in s.scalars(select(SavedChart).order_by(SavedChart.position))]
     assert reordered == list(reversed(ids))
+
+
+def _chart_order(session_factory) -> list[int]:
+    with reading(session_factory) as s:
+        return [c.id for c in s.scalars(select(SavedChart).order_by(SavedChart.position))]
+
+
+def _move_buttons(page: str, chart_id: int) -> dict[str, bool]:
+    """Each of a card's two buttons, and whether it can be pressed."""
+    form = re.search(rf'<form[^>]*action="/charts/{chart_id}/move".*?</form>', page, re.S)
+    assert form, f"no move buttons on chart {chart_id}"
+    tags = re.findall(r"<button([^>]*)>", form.group(0))
+    return {re.search(r'value="(earlier|later)"', tag).group(1): "disabled" not in tag
+            for tag in tags}
+
+
+@freeze_time(ref.TODAY)
+def test_a_chart_moves_a_place_without_being_dragged(client, session_factory):
+    """Dragging was the only way, and HTML drag fires for neither a finger
+    nor a keyboard (decisions.md #101). Each card has buttons, in a form
+    that works with scripting off too."""
+    make_login(client, session_factory)
+    page = client.get("/charts", headers=HTML).text          # seeds the defaults
+    ids = _chart_order(session_factory)
+    sent = {**as_sent(page, f"/charts/{ids[1]}/move"), "direction": "earlier"}
+
+    moved = client.post(f"/charts/{ids[1]}/move", data=sent, headers=HTML,
+                        follow_redirects=False)
+
+    assert (moved.status_code, moved.headers["location"]) == (303, "/charts")
+    assert _chart_order(session_factory) == [ids[1], ids[0], *ids[2:]]
+    page = client.get("/charts", headers=HTML).text
+    assert _move_buttons(page, ids[1]) == {"earlier": False, "later": True}
+    assert _move_buttons(page, ids[-1]) == {"earlier": True, "later": False}
+
+
+@freeze_time(ref.TODAY)
+def test_a_chart_at_an_end_stays_there(client, session_factory):
+    make_login(client, session_factory)
+    client.get("/charts", headers=HTML)
+    ids = _chart_order(session_factory)
+    token = session_csrf(session_factory)
+
+    client.post(f"/charts/{ids[0]}/move", data={"_csrf": token, "direction": "earlier"},
+                headers=HTML)
+    client.post(f"/charts/{ids[-1]}/move", data={"_csrf": token, "direction": "later"},
+                headers=HTML)
+    refused = client.post(f"/charts/{ids[0]}/move", data={"_csrf": token, "direction": "up"},
+                          headers=HTML)
+
+    assert _chart_order(session_factory) == ids
+    assert refused.status_code == 400
+
+
+@freeze_time(ref.TODAY)
+def test_the_dashboard_chart_says_what_it_shows(client, session_factory):
+    """A canvas is nothing to a screen reader. The label says what is drawn
+    and where it ends, the figure the Gain tile shows."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        ref.build_reference(s)
+
+    page = client.get("/", headers=HTML).text
+
+    canvas = re.search(r'<canvas id="summarychart"([^>]*)>', page)
+    assert canvas and 'role="img"' in canvas.group(1)
+    assert re.search(r'aria-label="Gain over time: -?[0-9]+\.[0-9]{2}% on 20[0-9]{2}-[0-9]{2}-[0-9]{2}"',
+                     canvas.group(1)), canvas.group(1)
 
 
 def test_a_viewer_builds_deletes_and_arranges_their_own_charts(client, session_factory):
