@@ -5363,11 +5363,19 @@ def _blocking_trades(db, instruments) -> dict[int, dict]:
     ids = [i.id for i in instruments]
     if not ids:
         return {}
-    mine: dict[int, list[Trade]] = {}
+    # A reinvested distribution's units are edited through the distribution,
+    # so its link goes there: the trade's own page refuses it (#91).
+    owners = dict(db.execute(
+        select(Dividend.reinvest_trade_id, Dividend.id).where(
+            Dividend.instrument_id.in_(ids), Dividend.reinvest_trade_id.is_not(None))
+    ).all())
+    mine: dict[int, list[tuple[Trade, str]]] = {}
     for trade in db.scalars(
         select(Trade).where(Trade.instrument_id.in_(ids)).order_by(Trade.date.desc())
     ):
-        mine.setdefault(trade.instrument_id, []).append(trade)
+        edit = (f"/dividend/{owners[trade.id]}/edit" if trade.id in owners
+                else f"/trade/{trade.id}/edit")
+        mine.setdefault(trade.instrument_id, []).append((trade, f"{edit}?return=/holdings"))
     dividends = dict(db.execute(
         select(Dividend.instrument_id, func.count())
         .where(Dividend.instrument_id.in_(ids)).group_by(Dividend.instrument_id)

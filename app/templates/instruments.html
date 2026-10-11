@@ -113,8 +113,8 @@
             <p class="sub">Remove is unavailable while anything is recorded
             against {{ i.ticker }}. Delete these first:</p>
             <ul>
-              {% for tr in block.mine[:8] %}
-              <li><a href="/trade/{{ tr.id }}/edit?return=/holdings">{{ tr.date }} —
+              {% for tr, edit in block.mine[:8] %}
+              <li><a href="{{ edit }}">{{ tr.date }} —
                 {{ tr.type }} {{ tr.quantity | qty }}</a></li>
               {% endfor %}
             </ul>

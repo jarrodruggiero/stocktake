@@ -103,6 +103,30 @@ def test_an_instrument_with_trades_shows_what_is_blocking_it(client, session_fac
         "the panel does not link to the trade in the way")
 
 
+def test_a_reinvested_distribution_in_the_way_links_to_where_it_is_edited(
+        client, session_factory):
+    """Its units are a trade, but one edited through its distribution so the
+    two stay in step (decisions.md #91). The link went to the trade's own
+    edit page, which refuses it, so the one thing in the way could not be
+    reached from the panel."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        inst = fac.make_instrument(s, "HELD")
+        fac.hold(s, inst)
+        bought = fac.add_trade(s, inst, "2026-01-05", "buy", 10, "5.00")
+        reinvested, dividend = fac.add_drp(s, inst, "2026-02-05", "5.00", 1, "5.00")
+        s.commit()
+        ids = bought.id, reinvested.id, dividend.id
+
+    page = _page(client)
+    links = re.findall(r'href="(/(?:trade|dividend)/\d+/edit\?return=/holdings)"', page)
+
+    assert links == [f"/dividend/{ids[2]}/edit?return=/holdings",
+                     f"/trade/{ids[0]}/edit?return=/holdings"]
+    assert client.get(links[0], headers=HTML).status_code == 200
+
+
 def test_the_blocked_row_offers_no_remove_form(client, session_factory):
     make_login(client, session_factory)
     with session_factory() as s:
