@@ -575,7 +575,53 @@ def test_the_refresh_button_kicks_the_feed(client, session_factory, monkeypatch)
     resp = client.post("/refresh", data={"_csrf": csrf(session_factory)},
                        headers=HTML, follow_redirects=False)
 
-    assert resp.status_code == 303
+    import time
+    waited = 0.0
+    while not ran and waited < 5:          # fire and forget, on the executor
+        time.sleep(0.05)
+        waited += 0.05
+    assert resp.status_code == 303 and ran == [1]
+
+
+def test_a_quote_run_already_going_is_not_waited_for(monkeypatch):
+    """A second request for live prices while one is fetching returns at
+    once rather than queueing behind it."""
+    import threading
+
+    from app import main as main_mod
+
+    fetched = []
+    monkeypatch.setattr(main_mod.pricefeed, "refresh_quotes",
+                        lambda s, settings: fetched.append(1) or 0)
+    got = []
+    main_mod._quote_lock.acquire()
+    try:
+        worker = threading.Thread(target=lambda: got.append(main_mod._run_quotes()),
+                                  daemon=True)
+        worker.start()
+        worker.join(2)
+        assert got == [0] and not worker.is_alive() and fetched == []
+    finally:
+        main_mod._quote_lock.release()
+
+
+def test_the_log_consoles_first_look_starts_at_the_first_line(client, session_factory,
+                                                              monkeypatch):
+    """The page asks for "after" only once it has lines; its first request
+    gets the recent window, not everything after line one."""
+    import collections
+    import logging
+
+    from app import logbuffer
+
+    make_login(client, session_factory)
+    monkeypatch.setattr(logbuffer, "_lines", collections.deque(maxlen=logbuffer.CAPACITY))
+    monkeypatch.setattr(logbuffer, "_next_seq", 0)
+    logging.getLogger("app.test").warning("the first line")
+
+    lines = client.get("/admin/logs.json").json()["lines"]
+
+    assert [(line["seq"], line["message"]) for line in lines][:1] == [(1, "the first line")]
 
 
 def test_a_viewer_cannot_kick_the_feed(client, session_factory):
@@ -613,6 +659,22 @@ def test_every_stored_role_has_a_label_and_a_blurb():
     for role in MEMBER_ROLES:
         assert ROLE_LABELS.get(role), f"{role} has no label"
         assert ROLE_BLURBS.get(role), f"{role} has no description"
+
+
+def test_the_members_page_says_what_each_role_can_do(client, session_factory):
+    """The labels alone don't say what a viewer can't do; the line under the
+    people table does, for each role."""
+    import html
+    import re
+
+    from app.models import MEMBER_ROLES, ROLE_BLURBS, ROLE_LABELS
+
+    make_login(client, session_factory)
+    page = html.unescape(client.get("/members", headers=HTML).text)
+
+    for role in MEMBER_ROLES:
+        said = rf"<strong>{re.escape(ROLE_LABELS[role])}</strong>\s*{re.escape(ROLE_BLURBS[role])}"
+        assert re.search(said, page), role
 
 
 def test_the_two_admin_labels_are_not_the_same_words(client, session_factory):

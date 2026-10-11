@@ -760,18 +760,24 @@ def test_a_closed_position_discounts_only_its_long_held_gain(pf):
 
 
 @freeze_time("2026-07-15")
-def test_a_closed_position_bought_with_no_rate_has_no_gain_to_show(pf):
-    """The sale and the dividend carried their rates; the purchase had none,
-    so every figure built on the cost is blank rather than one-to-one."""
+@pytest.mark.parametrize("bought, sold_at", [
+    ([None], "2.00"),            # the purchase had no rate
+    (["2.00"], None),            # the sale had none
+    (["2.00", None], "2.00"),    # one of two purchases had none
+], ids=["rateless-purchase", "rateless-sale", "one-of-two-purchases"])
+def test_a_closed_position_with_a_rate_missing_has_no_gain_to_show(pf, bought, sold_at):
+    """Every figure built on the gap is blank rather than one-to-one; the
+    dividend, which carried its rate, is still counted."""
     inst = make_instrument(pf, "NOVA", exchange="LSE", currency="GBP", asset_class="share")
-    add_trade(pf, inst, "2023-01-02", "buy", 10, "10.00")
+    for n, rate in enumerate(bought):
+        add_trade(pf, inst, f"2023-01-0{n + 2}", "buy", 10, "10.00", fx_rate=rate)
     add_dividend(pf, inst, "2024-06-01", "5.00", fx_rate="2.00")
-    add_trade(pf, inst, "2025-09-01", "sell", 10, "12.00", fx_rate="2.00")
+    add_trade(pf, inst, "2025-09-01", "sell", 10 * len(bought), "12.00", fx_rate=sold_at)
 
     headers, rows = exports.build(pf, ["closed_positions"])[exports.TITLES["closed_positions"]]
 
     [row] = rows
     assert row[headers.index("Dividends (AUD)")] == Decimal("10.00")
     assert [row[headers.index(h)] for h in (
-        "Outlay incl. brokerage (AUD)", "Gross capital gain (AUD)", "CGT discount (AUD)",
-        "Capital gain after discount (AUD)", "Total return incl. dividends (AUD)")] == [""] * 5
+        "Gross capital gain (AUD)", "CGT discount (AUD)", "Capital gain after discount (AUD)",
+        "Total return incl. dividends (AUD)")] == [""] * 4

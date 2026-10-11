@@ -744,7 +744,10 @@ def test_the_privacy_promise_is_made_where_the_choice_is(client):
 
     assert 'name="price_feed"' in page, "no market-data choice to explain"
     assert "public market data" in page
-    assert "/guides/market-data/" in page
+    # The full address: a bare path would pass with `docs_url` gone, and the
+    # link would then lead to a page Stocktake itself doesn't serve.
+    from app.main import DOCS_URL
+    assert f'href="{DOCS_URL}/guides/market-data/"' in page
 
     guide = (APP_ROOT / "docs" / "guides" / "market-data.md").read_text()
     assert "ticker symbols and nothing else" in guide
