@@ -54,6 +54,7 @@ def test_each_fund_on_a_combined_advice_becomes_a_row(pf, stub_text):
     parsed = statements.parse_statement(b"", pf)
 
     assert [r.ticker for r in parsed.rows] == ["ALPHA", "BETAX"]
+    assert [r.status for r in parsed.rows] == ["new", "new"]   # nothing recorded yet
     assert parsed.payment_date == dt.date(2026, 3, 15)
 
 
@@ -199,12 +200,23 @@ def test_an_instrument_is_matched_by_ticker_before_name(pf, stub_text):
 
 
 def test_an_instrument_is_matched_by_name_when_the_ticker_is_absent(pf, stub_text):
-    fac.hold(pf, fac.make_instrument(pf, "NOVA", name="Nova Group"))
+    """A ticker the text never mentions, so only the name can match: NOVA's
+    name held "NOVA", and the ticker search found it before the name was ever
+    looked at. The name is in mixed case, and the text upper case."""
+    fac.hold(pf, fac.make_instrument(pf, "NVG", name="Nova Group"))
     pf.commit()
-    stub_text("Nova Group distribution advice\nPayment Date: 15 March 2026\n"
+    stub_text("NOVA GROUP distribution advice\nPayment Date: 15 March 2026\n"
               "Net Amount: $10.00\n")
 
-    assert statements.parse_statement(b"", pf).ticker == "NOVA"
+    assert statements.parse_statement(b"", pf).ticker == "NVG"
+
+
+def test_an_instrument_with_no_name_is_passed_over_by_the_name_search(pf, stub_text):
+    fac.hold(pf, fac.make_instrument(pf, "NONAME", name=None))
+    pf.commit()
+    stub_text("A letter about something else entirely.\nNothing useful here.\n")
+
+    assert statements.parse_statement(b"", pf).ticker is None
 
 
 def test_an_unrecognised_statement_degrades_gracefully(pf, stub_text):
@@ -220,6 +232,30 @@ def test_an_unrecognised_statement_degrades_gracefully(pf, stub_text):
     assert parsed.rows is None
     # …but the operator still gets to see what we read.
     assert "A letter about something else" in parsed.text_sample
+
+
+def test_a_template_installed_over_the_generic_one_can_leave_none_that_fits(
+        pf, stub_text, tmp_path):
+    """The generic template claims anything, but an installed one replaces a
+    shipped one of the same name, so with markers of its own nothing may fit.
+    That is a statement read by no template, not an error."""
+    (tmp_path / "generic-au.yaml").write_text(
+        "name: Only what says so\n"
+        "match:\n  any_of:\n    - a phrase no statement here carries\n"
+        "fields:\n  net_amount:\n    after: [net amount]\n    type: money\n")
+    stub_text("A letter about something else entirely.\nNothing useful here.\n")
+
+    parsed = statements.parse_statement(b"", pf, templates_dir=tmp_path)
+
+    assert (parsed.template_key, parsed.net_amount) == (None, None)
+    assert "A letter about something else" in parsed.text_sample
+
+
+def test_a_pdfs_text_layer_is_what_is_read(pf):
+    """The other tests stand in for the PDF reader; this one is the reader."""
+    from test_pagemap import _text_pdf
+
+    assert "Net Payment 104.70" in statements._pdf_text(_text_pdf("Net Payment 104.70"))
 
 
 def test_the_text_sample_is_capped(pf, stub_text):

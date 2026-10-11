@@ -294,6 +294,8 @@ def test_tesseract_is_given_a_timeout(monkeypatch):
     ("   \n \t ", True),
     ("Page 1 of 2", True),
     ("a" * 40, True),
+    ("a" * 59, True),            # the edges of SCANNED_UNDER_CHARS
+    ("a" * 60, False),
     ("ALPHA distribution 104.70 franking 44.87 paid 2026-07-15 holder 12345678", False),
 ])
 def test_the_no_text_layer_test(text, expected):
