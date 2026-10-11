@@ -22,8 +22,12 @@ HEX = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 # dark one. Both are `--panel-solid` from style.css.
 SURFACES = {"light": "#f7f8fc", "dark": "#1b2030"}
 
-# 3:1 is the floor for a graphical object (a chart line, a swatch); text-sized
-# uses of these colours are all bold or large, which is the same floor.
+# The warning floor: 3:1, the floor for a graphical object (a chart line, a
+# swatch). Links and gain cells are 15px text, which needs 4.5:1, but one
+# colour serves both modes and none reaches 4.5:1 on both cards; the best is
+# 3.9:1. So text drawn in a chosen colour falls short in one mode or the
+# other, and this warns only when even the graphical floor is missed
+# (decisions.md #89).
 MIN_CONTRAST = 3.0
 
 # Words on a chosen accent's buttons: the dark ground's own colour, or white.

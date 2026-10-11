@@ -660,7 +660,12 @@ six are the ones carrying meaning rather than structure — the accent, the two
 directions money can go, and the three chart series — so a bad choice is ugly,
 never unusable. One value applies to both light and dark, because a colour
 legible on white rarely is on near-black, so contrast is reported against both
-surfaces and the weaker one shown. Advice, not a veto.
+surfaces and the weaker one shown. Advice, not a veto. The cost, measured: no
+one colour is 4.5:1 against both cards (the best is 3.9:1), so a chosen accent,
+gain or loss colour drawn as body text falls short of the text floor in one
+mode, and the warning holds it to the 3:1 graphical floor instead. Per-mode
+values would lift that.
+
 **90. The in-app log is WARNING and above, in memory, and never written to
 disk.** Error-only says something broke and nothing about what led there; INFO
 is every HTTP request, which buries the line that matters. The band between
