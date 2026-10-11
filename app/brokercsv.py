@@ -359,7 +359,13 @@ def annotate(session: Session, candidates: list[CandidateTrade], imports: Import
     Re-entrant: status and detail are reset first, because the resolve step
     calls this again after a correction and a stale "unknown-instrument" would
     keep refusing a ticker that now resolves.
+
+    A recorded trade answers for one row at most, so a second identical fill
+    on the day is new. Rows with a time take the trade at that time first; a
+    trade typed without one sits at market open, so time is never the only
+    reason a row is new.
     """
+    matching: list[tuple[CandidateTrade, list[Trade]]] = []
     for c in candidates:
         c.status, c.detail = "new", ""
         inst = session.scalars(
@@ -373,18 +379,26 @@ def annotate(session: Session, candidates: list[CandidateTrade], imports: Import
                 else "not in the instrument list; imports.allow_new_instruments is off"
             )
             continue
-        dupe = session.scalars(
+        matching.append((c, list(session.scalars(
             select(Trade).where(
                 Trade.instrument_id == inst.id,
                 Trade.date == c.date,
                 Trade.type == c.type,
                 Trade.quantity == c.quantity,
                 Trade.unit_price == c.unit_price,
-            )
-        ).first()
-        if dupe is not None:
-            c.status = "duplicate"
-            c.detail = f"matches trade #{dupe.id}"
+            ).order_by(Trade.id)
+        ))))
+    claimed: set[int] = set()
+    for same_time in (True, False):
+        for c, trades in matching:
+            if c.status == "duplicate":
+                continue
+            dupe = next((t for t in trades if t.id not in claimed
+                         and (not same_time or t.time == c.time)), None)
+            if dupe is not None:
+                claimed.add(dupe.id)
+                c.status = "duplicate"
+                c.detail = f"matches trade #{dupe.id}"
     _refuse_shortfalls(session, candidates)
 
 
