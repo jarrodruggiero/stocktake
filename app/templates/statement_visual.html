@@ -127,7 +127,7 @@ either. Enter the figures by hand from the imports page.</p>
 <textarea id="doctext-source" hidden>{{ text }}</textarea>
 {# The mapping to start from, so opening a template shows where every field
    currently points rather than a blank slate. #}
-<script type="application/json" id="startmapping">{{ editing_mapping | safe }}</script>
+<script type="application/json" id="startmapping">{{ editing_mapping | tojson }}</script>
 
 <script src="/static/designer.js?v={{ asset_v }}"></script>
 <script src="/static/designer-visual.js?v={{ asset_v }}" defer></script>

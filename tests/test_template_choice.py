@@ -522,3 +522,31 @@ def test_the_editors_way_back_follows_where_you_came_from(client, session_factor
     back = re.search(r'class="backlink" href="([^"]*)">\s*<button[^>]*>\s*&larr;\s*([^<]*?)\s*<',
                      page)
     assert back.groups() == ("/holdings", "Holdings")
+
+
+def test_a_label_cannot_end_the_mapping_script(client, session_factory, store_dir, app_module,
+                                               monkeypatch):
+    """The mapping went into its script element through `json.dumps` and
+    `| safe`, which leaves `</script>` as it is; `tojson` escapes it. This
+    template is put on disk, past the install check, as a file copied in by
+    hand would be."""
+    import json
+
+    from test_routes import make_login, session_csrf
+
+    label = "</script><script>window.ran=1</script>"
+    monkeypatch.setattr(app_module.settings.imports, "templates_dir", str(store_dir / "formats"))
+    folder = app_module.settings.imports.user_dir("statement")
+    folder.mkdir(parents=True)
+    (folder / "crafted.yaml").write_text(
+        "name: Crafted\nfields:\n  net_amount:\n    after:\n      - "
+        + json.dumps(label) + "\n    type: money\n", encoding="utf-8")
+    make_login(client, session_factory)
+    token = _visual_token(client, session_factory, monkeypatch)
+
+    page = client.post("/imports-exports/statement/visual/edit", headers=HTML,
+                       data={"_csrf": session_csrf(session_factory), "token": token,
+                             "template": "crafted"}).text
+
+    assert "<script>window.ran=1</script>" not in page
+    assert _editing(page)[2]["net_amount"]["after"] == [label]
