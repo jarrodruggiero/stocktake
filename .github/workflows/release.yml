@@ -21,9 +21,10 @@ on:
         description: "Existing tag to build (e.g. v1.0.0)"
         required: true
 
+# Read-only, but for the one job that publishes: the tests of a tag install
+# and run code, and held both write scopes while they did.
 permissions:
-  contents: write   # create the Release
-  packages: write   # push the image and the chart to ghcr.io
+  contents: read
 
 jobs:
   # Never publish an image whose tests do not pass, even though CI has usually
@@ -53,10 +54,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
-      - run: uv sync --dev
+      - run: uv sync --dev --locked
       # The same paths CI lints, held in step by `tests/test_workflows.py`:
       # `appcore` stayed here after it became a dependency, and a tag was the
       # first thing to run this workflow and find out.
@@ -73,6 +75,9 @@ jobs:
   publish:
     needs: verify
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the Release
+      packages: write   # push the image and the chart to ghcr.io
     steps:
       # `inputs.tag` is empty on a tag push and names the tag on a manual run.
       # Without it a dispatch would check out the default branch and publish
@@ -80,6 +85,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
 
       # QEMU so the arm64 leg can build on an amd64 runner. Slower than a
       # native builder, but it needs no infrastructure of its own — which is

@@ -246,3 +246,63 @@ def test_the_release_publishes_the_chart_at_the_tags_version(tmp_path):
     # The token on stdin, never in the arguments, where a process list shows it.
     assert "t" not in login and (tmp_path / "stdin").read_text(encoding="utf-8") == "t"
     assert calls.index(login) < calls.index(next(c for c in calls if c[0] == "push"))
+
+
+def _document(workflow: Path) -> dict:
+    return yaml.safe_load(workflow.read_text(encoding="utf-8"))
+
+
+def _writes(permissions) -> list[str]:
+    if isinstance(permissions, str):        # `write-all` or `read-all`
+        return ["everything"] if permissions == "write-all" else []
+    return sorted(scope for scope, level in (permissions or {}).items() if level == "write")
+
+
+def test_only_the_jobs_that_publish_hold_a_write_token():
+    """release.yml gave the whole workflow `contents: write` and `packages:
+    write`, so the job that tests a tag held both while it installed and ran
+    code no lock pins. docs.yml gave `pages: write` and `id-token: write` to the
+    job that installed mkdocs-material at whatever version was newest. A
+    workflow that says nothing gets the repository's default, which can be
+    write, so each one says."""
+    documents = {w.name: _document(w) for w in WORKFLOWS}
+    jobs = {(name, job_name): _writes(job.get("permissions"))
+            for name, document in documents.items()
+            for job_name, job in (document.get("jobs") or {}).items()}
+
+    assert [name for name, document in documents.items() if "permissions" not in document] == []
+    assert {name: _writes(d["permissions"]) for name, d in documents.items()
+            if _writes(d.get("permissions"))} == {}
+    assert {job: scopes for job, scopes in jobs.items() if scopes} == {
+        ("ci.yml", "dev"): ["packages"],
+        ("codeql.yml", "analyze"): ["security-events"],
+        ("docs.yml", "deploy"): ["id-token", "pages"],
+        ("release.yml", "publish"): ["contents", "packages"],
+    }
+
+
+@pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda w: w.name)
+def test_no_checkout_leaves_the_token_behind(workflow: Path):
+    """actions/checkout writes the job's token into .git/config unless told not
+    to, where every later step, and everything those steps install, can read
+    it. Nothing here pushes."""
+    kept = [job for job, step in _steps(workflow)
+            if str(step.get("uses", "")).startswith("actions/checkout@")
+            and (step.get("with") or {}).get("persist-credentials") is not False]
+
+    assert kept == []
+
+
+@pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda w: w.name)
+def test_what_a_workflow_installs_comes_from_the_lock(workflow: Path):
+    """`pip install mkdocs-material` took whatever was newest, in the job whose
+    build Pages published. And `uv sync` alone re-resolves a lock that has
+    fallen behind pyproject.toml, so a job could run versions nobody reviewed.
+    appcore's own suite, run in its own checkout, keeps to appcore's rules."""
+    loose = [(job, line.strip()) for job, step in _steps(workflow)
+             if not step.get("working-directory")
+             for line in str(step.get("run") or "").splitlines()
+             if re.search(r"\bpip install\b", line)
+             or (re.search(r"\buv sync\b", line) and not re.search(r"--(locked|frozen)\b", line))]
+
+    assert loose == []
