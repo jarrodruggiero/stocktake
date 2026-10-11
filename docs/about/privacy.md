@@ -33,7 +33,8 @@ stored per row, and the dashboard says so when a fallback was used.
   database.
 - **Anything at all, if you turn the price feed off.** Set
   `price_feed.enabled: false` and the app makes no outbound requests
-  whatsoever. You keep the app; you enter prices yourself.
+  whatsoever, apart from signing in through a single sign-on provider, if you
+  set one up. You keep the app; you enter prices yourself.
 
 ## No telemetry
 

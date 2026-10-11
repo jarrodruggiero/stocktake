@@ -21,9 +21,10 @@ covers the image push to ghcr.io.
 3.12, 3.13 and 3.14. If one ever has to be dropped, narrow `requires-python` —
 do not quietly stop testing it.
 
-Postgres runs on 3.12 only. The interpreter and the backend are independent
-axes, so the full cross product would be six jobs to learn what four already
-tell us.
+Postgres runs on one interpreter, the one the image ships: the version the
+Dockerfile's base pins, which `tests/test_workflows.py` holds this to. The
+interpreter and the backend are independent axes, so the full cross product
+would be six jobs to learn what four already tell us.
 
 ## Two things that look like decoration and are not
 

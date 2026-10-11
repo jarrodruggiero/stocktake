@@ -142,6 +142,9 @@ WORKDIR /srv/stocktake
 # without them the test stage runs with no markers and no deselection.
 COPY --from=build /srv/stocktake/.venv ./.venv
 COPY pyproject.toml uv.lock ./
+# For `alembic` run by hand, as docs/reference/cli.md shows. The app migrates
+# itself at startup without it.
+COPY alembic.ini ./
 
 # The annotated default config, shipped so the first-run wizard has something
 # to write from. Without it a fresh container has no config.yaml and no way to
@@ -176,6 +179,9 @@ COPY --chown=1000:1000 tests ./tests
 #   docs/, AGENTS.md — the documentation tests: every setting appears in the
 #                      configuration reference, every module on the
 #                      architecture map, every route documented is served.
+#   README.md        — test_docs_match_the_code.py reads it with the docs:
+#                      every path a page lints exists, and no line renders as
+#                      a heading by accident.
 #   mkdocs.yml       — test_doc_links.py: every "More information" link in the
 #                      app resolves to a page that exists AND is in the nav.
 #                      The nav half is the part that needs this file.
@@ -196,7 +202,7 @@ COPY config.yaml ./config.yaml
 COPY deploy ./deploy
 COPY tools ./tools
 COPY docs ./docs
-COPY AGENTS.md ./AGENTS.md
+COPY AGENTS.md README.md ./
 COPY mkdocs.yml ./mkdocs.yml
 COPY .github ./.github
 # This file, because test_pagemap checks the image really does create the

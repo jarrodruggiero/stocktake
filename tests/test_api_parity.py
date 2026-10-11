@@ -15,6 +15,8 @@ to silence a test.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from app import columns, exports, fields
@@ -417,6 +419,18 @@ def test_every_module_appears_on_the_architecture_map():
     )
     missing = [m for m in modules if f"`{m}.py`" not in doc]
     assert not missing, f"modules missing from the architecture map: {missing}"
+
+
+def test_every_module_on_the_architecture_map_exists():
+    """The other direction: the map listed `importer.py`, which never existed,
+    as where the one-off workbook import lived."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    doc = (root / "docs/contributing/architecture.md").read_text(encoding="utf-8")
+    named = sorted(set(re.findall(r"`([\w/]+\.py)`", doc)))
+    missing = [n for n in named if not (root / "app" / n).exists() and not (root / n).exists()]
+    assert not missing, f"the architecture map names modules that do not exist: {missing}"
 
 
 def test_the_decisions_record_is_reachable_from_the_agent_notes():

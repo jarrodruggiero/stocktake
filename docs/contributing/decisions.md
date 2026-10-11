@@ -84,10 +84,10 @@ needs both meanings of "price": what a holding is worth now, and what the day
 closed at. Storing only the first corrupts history — a mid-session snapshot
 recorded as a close, which happened, permanently, to 99 of 359 closes.
 
-**13. …and the daily run resumes from the last SETTLED day.** This is what makes
-#12 safe rather than a relabelled version of the same bug: the run comes back
-for the provisional day and replaces it. Without it, one missed evening leaves a
-snapshot on the books looking like a close for ever.
+**13. …and the daily run resumes from the last SETTLED day.** This is what
+makes #12 safe rather than a relabelled version of the same bug: the run comes
+back for the provisional day and replaces it. Without it, one missed evening
+leaves a snapshot on the books looking like a close for ever.
 
 **14. Crypto never settles, on purpose.** It has no close, so its bar is only
 final at 00:00 UTC and waiting would make the holding always show yesterday.
@@ -121,10 +121,12 @@ start-up reading is what set the request to 128Mi when the real working set was
 calls on a timer belongs in `auth.SLIDING_EXEMPT`, or a tab left open keeps its
 own session alive for ever and the idle timeout is decorative.
 
-**20. `versions/` is a single generated `0001_initial`.** It is generated from
-`models.py` — change the models and regenerate; never hand-edit it. The drift
-test (`test_the_models_and_the_migration_have_not_drifted`) is what makes that
-safe.
+**20. `versions/` starts from one generated `0001_initial`, and every change
+after it is a revision of its own.** `0001` was generated from `models.py` when
+the history was squashed, and a revision is never edited once it has shipped:
+a change to the models gets a new one. The drift test
+(`test_the_models_and_the_migration_have_not_drifted`) migrates to head and
+compares the result with the models, which is what makes that safe.
 
 **21. The API's published/withheld list is the contract.** Every stored column
 is either published with the field carrying it, or withheld with a reason, in
@@ -398,8 +400,9 @@ pass until it did.
 time-weighted return.** "Don't count new investments as a gain" first read as
 TWR, which removes contributions by chaining daily returns — it compounds, and
 on a long dollar-cost-average history it showed 125% where the portfolio had
-made 47%. Arithmetically fine, and not the number anybody means. The line uses
-the same definition as the Gain tile, the FY pages and the exports.
+made 47%. Arithmetically fine, and not the number anybody means. The Gain
+tile, the FY pages and the exports do not all use this definition, so once part
+of a holding has been sold their figures differ from the line's.
 
 **55. An HTTPS-configured instance reached over plain HTTP says so.** This is
 the nastiest failure in the app and it is silent: with `cookie_secure` on, a
@@ -1196,8 +1199,8 @@ an account. Adding a text field means `textfield.fit` at the route and a test
 that asserts nothing was saved: SQLite cannot show the failure, and CI's
 Postgres run is where it would.
 
-**132. Every route is walked with values a form cannot send.** Issues #53 and
-#60 were the same bug in different fields: a value the page's own form could
+**132. Every route is walked with values a form cannot send.** Issues #53
+and #60 were the same bug in different fields: a value the page's own form could
 not produce got past the server. Fixing fields one at a time leaves the next one
 open, so `tests/test_hostile_input.py` takes its routes from the app rather than
 from a list, and checks the database rather than the status code, because

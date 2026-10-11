@@ -9,7 +9,8 @@ identification can be offered later without schema changes. Rules applied:
   * 50% discount for parcels held > 12 months (per parcel, individuals)
   * within a FY, losses offset non-discountable gains first, then discountable,
     and the discount applies to what remains (the taxpayer-favourable order)
-  * no loss carry-forward across FYs yet — flagged in the report when relevant
+  * no loss carry-forward across FYs: a year's net loss stays in that year, and
+    the report does not say so
 """
 
 from __future__ import annotations
