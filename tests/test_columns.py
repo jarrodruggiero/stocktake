@@ -28,7 +28,7 @@ from sqlalchemy import select
 
 import factories as fac
 import fixture_portfolio as ref
-from app import columns, queries
+from app import columns, queries, tenancy
 from app.models import User
 from test_routes import PASSWORD, bind_to_only_portfolio, make_login, session_csrf
 
@@ -565,6 +565,25 @@ def test_the_first_run_state_goes_away_once_something_is_recorded(
 
     assert "Nothing recorded yet" not in page
     assert 'class="tiles"' in page
+
+
+def test_a_new_portfolio_on_a_shared_catalogue_is_still_a_first_run(client, session_factory):
+    """The instruments are a catalogue every portfolio shares (decisions.md
+    #125), and the dashboard counted all of them: once one portfolio had a
+    holding, every portfolio made after it opened on zeros, not this."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        stranger = fac.make_user(s, "stranger@example.test")
+        theirs = fac.make_portfolio(s, "Their portfolio", owner=stranger)
+        s.flush()
+        tenancy.bind(s, theirs.id, stranger.id)
+        fac.add_trade(s, fac.make_instrument(s, "ACME"), "2026-01-05", "buy", 100, "4.00")
+        s.commit()
+
+    page = client.get("/", headers={"accept": "text/html"}).text
+
+    assert "Nothing recorded yet" in page
+    assert 'class="tiles"' not in page
 
 
 def test_selling_everything_is_not_treated_as_a_first_run(client, session_factory):

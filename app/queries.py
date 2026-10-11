@@ -279,9 +279,13 @@ def build_holding(
 
 
 def all_holdings(session: Session) -> list[Holding]:
+    """A holding for each instrument this portfolio has, sold or not. The
+    catalogue is shared (decisions.md #125): built from all of it, another
+    portfolio's instruments cost queries here and read as history."""
     instruments = (
         session.scalars(
             select(Instrument)
+            .where(Instrument.id.in_(portfolio_instrument_ids(session)))
             .options(selectinload(Instrument.trades), selectinload(Instrument.dividends))
             .order_by(Instrument.asset_class, Instrument.ticker)
         )
