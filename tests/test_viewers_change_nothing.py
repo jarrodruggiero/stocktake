@@ -64,9 +64,10 @@ VIEWER_MAY = {
     # key reads; the API's own tests refuse its writes.
     "/keys/new": "reads only, for a viewer", "/keys/{key_id}/revoke": "their own key",
     "/api/v1/trades": "refused in test_api", "/api/v1/dividends": "refused in test_api",
-    # Charts are each person's; reading and arranging their own writes nothing
-    # of the portfolio's.
+    # Charts are each person's; building, arranging and deleting their own
+    # writes nothing of the portfolio's.
     "/charts/order": "their own charts' order", "/charts/preview": "reads",
+    "/charts/save": "their own charts", "/charts/{chart_id}/delete": "their own charts",
 }
 
 SCHEDULED = {"/schedule/complete", "/schedule/skip", "/schedule/delete"}
@@ -152,4 +153,4 @@ def test_every_post_route_is_either_a_write_or_one_a_viewer_may_use():
     stale = sorted(set(VIEWER_MAY) - posts)
     assert not stale, f"VIEWER_MAY names routes that no longer exist: {stale}"
     assert len(WRITES) >= 40, "the sweep is not empty"
-    assert {"/trade/new", "/schedule/complete", "/charts/save"} <= set(WRITES)
+    assert {"/trade/new", "/schedule/complete", "/schedule/save"} <= set(WRITES)

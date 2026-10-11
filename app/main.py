@@ -3899,8 +3899,9 @@ class _ChartIn(BaseModel):
 
 @app.post("/charts/save")
 async def chart_save(request: Request):
+    # No write check: a chart is its owner's, not the portfolio's, so a viewer
+    # keeping a page of their own changes nothing of the portfolio's.
     with scoped(request) as (ctx, db):
-        _require_write(ctx)
         try:
             body = _ChartIn.model_validate(await request.json())
         except ValueError:          # not JSON, or not the builder's shape
@@ -3941,8 +3942,7 @@ async def chart_save(request: Request):
 
 @app.post("/charts/{chart_id}/delete")
 async def chart_delete(request: Request, chart_id: RowId):
-    with scoped(request) as (ctx, db):
-        _require_write(ctx)
+    with scoped(request) as (ctx, db):          # the owner's, as chart_save
         await auth.verify_csrf(request, db)
         chart = db.get(SavedChart, chart_id)
         if chart is None or chart.user_id != ctx.user.id:
