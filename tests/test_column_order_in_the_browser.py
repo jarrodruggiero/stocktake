@@ -110,7 +110,7 @@ def test_dragging_columns_keeps_every_part_of_the_list_in_step(client, session_f
     page = client.get("/", headers=HTML)
     assert page.status_code == 200
     target = tmp_path / "dashboard.html"
-    target.write_text(_standalone(page.text, WALK.replace("SEED", str(seed))))
+    target.write_text(_standalone(page.text, WALK.replace("SEED", str(seed))), encoding="utf-8")
 
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",

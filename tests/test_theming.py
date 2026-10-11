@@ -106,7 +106,7 @@ def test_the_worst_of_the_two_modes_is_what_gets_reported():
 def test_the_documented_defaults_are_the_ones_in_the_stylesheet():
     """The placeholder in each box claims to be the built-in colour. If these
     two lists drift, it claims something false."""
-    css = CSS.read_text()
+    css = CSS.read_text(encoding="utf-8")
     root = css[css.index(":root {"):css.index("/* ── dark surfaces")]
 
     for token, value in theming.DEFAULTS.items():

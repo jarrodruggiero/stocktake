@@ -96,11 +96,11 @@ def _standalone(page: str, driver: str) -> str:
         path = STATIC / match.group(1)
         if match.group(1) == "idle.js" or not path.is_file():
             return ""
-        return "<script>" + path.read_text() + "</script>"
+        return "<script>" + path.read_text(encoding="utf-8") + "</script>"
 
     page = re.sub(r'<script src="/static/([^"?]+)[^"]*"[^>]*></script>', script, page)
     page = re.sub(r'<link rel="stylesheet" href="/static/style\.css[^"]*"[^>]*>',
-                  lambda _m: "<style>" + (STATIC / "style.css").read_text() + "</style>",
+                  lambda _m: "<style>" + (STATIC / "style.css").read_text(encoding="utf-8") + "</style>",
                   page)
     return page.replace("</body>", driver + "</body>")
 
@@ -115,7 +115,7 @@ def _drive(client, session_factory, tmp_path, driver: str, head: str = "") -> di
     page = client.get("/", headers=HTML)
     assert page.status_code == 200
     target = tmp_path / "dashboard.html"
-    target.write_text(_standalone(page.text, driver).replace("<head>", "<head>" + head, 1))
+    target.write_text(_standalone(page.text, driver).replace("<head>", "<head>" + head, 1), encoding="utf-8")
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", "--window-size=1400,1000",
@@ -344,7 +344,7 @@ def _fx_on(client, tmp_path, path: str) -> dict:
     page = client.get(path, headers=HTML)
     assert page.status_code == 200, page.text
     target = tmp_path / "page.html"
-    target.write_text(_standalone(page.text, FX_SHOWN).replace("<head>", "<head>" + NO_PRICES, 1))
+    target.write_text(_standalone(page.text, FX_SHOWN).replace("<head>", "<head>" + NO_PRICES, 1), encoding="utf-8")
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", "--window-size=1400,1000",

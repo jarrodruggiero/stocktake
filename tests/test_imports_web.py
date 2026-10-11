@@ -393,7 +393,7 @@ def test_the_staged_rows_survive_the_round_trip_exactly(client, session_factory,
     make_login(client, session_factory)
     uid = staged_id(upload_csv(client, session_factory))
 
-    staged = json.loads((STAGING / f"{uid}.json").read_text())
+    staged = json.loads((STAGING / f"{uid}.json").read_text(encoding="utf-8"))
 
     assert staged["broker"] == "testbroker"
     assert [row["quantity"] for row in staged["rows"]] == ["100", "50"]
@@ -801,7 +801,7 @@ def test_a_corrected_exchange_finds_the_listing_there(client, session_factory, w
                     **{"ticker__ACMEE__ASX": "ACMEE", "exchange__ACMEE__ASX": " nasdaq "})
 
     assert staged_id(page) == uid
-    staged = json.loads((STAGING / f"{uid}.json").read_text())
+    staged = json.loads((STAGING / f"{uid}.json").read_text(encoding="utf-8"))
     assert {(r["ticker"], r["exchange"]) for r in staged["rows"]} == {("ACMEE", "NASDAQ")}
 
 
@@ -819,7 +819,7 @@ def test_a_correction_without_both_halves_moves_nothing(client, session_factory,
 
     assert resolve_id(page) == uid                     # still to be fixed
     assert "Rechecked against your instruments." in page.text
-    staged = json.loads((STAGING / f"{uid}.json").read_text())
+    staged = json.loads((STAGING / f"{uid}.json").read_text(encoding="utf-8"))
     assert {r["ticker"] for r in staged["rows"]} == {"ACMEE"}
 
 
@@ -841,7 +841,7 @@ def test_only_the_uploader_can_correct_their_upload(client, session_factory, wit
                     **{"ticker__ACMEE__ASX": "ACME", "exchange__ACMEE__ASX": "ASX"})
 
     assert resp.status_code == 403
-    staged = json.loads((STAGING / f"{uid}.json").read_text())
+    staged = json.loads((STAGING / f"{uid}.json").read_text(encoding="utf-8"))
     assert {r["ticker"] for r in staged["rows"]} == {"ACMEE"}
 
 

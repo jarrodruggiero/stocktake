@@ -122,6 +122,20 @@ def test_with_no_start_date_and_nothing_recorded_the_first_buy_is_today(pf):
     assert plans.schedule(pf)["next"][0].due_date == dt.date(2026, 8, 2)
 
 
+@freeze_time("2026-08-02 20:00:00")
+def test_before_ten_in_the_morning_today_is_still_the_portfolios_today(pf):
+    """At 6am on the 3rd in Melbourne it is still the 2nd in UTC. Every other
+    test froze at midnight UTC, 10am in Melbourne, when the two agree, so a
+    UTC date in place of `clock.today()` passed."""
+    make_plan(pf, ["ALPHA"], interval_days=28)       # no start date: the first buy is today
+
+    grid = calendarview.month_grid(pf, 2026, 8)
+
+    assert plans.schedule(pf)["next"][0].due_date == dt.date(2026, 8, 3)
+    assert [d.date for week in grid["weeks"] for d in week if d.is_today] == [
+        dt.date(2026, 8, 3)]
+
+
 @freeze_time(TODAY)
 def test_the_schedule_lists_three_buys_unless_asked_for_more(pf):
     make_plan(pf, ["ALPHA"], interval_days=28, start_date="2026-08-03")

@@ -242,7 +242,7 @@ def test_a_template_installed_over_the_generic_one_can_leave_none_that_fits(
     (tmp_path / "generic-au.yaml").write_text(
         "name: Only what says so\n"
         "match:\n  any_of:\n    - a phrase no statement here carries\n"
-        "fields:\n  net_amount:\n    after: [net amount]\n    type: money\n")
+        "fields:\n  net_amount:\n    after: [net amount]\n    type: money\n", encoding="utf-8")
     stub_text("A letter about something else entirely.\nNothing useful here.\n")
 
     parsed = statements.parse_statement(b"", pf, templates_dir=tmp_path)

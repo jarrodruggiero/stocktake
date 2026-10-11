@@ -44,7 +44,7 @@ def _calls(node: ast.AST) -> set[str]:
 
 
 def test_every_fixture_that_opens_an_engine_disposes_it():
-    tree = ast.parse(CONFTEST.read_text())
+    tree = ast.parse(CONFTEST.read_text(encoding="utf-8"))
 
     leaking = [
         node.name for node in _functions(tree)
@@ -61,7 +61,7 @@ def test_the_scan_finds_the_fixtures_it_is_meant_to_guard():
     """A matcher that found nothing would make the check above vacuously true,
     and this is the only thing standing between a new fixture and a leak that
     shows up on somebody else's machine."""
-    tree = ast.parse(CONFTEST.read_text())
+    tree = ast.parse(CONFTEST.read_text(encoding="utf-8"))
 
     watched = [node.name for node in _functions(tree)
                if _calls(node) & OPENS_AN_ENGINE]

@@ -27,7 +27,7 @@ def config_file(tmp_path, monkeypatch):
 
 
 def test_a_value_the_file_already_has_is_not_asked_for(config_file):
-    config_file.write_text("timezone: Australia/Melbourne\n")
+    config_file.write_text("timezone: Australia/Melbourne\n", encoding="utf-8")
 
     outstanding = configfile.not_yet_provided({"timezone": "Australia/Melbourne"})
 
@@ -35,7 +35,7 @@ def test_a_value_the_file_already_has_is_not_asked_for(config_file):
 
 
 def test_a_value_the_file_has_differently_is_asked_for(config_file):
-    config_file.write_text("timezone: Europe/Dublin\n")
+    config_file.write_text("timezone: Europe/Dublin\n", encoding="utf-8")
 
     outstanding = configfile.not_yet_provided({"timezone": "Australia/Melbourne"})
 
@@ -45,7 +45,7 @@ def test_a_value_the_file_has_differently_is_asked_for(config_file):
 def test_only_the_missing_half_of_a_nested_block_is_asked_for(config_file):
     """The reporter's case: the feed was already on, the hour was not. Being
     told to set both is what made the page read as though nothing was read."""
-    config_file.write_text("price_feed:\n  enabled: true\n")
+    config_file.write_text("price_feed:\n  enabled: true\n", encoding="utf-8")
 
     outstanding = configfile.not_yet_provided(
         {"price_feed": {"enabled": True, "hour": 18}})
@@ -57,7 +57,7 @@ def test_a_booleans_spelling_does_not_make_it_look_different(config_file):
     """YAML gives back `True` where a form gave "true". Both mean the same, and
     a diff that reported them as different would send somebody to change a line
     into itself."""
-    config_file.write_text("price_feed:\n  enabled: true\n")
+    config_file.write_text("price_feed:\n  enabled: true\n", encoding="utf-8")
 
     assert configfile.not_yet_provided({"price_feed": {"enabled": True}}) == {}
 
@@ -68,14 +68,14 @@ def test_a_value_an_environment_variable_supplies_is_not_asked_for(
     """An env var wins at load and survives a restart, so there is nothing to
     write down. Telling somebody to add it would be telling them to duplicate
     a setting that is already winning."""
-    config_file.write_text("")
+    config_file.write_text("", encoding="utf-8")
     monkeypatch.setenv("APP_TIMEZONE", "Australia/Melbourne")
 
     assert configfile.not_yet_provided({"timezone": "Australia/Melbourne"}) == {}
 
 
 def test_an_empty_file_is_asked_for_everything(config_file):
-    config_file.write_text("")
+    config_file.write_text("", encoding="utf-8")
     wanted = {"timezone": "Australia/Melbourne",
               "price_feed": {"enabled": True}}
 
@@ -93,7 +93,7 @@ def test_an_unreadable_file_asks_for_everything_rather_than_guessing(
 ):
     """Unreadable is not "absent". Saying "nothing to change" because we could
     not look would be worse than asking for something already there."""
-    config_file.write_text("timezone: Australia/Melbourne\n")
+    config_file.write_text("timezone: Australia/Melbourne\n", encoding="utf-8")
 
     def refuse():
         raise PermissionError("nope")
@@ -107,7 +107,7 @@ def test_an_unreadable_file_asks_for_everything_rather_than_guessing(
 def test_a_date_compares_by_what_it_reads_as(config_file):
     """`backfill_start` is a date in the draft and a date in YAML; they must
     not look different for being different Python objects."""
-    config_file.write_text("price_feed:\n  backfill_start: 2020-01-01\n")
+    config_file.write_text("price_feed:\n  backfill_start: 2020-01-01\n", encoding="utf-8")
 
     outstanding = configfile.not_yet_provided(
         {"price_feed": {"backfill_start": dt.date(2020, 1, 1)}})
@@ -127,10 +127,10 @@ def test_a_word_yaml_would_read_as_a_boolean_is_quoted(config_file, value):
     application could not start from — a settings page able to stop the next
     boot. Reported as a docs typo in issue #23; it was not one.
     """
-    config_file.write_text("auth:\n  oidc:\n    enabled: true\n")
+    config_file.write_text("auth:\n  oidc:\n    enabled: true\n", encoding="utf-8")
     configfile.save({"auth.oidc.provisioning": value})
 
-    written = config_file.read_text()
+    written = config_file.read_text(encoding="utf-8")
     assert f"provisioning: '{value}'" in written
 
 
@@ -139,10 +139,10 @@ def test_the_written_file_survives_the_loader_that_reads_it(config_file):
     the settings page writes is one the application can boot from."""
     import yaml as pyyaml  # what pydantic-settings uses
 
-    config_file.write_text("auth:\n  oidc:\n    enabled: true\n")
+    config_file.write_text("auth:\n  oidc:\n    enabled: true\n", encoding="utf-8")
     configfile.save({"auth.oidc.provisioning": "off"})
 
-    reloaded = pyyaml.safe_load(config_file.read_text())
+    reloaded = pyyaml.safe_load(config_file.read_text(encoding="utf-8"))
 
     assert reloaded["auth"]["oidc"]["provisioning"] == "off"
 
@@ -169,10 +169,10 @@ def test_any_text_saved_is_the_text_the_app_reads_back(config_file, option, raw)
     import yaml as pyyaml  # what pydantic-settings reads with
 
     value = configfile.coerce(option, raw)
-    config_file.write_text("auth:\n  oidc:\n    enabled: true\n")
+    config_file.write_text("auth:\n  oidc:\n    enabled: true\n", encoding="utf-8")
     configfile.save({option.name: value})
 
-    read = pyyaml.safe_load(config_file.read_text())
+    read = pyyaml.safe_load(config_file.read_text(encoding="utf-8"))
     for key in option.path:
         read = read[key]
     assert read == value
@@ -183,10 +183,10 @@ def test_any_list_saved_is_the_list_the_app_reads_back(config_file, option, item
     import yaml as pyyaml
 
     value = configfile.coerce(option, "\n".join(items))
-    config_file.write_text("auth:\n  oidc:\n    enabled: true\n")
+    config_file.write_text("auth:\n  oidc:\n    enabled: true\n", encoding="utf-8")
     configfile.save({option.name: value})
 
-    read = pyyaml.safe_load(config_file.read_text())
+    read = pyyaml.safe_load(config_file.read_text(encoding="utf-8"))
     for key in option.path:
         read = read[key]
     assert read == value
@@ -195,7 +195,7 @@ def test_any_list_saved_is_the_list_the_app_reads_back(config_file, option, item
 def test_an_ordinary_string_is_left_alone(config_file):
     """Quoting everything would rewrite half the file on every save and lose
     the shape somebody chose."""
-    config_file.write_text("timezone: UTC\n")
+    config_file.write_text("timezone: UTC\n", encoding="utf-8")
     configfile.save({"timezone": "Australia/Melbourne"})
 
-    assert "timezone: Australia/Melbourne" in config_file.read_text()
+    assert "timezone: Australia/Melbourne" in config_file.read_text(encoding="utf-8")

@@ -71,8 +71,8 @@ def test_a_scan_of_a_shipped_sample_still_reads_its_expected_values(name):
     Generated from whatever is in `app/formats/samples/`, so a contributed
     layout gets a scanned-PDF check for free alongside its text one.
     """
-    sample = (SAMPLES / f"{name}.txt").read_text()
-    expected = YAML(typ="safe").load((SAMPLES / f"{name}.expected.yaml").read_text())
+    sample = (SAMPLES / f"{name}.txt").read_text(encoding="utf-8")
+    expected = YAML(typ="safe").load((SAMPLES / f"{name}.expected.yaml").read_text(encoding="utf-8"))
     template = docformats.load_statement_template(STATEMENTS / f"{name}.yaml")
 
     read = statements.extract(scanned_pdf(sample))
@@ -113,7 +113,7 @@ def test_a_pdf_with_a_text_layer_is_not_ocred_even_here(tmp_path):
     buffer = io.BytesIO()
     image.save(buffer, format="PDF")
 
-    long_text = (SAMPLES / "generic-au.txt").read_text()
+    long_text = (SAMPLES / "generic-au.txt").read_text(encoding="utf-8")
     read = statements.extract(buffer.getvalue())
     assert read.used_ocr is True  # this one genuinely has no text layer
 

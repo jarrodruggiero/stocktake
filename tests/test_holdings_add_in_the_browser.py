@@ -67,7 +67,7 @@ def test_changing_the_exchange_looks_the_ticker_up_again(client, session_factory
     page = client.get("/holdings", headers=HTML)
     assert page.status_code == 200
     target = tmp_path / "holdings.html"
-    target.write_text(_standalone(page.text, DRIVER).replace("<head>", "<head>" + BY_EXCHANGE, 1))
+    target.write_text(_standalone(page.text, DRIVER).replace("<head>", "<head>" + BY_EXCHANGE, 1), encoding="utf-8")
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", "--window-size=1400,1000",
@@ -128,7 +128,7 @@ def test_an_answer_that_arrives_late_does_not_overwrite_a_newer_one(
     make_login(client, session_factory)
     page = client.get("/holdings", headers=HTML)
     target = tmp_path / "holdings.html"
-    target.write_text(_standalone(page.text, RACE).replace("<head>", "<head>" + LATE_ASX, 1))
+    target.write_text(_standalone(page.text, RACE).replace("<head>", "<head>" + LATE_ASX, 1), encoding="utf-8")
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", "--window-size=1400,1000",

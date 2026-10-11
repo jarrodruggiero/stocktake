@@ -86,11 +86,11 @@ def _standalone(page: str) -> str:
         path = STATIC / match.group(1)
         if match.group(1) == "idle.js" or not path.is_file():
             return ""
-        return "<script>" + path.read_text() + "</script>"
+        return "<script>" + path.read_text(encoding="utf-8") + "</script>"
 
     page = re.sub(r'<script src="/static/([^"?]+)[^"]*"[^>]*></script>', script, page)
     page = re.sub(r'<link rel="stylesheet" href="/static/style\.css[^"]*"[^>]*>',
-                  lambda _m: "<style>" + (STATIC / "style.css").read_text() + "</style>",
+                  lambda _m: "<style>" + (STATIC / "style.css").read_text(encoding="utf-8") + "</style>",
                   page)
     return page.replace("</body>", MEASURE + "</body>")
 
@@ -107,12 +107,12 @@ def ten_years(client, session_factory, tmp_path):
         s.commit()
     page = client.get("/", headers=HTML)
     assert page.status_code == 200
-    (tmp_path / "page.html").write_text(_standalone(page.text))
+    (tmp_path / "page.html").write_text(_standalone(page.text), encoding="utf-8")
     return tmp_path
 
 
 def _measure(folder: Path, width: int) -> dict:
-    (folder / "wrapper.html").write_text(WRAPPER % ("page.html", width))
+    (folder / "wrapper.html").write_text(WRAPPER % ("page.html", width), encoding="utf-8")
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", f"--window-size={max(width + 80, 620)},960",
@@ -156,7 +156,7 @@ def live(client, session_factory, tmp_path):
         s.commit()
     page = client.get("/", headers=HTML)
     assert "livedot" in page.text, "no Live badge to measure"
-    (tmp_path / "page.html").write_text(_standalone(page.text))
+    (tmp_path / "page.html").write_text(_standalone(page.text), encoding="utf-8")
     return tmp_path
 
 

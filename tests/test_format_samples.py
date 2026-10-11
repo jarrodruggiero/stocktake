@@ -34,7 +34,7 @@ def _samples() -> list[Path]:
 
 def _expected(sample: Path) -> dict:
     return YAML(typ="safe").load(
-        sample.with_suffix("").with_suffix(".expected.yaml").read_text()
+        sample.with_suffix("").with_suffix(".expected.yaml").read_text(encoding="utf-8")
     )
 
 
@@ -75,7 +75,7 @@ def test_a_sample_says_it_is_redacted(sample: Path):
     """A contributor is publishing a financial document's layout to a public
     repository. The header is where they confirm, in writing, that they
     understood that — and it is what a reviewer looks for first."""
-    head = sample.read_text()[:600].upper()
+    head = sample.read_text(encoding="utf-8")[:600].upper()
 
     assert "REDACTED" in head, (
         f"{sample.name} must carry a header stating the values are invented"
@@ -98,7 +98,7 @@ TFN_SHAPED = re.compile(
 def test_a_sample_carries_no_australian_tax_file_number(sample: Path):
     """A TFN published to a repository is the worst thing this could leak, and
     registries do print them on statements."""
-    for found in TFN_SHAPED.findall(sample.read_text()):
+    for found in TFN_SHAPED.findall(sample.read_text(encoding="utf-8")):
         digits = re.sub(r"[ -]", "", found)
         # Obvious placeholders are fine; a real identifier is not all zeroes.
         assert set(digits) == {"0"}, (
@@ -116,7 +116,7 @@ def test_the_template_claims_its_own_sample(sample: Path):
     """If `pick` chooses a different template for this document, the format's
     match rules are wrong — and the failure would be invisible in production,
     because a wrong template still returns *something*."""
-    text = sample.read_text()
+    text = sample.read_text(encoding="utf-8")
 
     chosen = fmt.pick(fmt.load_statement_templates(), text)
 
@@ -127,7 +127,7 @@ def test_the_template_claims_its_own_sample(sample: Path):
 def test_the_template_extracts_what_the_sample_expects(sample: Path):
     """The contract. Whatever the contributor said this layout produces, it
     still produces — on every commit, forever, without the original document."""
-    text = sample.read_text()
+    text = sample.read_text(encoding="utf-8")
     expected = _expected(sample)
     template = fmt.load_statement_template(STATEMENTS / f"{sample.stem}.yaml")
 
@@ -203,7 +203,7 @@ def test_the_shipped_broker_format_reads_its_own_sample(sample: Path):
     expected = _expected(sample)
     broker = sample.stem
     shipped = fmt.load_broker_formats()[broker]
-    result = brokercsv.parse_csv(sample.read_text(), broker,
+    result = brokercsv.parse_csv(sample.read_text(encoding="utf-8"), broker,
                                  BrokerFormat.model_validate(shipped))
 
     assert not result.errors, f"{broker} could not read its own sample: {result.errors}"

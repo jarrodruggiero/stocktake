@@ -63,7 +63,7 @@ def _name(template: Path) -> str:
 def _links_in_templates() -> list[tuple[str, str]]:
     found = []
     for template in sorted(TEMPLATES.rglob("*.html")):
-        for match in LINK.finditer(template.read_text()):
+        for match in LINK.finditer(template.read_text(encoding="utf-8")):
             found.append((_name(template), match.group(1)))
     return found
 
@@ -108,7 +108,7 @@ def test_every_linked_page_is_in_the_nav(where, url_path):
 
 
 def _nav_paths() -> set[str]:
-    nav = yaml.safe_load((ROOT / "mkdocs.yml").read_text().replace("!!python/name:", ""))
+    nav = yaml.safe_load((ROOT / "mkdocs.yml").read_text(encoding="utf-8").replace("!!python/name:", ""))
     found: set[str] = set()
 
     def walk(node):
@@ -135,7 +135,7 @@ def test_the_guard_catches_a_broken_link(tmp_path, monkeypatch):
     fake_templates.mkdir()
     (fake_templates / "bad.html").write_text(
         '<a href="{{ docs_url }}/guides/no-such-page/">More information</a>'
-    )
+    , encoding="utf-8")
     monkeypatch.setattr("test_doc_links.TEMPLATES", fake_templates)
 
     found = _links_in_templates()

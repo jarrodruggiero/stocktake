@@ -763,7 +763,7 @@ def test_a_non_admin_cannot_manage_accounts_or_settings(client, session_factory,
     from app import configfile
 
     conf = tmp_path / "config.yaml"
-    conf.write_text("timezone: Australia/Melbourne\n")
+    conf.write_text("timezone: Australia/Melbourne\n", encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(conf))
     make_login(client, session_factory, admin=False)
     token = csrf(session_factory)
@@ -779,7 +779,7 @@ def test_a_non_admin_cannot_manage_accounts_or_settings(client, session_factory,
 
     assert resp.status_code == 403
     assert _accounts(session_factory) == before
-    assert conf.read_text() == "timezone: Australia/Melbourne\n"
+    assert conf.read_text(encoding="utf-8") == "timezone: Australia/Melbourne\n"
 
 
 def _signs_in(client, email: str, password: str) -> bool:

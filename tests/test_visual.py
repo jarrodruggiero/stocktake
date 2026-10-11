@@ -58,7 +58,7 @@ PAGES = [
     "23-admin-settings",
 ]
 
-PROBE = (ROOT / "tests" / "visual_probe.js").read_text()
+PROBE = (ROOT / "tests" / "visual_probe.js").read_text(encoding="utf-8")
 
 # The page under test goes in an IFRAME of the wanted width, not a window of it.
 # `--window-size=412,900` is silently clamped: headless Chrome will not go below
@@ -106,9 +106,9 @@ def probe(page: Path, width: int) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         instrumented = Path(tmp) / "page.html"
         instrumented.write_text(
-            page.read_text().replace("</body>", f"<script>{PROBE}</script></body>"))
+            page.read_text(encoding="utf-8").replace("</body>", f"<script>{PROBE}</script></body>"), encoding="utf-8")
         wrapper = Path(tmp) / "wrapper.html"
-        wrapper.write_text(WRAPPER % (instrumented.name, width))
+        wrapper.write_text(WRAPPER % (instrumented.name, width), encoding="utf-8")
 
         out = subprocess.run(
             [CHROME, "--headless", "--disable-gpu", "--dump-dom",

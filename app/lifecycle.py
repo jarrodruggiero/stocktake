@@ -43,7 +43,7 @@ def _in_container() -> bool:
     # a container. Either is a good enough signal, and neither is load-bearing:
     # being wrong downgrades the wording, it does not break anything.
     try:
-        return "docker" in Path("/proc/1/cgroup").read_text() or Path(
+        return "docker" in Path("/proc/1/cgroup").read_text(encoding="utf-8") or Path(
             "/run/.containerenv").exists()
     except OSError:
         return False

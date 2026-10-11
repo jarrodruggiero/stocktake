@@ -105,7 +105,7 @@ def test_installed_templates_are_marked_as_installed(tmp_path):
     (tmp_path).mkdir(exist_ok=True)
     (tmp_path / "mine.yaml").write_text(
         "name: Mine\nfields:\n  net_amount:\n    after:\n      - net amount\n"
-        "    type: money\n")
+        "    type: money\n", encoding="utf-8")
 
     templates = docformats.load_statement_templates(tmp_path)
     mine = next(t for t in templates if t.key == "mine")
@@ -121,7 +121,7 @@ def test_a_template_round_trips_into_the_designer_mapping():
     """Editing means loading what is there. The mapping the editor holds is the
     same shape `template_yaml` consumes, so a load-edit-save cycle cannot lose
     a field."""
-    original = (SHIPPED / "generic-au.yaml").read_text()
+    original = (SHIPPED / "generic-au.yaml").read_text(encoding="utf-8")
     template = docformats.parse_statement_template("generic-au", original)
 
     mapping = docformats.mapping_of(template)
@@ -133,7 +133,7 @@ def test_a_template_round_trips_into_the_designer_mapping():
 
 
 def test_a_round_trip_through_yaml_keeps_every_field():
-    original = (SHIPPED / "generic-au.yaml").read_text()
+    original = (SHIPPED / "generic-au.yaml").read_text(encoding="utf-8")
     template = docformats.parse_statement_template("generic-au", original)
 
     rebuilt = docformats.parse_statement_template("generic-au", docformats.template_yaml(
@@ -154,7 +154,7 @@ def test_every_shipped_template_survives_a_round_trip(path):
     """A shipped template you open in the editor and save unchanged must come
     back unchanged. Anything the editor cannot represent would be silently
     dropped by a correction somebody meant to be small."""
-    template = docformats.parse_statement_template(path.stem, path.read_text())
+    template = docformats.parse_statement_template(path.stem, path.read_text(encoding="utf-8"))
 
     rebuilt = docformats.parse_statement_template(path.stem, docformats.template_yaml(
         name=template.name,
@@ -191,7 +191,7 @@ Ordinary units allotted this distribution: 3
 def install(client, factory, tmp_path, app_module, monkeypatch, key, body):
     monkeypatch.setattr(app_module.settings.imports, "templates_dir", str(tmp_path))
     (tmp_path / "statements").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "statements" / f"{key}.yaml").write_text(body)
+    (tmp_path / "statements" / f"{key}.yaml").write_text(body, encoding="utf-8")
 
 
 MINE = """name: My registry
@@ -475,7 +475,7 @@ def test_the_editor_and_the_imports_page_list_installed_templates_first(
     mine = tmp_path / "formats" / "statements"
     mine.mkdir(parents=True)
     (mine / "zz-mine.yaml").write_text(
-        "name: Zz mine\nfields:\n  net_amount:\n    after: [Net amount]\n    type: money\n")
+        "name: Zz mine\nfields:\n  net_amount:\n    after: [Net amount]\n    type: money\n", encoding="utf-8")
     make_login(client, session_factory)
     token = _visual_token(client, session_factory, monkeypatch)
 

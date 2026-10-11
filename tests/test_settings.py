@@ -185,7 +185,7 @@ def test_a_block_with_every_line_commented_out_still_starts(tmp_path, monkeypatc
         "  #   max_attempts: 8\n"
         "price_feed:\n"
         "  # enabled: true\n"
-    )
+    , encoding="utf-8")
     _isolate_database_env(monkeypatch)
 
     class Isolated(PortfolioSettings):
@@ -285,8 +285,8 @@ def test_the_compose_copy_of_the_config_has_not_drifted():
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent
-    shipped = (root / "config.yaml").read_text()
-    copy = (root / "deploy" / "compose" / "config.yaml").read_text()
+    shipped = (root / "config.yaml").read_text(encoding="utf-8")
+    copy = (root / "deploy" / "compose" / "config.yaml").read_text(encoding="utf-8")
     assert copy == shipped, (
         "deploy/compose/config.yaml has drifted from config.yaml — copy the "
         "root file over it rather than editing one of them")
@@ -304,7 +304,7 @@ def test_the_annotated_default_config_ships_for_the_wizard_to_write_from():
 
     # Almost every line is a comment — that is the point of it — but it has to
     # be valid YAML that loads to a mapping or to nothing.
-    parsed = YAML(typ="safe").load(default.read_text())
+    parsed = YAML(typ="safe").load(default.read_text(encoding="utf-8"))
     assert parsed is None or isinstance(parsed, dict)
 
 
@@ -342,7 +342,7 @@ def test_a_section_left_empty_means_its_defaults(path, tmp_path, monkeypatch):
     lines = ["  " * depth + key + ":" for depth, key in enumerate(path)]
     lines.append("  " * len(path) + "# enabled: true")
     config = tmp_path / "config.yaml"
-    config.write_text("\n".join(lines) + "\n")
+    config.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     class Tidied(PortfolioSettings):
         model_config = SettingsConfigDict(yaml_file=str(config))
@@ -374,7 +374,7 @@ def test_an_imports_block_written_down_is_kept(tmp_path, monkeypatch):
     with something in it is not emptied."""
     _isolate_database_env(monkeypatch)
     path = tmp_path / "config.yaml"
-    path.write_text("imports:\n  ocr:\n    enabled: false\n")
+    path.write_text("imports:\n  ocr:\n    enabled: false\n", encoding="utf-8")
 
     class Written(PortfolioSettings):
         model_config = SettingsConfigDict(yaml_file=str(path))
@@ -389,7 +389,7 @@ def test_an_installed_broker_format_the_model_refuses_is_skipped_and_named(tmp_p
 
     (tmp_path / "brokers").mkdir()
     (tmp_path / "brokers" / "bad.yaml").write_text(
-        "kind: mapped\nexchange: ASX\ncurrency: AUSD\ncolumns: {}\n")
+        "kind: mapped\nexchange: ASX\ncurrency: AUSD\ncolumns: {}\n", encoding="utf-8")
     caplog.set_level(logging.WARNING, logger="app.settings")
 
     formats = ImportSettings(templates_dir=str(tmp_path)).brokers_available()

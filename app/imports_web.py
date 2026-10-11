@@ -176,7 +176,7 @@ async def csv_preview(request: Request, file: UploadFile, broker: str = Form(...
                     "rows": [c.as_dict() for c in result.candidates],
                 }
             )
-        )
+        , encoding="utf-8")
     return templates.TemplateResponse(
         request,
         "csv_preview.html",
@@ -221,7 +221,7 @@ async def csv_resolve(request: Request, uid: str):
     staged_path = STAGING / f"{uid}.json"
     if not staged_path.is_file():
         raise HTTPException(404, "that preview has expired — upload the file again")
-    staged = json.loads(staged_path.read_text())
+    staged = json.loads(staged_path.read_text(encoding="utf-8"))
     candidates = [brokercsv.CandidateTrade.from_dict(d) for d in staged["rows"]]
 
     with auth.scoped_session(request) as (ctx, s):
@@ -244,7 +244,7 @@ async def csv_resolve(request: Request, uid: str):
         brokercsv.relabel(candidates, moves)
         brokercsv.annotate(s, candidates, settings.imports)
         staged["rows"] = [c.as_dict() for c in candidates]
-        staged_path.write_text(json.dumps(staged))
+        staged_path.write_text(json.dumps(staged), encoding="utf-8")
 
         return templates.TemplateResponse(
             request,
@@ -276,7 +276,7 @@ async def csv_commit(request: Request, uid: str):
     staged_path = STAGING / f"{uid}.json"
     if not staged_path.exists():
         raise HTTPException(410, "staged upload expired — re-upload the CSV")
-    staged = json.loads(staged_path.read_text())
+    staged = json.loads(staged_path.read_text(encoding="utf-8"))
     candidates = [brokercsv.CandidateTrade.from_dict(d) for d in staged["rows"]]
     with auth.scoped_session(request) as (ctx, s):
         await auth.verify_csrf(request, s)
@@ -581,7 +581,7 @@ async def statement_designer_install(
                                     status_code=303)
         path = _template_path(settings, "statement", slug)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(body)
+        path.write_text(body, encoding="utf-8")
         log.info("installed designed statement template %s by user %d", slug, ctx.user.id)
         return RedirectResponse("/imports-exports?installed=" + quote_plus(slug), status_code=303)
 
@@ -1015,7 +1015,7 @@ def download_format(request: Request, kind: str, slug: str):
         if not path.is_file():
             raise HTTPException(404, "no such template")
         return Response(
-            content=path.read_text(),
+            content=path.read_text(encoding="utf-8"),
             media_type="application/yaml",
             headers={"Content-Disposition":
                      f'attachment; filename="{path.name}"'},

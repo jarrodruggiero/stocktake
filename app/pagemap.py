@@ -223,7 +223,7 @@ def create(settings, *, user_id: int, data: bytes) -> str:
         "touched": time.time(),
         "text": "\n".join(text_parts),
         "pages": meta,
-    }))
+    }), encoding="utf-8")
     return token
 
 
@@ -232,7 +232,7 @@ def _read(settings, token: str) -> tuple[Path, dict] | None:
     if directory is None or not (directory / "session.json").is_file():
         return None
     try:
-        data = json.loads((directory / "session.json").read_text())
+        data = json.loads((directory / "session.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     return directory, data
@@ -260,7 +260,7 @@ def load(settings, token: str, *, user_id: int) -> Session | None:
         return None
 
     data["touched"] = time.time()
-    (directory / "session.json").write_text(json.dumps(data))
+    (directory / "session.json").write_text(json.dumps(data), encoding="utf-8")
     return Session(token=token, user_id=user_id, text=data.get("text", ""),
                    pages=data.get("pages", []))
 
@@ -292,7 +292,7 @@ def sweep(settings) -> int:
         if not directory.is_dir():
             continue
         try:
-            touched = json.loads((directory / "session.json").read_text()).get("touched", 0)
+            touched = json.loads((directory / "session.json").read_text(encoding="utf-8")).get("touched", 0)
         except (OSError, ValueError):
             touched = 0  # unreadable: it is rubbish, and rubbish is swept
         if touched < cutoff:

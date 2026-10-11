@@ -254,9 +254,9 @@ def _broker_csv(units: int = 10) -> str:
 
 
 BROKER_CSV = _broker_csv()
-STATEMENT = (FORMATS / "samples" / "generic-au.txt").read_text()
-STATEMENT_TEMPLATE = (FORMATS / "statements" / "generic-au.yaml").read_text()
-BROKER_TEMPLATE = (FORMATS / "brokers" / "commsec.yaml").read_text()
+STATEMENT = (FORMATS / "samples" / "generic-au.txt").read_text(encoding="utf-8")
+STATEMENT_TEMPLATE = (FORMATS / "statements" / "generic-au.yaml").read_text(encoding="utf-8")
+BROKER_TEMPLATE = (FORMATS / "brokers" / "commsec.yaml").read_text(encoding="utf-8")
 
 FILES = {
     "/imports-exports/csv": ("trades.csv", BROKER_CSV.encode(), "text/csv"),
@@ -382,7 +382,7 @@ def _fresh(world: World, name: str) -> str:
     if name == "slug":
         folder = main_mod.settings.imports.user_dir("statement")
         folder.mkdir(parents=True, exist_ok=True)
-        (folder / f"installed-{n}.yaml").write_text(STATEMENT_TEMPLATE)
+        (folder / f"installed-{n}.yaml").write_text(STATEMENT_TEMPLATE, encoding="utf-8")
         return f"installed-{n}"
     with world.bound() as s:
         acme = s.get(Instrument, world.instrument_id) if world.instrument_id else None
@@ -715,16 +715,16 @@ def sandbox(monkeypatch, tmp_path):
     monkeypatch.setattr(statements, "_pdf_text", lambda data: data.decode("utf-8", "replace"))
     monkeypatch.setattr(lifecycle, "request_stop", lambda reason: None)
     real = Path(main_mod.APP_DIR.parent, "tests", "config.test.yaml")
-    original = real.read_text()
+    original = real.read_text(encoding="utf-8")
     config = tmp_path / "config.yaml"
-    config.write_text(original)
+    config.write_text(original, encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(config))
     monkeypatch.setattr(main_mod.settings.imports, "templates_dir", str(tmp_path / "formats"))
     monkeypatch.setattr(imports_web, "STAGING", tmp_path / "staged")
     yield
     # Before this fixture existed, the settings page wrote straight into the
     # suite's own config. Anything new that writes it would do the same.
-    assert real.read_text() == original, "a route wrote to tests/config.test.yaml"
+    assert real.read_text(encoding="utf-8") == original, "a route wrote to tests/config.test.yaml"
 
 
 class Probe:

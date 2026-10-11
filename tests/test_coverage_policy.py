@@ -40,7 +40,7 @@ def python_files() -> list[Path]:
 
 
 def config() -> dict:
-    return tomllib.loads(PYPROJECT.read_text())
+    return tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
 
 
 # --------------------------------------------------------------------------- #
@@ -83,7 +83,7 @@ def test_every_no_cover_pragma_says_why():
     """
     unjustified: list[str] = []
     for path in python_files():
-        for number, line in enumerate(path.read_text().splitlines(), start=1):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             match = PRAGMA.search(line)
             if not match:
                 continue
@@ -111,7 +111,7 @@ def justifications_in(section: str) -> dict[str, str]:
     found: dict[str, str] = {}
     block: list[str] = []
     inside = False
-    for raw in PYPROJECT.read_text().splitlines():
+    for raw in PYPROJECT.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if line.startswith(f"{section} = ["):
             inside = True
@@ -168,7 +168,7 @@ def test_no_module_disables_coverage_wholesale():
     offenders = [
         str(p.relative_to(APP.parent))
         for p in python_files()
-        if re.search(r"#\s*coverage:\s*off", p.read_text())
+        if re.search(r"#\s*coverage:\s*off", p.read_text(encoding="utf-8"))
     ]
 
     assert not offenders, (

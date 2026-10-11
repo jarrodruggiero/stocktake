@@ -693,7 +693,7 @@ def test_the_pages_builtin_word_list_matches_the_importers():
 
     from app import brokercsv
 
-    js = (Path(__file__).resolve().parent.parent / "app/static/brokerdrag.js").read_text()
+    js = (Path(__file__).resolve().parent.parent / "app/static/brokerdrag.js").read_text(encoding="utf-8")
     block = re.search(r"var BUILTIN = \{(.*?)\};", js, re.S).group(1)
     in_js = dict(re.findall(r'(\w+):\s*"(\w+)"', block))
     assert in_js == brokercsv.BUILTIN_ACTIONS

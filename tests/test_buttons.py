@@ -18,7 +18,7 @@ from test_routes import bind_to_only_portfolio, make_login
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES = ROOT / "app" / "templates"
-CSS = (ROOT / "app" / "static" / "style.css").read_text()
+CSS = (ROOT / "app" / "static" / "style.css").read_text(encoding="utf-8")
 HTML = {"accept": "text/html"}
 DESTROYS = re.compile(r"/(delete|remove|revoke|unlink)\b")
 
@@ -69,7 +69,7 @@ def _forms_that_destroy() -> list[tuple[str, str, str]]:
     nothing is lost, and a red button there would be alarm for nothing."""
     found = []
     for path in sorted(TEMPLATES.glob("*.html")):
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         for match in re.finditer(r"<form\b[^>]*>.*?</form>", text, re.S):
             tag = match.group(0)[:match.group(0).index(">") + 1]
             action = re.search(r'action="([^"]*)"', tag)
@@ -87,7 +87,7 @@ def test_there_are_destructive_forms_to_check():
 
 
 def test_every_button_that_destroys_something_is_a_danger_button():
-    everything = "\n".join(p.read_text() for p in TEMPLATES.glob("*.html"))
+    everything = "\n".join(p.read_text(encoding="utf-8") for p in TEMPLATES.glob("*.html"))
     plain = []
     for name, form_id, markup in _forms_that_destroy():
         buttons = re.findall(r"<button\b[^>]*>", markup)
@@ -103,7 +103,7 @@ def test_every_button_that_destroys_something_is_a_danger_button():
 def test_a_button_is_quiet_or_destructive_not_both():
     """`secondary danger` was a grey button with red text: neither style."""
     both = [(p.name, b) for p in TEMPLATES.glob("*.html")
-            for b in re.findall(r'<button\b[^>]*class="[^"]*"[^>]*>', p.read_text())
+            for b in re.findall(r'<button\b[^>]*class="[^"]*"[^>]*>', p.read_text(encoding="utf-8"))
             if re.search(r'class="[^"]*\bsecondary\b', b)
             and re.search(r'class="[^"]*\bdanger\b', b)]
     assert not both, both

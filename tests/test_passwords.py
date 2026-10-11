@@ -137,7 +137,7 @@ ACCOUNT_PASSWORDS = ["setup_account.html", "invite.html", "_password_form.html",
 
 @pytest.mark.parametrize("template", ACCOUNT_PASSWORDS)
 def test_every_new_password_field_says_10_to_64(template):
-    text = (TEMPLATES / template).read_text()
+    text = (TEMPLATES / template).read_text(encoding="utf-8")
     inputs = re.findall(r'<input type="(?:password|text)" name="(?:password|confirm)"[^>]*>',
                         text, re.S)
     assert inputs, f"no password field in {template}"

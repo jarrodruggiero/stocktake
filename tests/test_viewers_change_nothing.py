@@ -93,7 +93,7 @@ def contained(monkeypatch, tmp_path):
     monkeypatch.setattr(lifecycle, "request_stop", lambda reason: None)
     real = Path(main_mod.APP_DIR.parent, "tests", "config.test.yaml")
     config = tmp_path / "config.yaml"
-    config.write_text(real.read_text())
+    config.write_text(real.read_text(encoding="utf-8"), encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(config))
     monkeypatch.setattr(main_mod.settings.imports, "templates_dir", str(tmp_path / "formats"))
     monkeypatch.setattr(imports_web, "STAGING", tmp_path / "staged")

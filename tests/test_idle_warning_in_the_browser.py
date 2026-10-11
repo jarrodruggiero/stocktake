@@ -88,14 +88,14 @@ def _walk(client, session_factory, tmp_path) -> dict:
 
     def script(match: re.Match) -> str:
         path = STATIC / match.group(1)
-        return "<script>" + path.read_text() + "</script>" if path.is_file() else ""
+        return "<script>" + path.read_text(encoding="utf-8") + "</script>" if path.is_file() else ""
 
     text = re.sub(r'<script src="/static/([^"?]+)[^"]*"[^>]*></script>', script, page.text)
     text = re.sub(r'<link rel="stylesheet" href="/static/style\.css[^"]*"[^>]*>',
-                  lambda _m: "<style>" + (STATIC / "style.css").read_text() + "</style>", text)
+                  lambda _m: "<style>" + (STATIC / "style.css").read_text(encoding="utf-8") + "</style>", text)
     target = tmp_path / "dashboard.html"
     target.write_text(text.replace("<head>", "<head>" + SERVER, 1)
-                      .replace("</body>", WALK + "</body>"))
+                      .replace("</body>", WALK + "</body>"), encoding="utf-8")
     dom = subprocess.run(
         [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
          "--allow-file-access-from-files", "--window-size=1400,1000",
