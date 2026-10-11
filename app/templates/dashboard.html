@@ -31,12 +31,17 @@
          them — pinned by a test after it went missing once. Refresh stays
          while a run is going, busy, rather than vanishing: feedwatch.js
          reloads the page when it finishes. #}
+      {# A viewer is offered nothing the server would refuse them. #}
+      {% if auth.can_write %}
       <form method="post" action="/refresh">
         <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
         <button type="submit" class="secondary"{% if feed.running %} disabled aria-busy="true"{% endif %}>Refresh prices</button>
       </form>
+      {% endif %}
       <a href="/charts"><button type="button" class="secondary">View charts</button></a>
+      {% if auth.can_write %}
       <button type="button" id="opentrade" class="primary">Record trade</button>
+      {% endif %}
     </div>
 
     {# Underneath the buttons and quieter than them: this is status, not an
@@ -136,6 +141,7 @@
    arriving with history. #}
 <section class="firstrun panel">
   <h2>Nothing recorded yet</h2>
+  {% if auth.can_write %}
   <p>Add the shares you own and this page fills in: value, gain, income, and a
   performance line that ignores your contributions.</p>
   <div class="commitbar">
@@ -144,6 +150,7 @@
   </div>
   <p class="sub">Already have a spreadsheet or a broker CSV? Importing is
   quicker than typing, and duplicates are detected.</p>
+  {% endif %}
 </section>
 {% else %}
 
@@ -341,6 +348,7 @@ short by those holdings, not by a rounding.</p>
    `/trade/new` stays a real route and this includes the SAME form, so the URL
    still works, a validation failure still has somewhere to land, and neither
    copy can drift from the other. Nothing here is a second implementation. #}
+{% if auth.can_write %}
 <dialog id="tradedialog">
   <h2>Record a trade</h2>
   {% with in_dialog = True, edit = None, ticker = '', form = {} %}
@@ -352,6 +360,7 @@ short by those holdings, not by a rounding.</p>
 <noscript><a href="/trade/new">Record a trade</a></noscript>
 
 <script src="/static/tradeform.js?v={{ asset_v }}" defer></script>
+{% endif %}
 {% if summary %}
 <script src="/static/vendor/chart.umd.js?v={{ asset_v }}"></script>
 <script src="/static/summary.js?v={{ asset_v }}" defer></script>
