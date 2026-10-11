@@ -194,8 +194,8 @@ The password comes from a Secret you create and **never from values** — values
 end up in `helm get values`, in CI logs and in git.
 
 The app creates its own schema at startup; the database and role need to exist
-first. With Postgres the deployment strategy becomes RollingUpdate, since the
-single-writer constraint no longer applies.
+first. The deployment strategy stays Recreate: an upgrade stops the old pod
+before it starts the new one, for the one-replica reasons above.
 
 ---
 

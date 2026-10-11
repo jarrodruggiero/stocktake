@@ -6,15 +6,14 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    {{- if eq .Values.database.type "sqlite" }}
-    # Recreate, not RollingUpdate, and not negotiable on SQLite. The volume is
-    # ReadWriteOnce so a second pod cannot attach it while the first holds it —
-    # a rolling update deadlocks on Multi-Attach. More importantly SQLite takes
-    # one writer: two pods on one file is corruption, not contention.
+    # Recreate, not RollingUpdate, on either database: one pod at a time. The
+    # import preview, the statement mapper and the price feed each live in the
+    # one process, so overlapping pods lose an import whose preview and commit
+    # reach different pods, run two price feeds, and migrate while the old code
+    # serves. The data volume is ReadWriteOnce, so a rolling update can also
+    # hang on Multi-Attach. And SQLite takes one writer: two pods on one file
+    # is corruption, not contention.
     type: Recreate
-    {{- else }}
-    type: RollingUpdate
-    {{- end }}
   selector:
     matchLabels: {{- include "stocktake.selectorLabels" . | nindent 6 }}
   template:
