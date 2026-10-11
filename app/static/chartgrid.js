@@ -76,6 +76,7 @@
       card.classList.remove("dragging");
       grid.classList.remove("arranging");
       dragging = null;
+      ends();
       save();
     });
 
@@ -101,5 +102,34 @@
     });
 
     card.addEventListener("drop", (e) => e.preventDefault());
+  });
+
+  /* The buttons: a drag's move one place at a time, for a finger or a
+     keyboard (decisions.md #101). Done in place and saved as a drag is; the
+     form they sit in is the way with scripting off. */
+  function ends() {
+    const list = cards();
+    list.forEach((card, i) => {
+      const earlier = card.querySelector('.cardmove [value="earlier"]');
+      const later = card.querySelector('.cardmove [value="later"]');
+      if (earlier) earlier.disabled = i === 0;
+      if (later) later.disabled = i === list.length - 1;
+    });
+  }
+
+  grid.addEventListener("click", (e) => {
+    const button = e.target.closest(".cardmove button");
+    if (!button) return;
+    e.preventDefault();
+    const card = button.closest(".chartcard");
+    const list = cards();
+    const to = list.indexOf(card) + (button.value === "earlier" ? -1 : 1);
+    if (to < 0 || to >= list.length) return;
+    reflow(() => grid.insertBefore(card, button.value === "earlier" ? list[to] : list[to].nextSibling));
+    ends();
+    // A button that has reached the end can no longer take focus; its pair can.
+    const next = button.disabled ? card.querySelector(".cardmove button:not([disabled])") : button;
+    if (next) next.focus();
+    save();
   });
 })();

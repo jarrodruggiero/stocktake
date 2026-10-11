@@ -751,7 +751,9 @@ HTML drag-and-drop does not fire on touch at all, and the layout is checked at
 chip, tapping a chip then a heading, and choosing from the list all do the same
 thing: set a named `<select>` and fire `change`. That is also what makes the
 page work with JavaScript off — the list is what a plain browser gets, and the
-trays reveal themselves only once the script runs.
+trays reveal themselves only once the script runs. The charts page follows
+the same rule: a card moves by its earlier and later buttons as well as by
+drag, in place with the script and through the form without it.
 
 **102. Words the app already understands are shown, not flagged.** `Buy` and
 `Sell` need no mapping, so outlining them beside a genuinely unknown word says
