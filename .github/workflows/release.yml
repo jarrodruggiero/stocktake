@@ -100,25 +100,43 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # `latest` and `X.Y` follow the newest release, not the last one built.
+      # Building an older tag again by hand moved both back to it, and a
+      # `:latest` install then refused to start against the database the newer
+      # release had migrated. Compared as versions, so 0.67.10 is newer than
+      # 0.67.9; a prerelease is never the newest. tests/test_release_version.py
+      # runs this step.
+      - name: Is this the newest release?
+        id: newest
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          tags=$(git ls-remote --tags --refs origin 'v*')
+          releases=$(printf '%s\n' "$tags" | sed 's|.*refs/tags/||' |
+                       grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+          newest=$(printf '%s\n' "$releases" | tail -n 1)
+          newest_in_line=$(printf '%s\n' "$releases" |
+                             awk -F. -v line="${TAG%.*}" '$1 "." $2 == line' | tail -n 1)
+          echo "latest=$([ "$TAG" = "$newest" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "minor=$([ "$TAG" = "$newest_in_line" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
       - name: Derive image tags
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository }}
           # v1.2.3 publishes 1.2.3, 1.2 and latest, so a compose file can
-          # follow a minor line without chasing patches.
-          #
-          # `latest=auto` tags a release `latest` only when it is a semver and
-          # NOT a prerelease — so `v1.0.0-rc1` publishes 1.0.0-rc1 and leaves
-          # `latest` pointing at the last stable one, which is what every deploy
-          # example in this repo pulls.
+          # follow a minor line without chasing patches; 1.2 and latest only
+          # when it is the newest of its line, and of all, as worked out above.
+          # A prerelease publishes its own version alone, and `latest` stays on
+          # the last stable one, which is what every deploy example here pulls.
           flavor: |
-            latest=auto
+            latest=${{ steps.newest.outputs.latest }}
           # `value=` supplies the version on a manual run, where there is no
           # tag ref for the semver patterns to read.
           tags: |
             type=semver,pattern={{version}},value=${{ inputs.tag || github.ref_name }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag || github.ref_name }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag || github.ref_name }},enable=${{ steps.newest.outputs.minor }}
 
       - name: Build and push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -183,6 +201,8 @@ jobs:
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
+          # GitHub would mark any new stable release Latest, an older one too.
+          make_latest: ${{ steps.newest.outputs.latest }}
           generate_release_notes: true
           body: |
             Container image:
