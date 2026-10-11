@@ -12,35 +12,72 @@
 #   tests: docker build --target test -t stocktake-test . \
 #          && docker run --rm stocktake-test
 #
-# Both base images are pinned BY DIGEST, not by tag. `python:3.14-slim` is a
-# moving target — the same tag is a different image next month — and a build
-# that cannot be reproduced cannot be audited after an incident. Bumping these
-# is a deliberate commit, which is the point.
+# Every image is pinned BY DIGEST, with its tag beside it. The digest makes
+# the build reproducible: `python:3.14-slim` is a different image next month,
+# and a build that cannot be reproduced cannot be audited after an incident.
+# The tag is what Dependabot follows. With the digest alone it followed
+# `latest`, the full image built on buildpack-deps with compilers, git and
+# curl: 415 MB compressed against 43 MB, three times, each in a pull request
+# titled with two short digests. tests/test_image.py holds both rules.
 #
-# It must stay a SLIM digest, and that is worth checking when bumping it: this
-# pin was once a full `python` image, which is built on buildpack-deps and
-# carries a 236 MB compressed layer of autoconf, automake and compilers. The
-# comment still said slim, so nothing looked wrong, and every first pull moved
-# 534 MB. Nothing needs that toolchain — every dependency in uv.lock resolves
-# from a wheel, verified by running `uv sync --frozen` on bare slim with no
-# compiler present.
+# Slim also keeps the test stage honest: nothing needs a toolchain, because
+# every dependency in uv.lock resolves from a wheel, and on slim one that
+# started compiling from source fails the build rather than passing quietly.
+# uv, pinned the same way, and on a FROM line of its own: Dependabot reads FROM
+# lines and nothing else, so while uv was copied straight out of its image it
+# was never proposed an update, and stayed at the version of the first commit.
+FROM ghcr.io/astral-sh/uv:0.12.1@sha256:cf4eedcaa81655197f625739489effcbe71b61ceb1506f332c3facae5deceded AS uv
+
+# --------------------------------------------------------------------------- #
+# build — the virtualenv, made where git and uv are. Nothing below ships them.
+# --------------------------------------------------------------------------- #
 # Through Google's mirror of Docker Hub, as CI pulls everything: the same image
 # by digest, without Docker Hub's rate limit on shared CI addresses.
-FROM mirror.gcr.io/library/python@sha256:be8ccd085666c34273c9dc5607c9842f8b2e3116128aae45148ce164c07ce09d AS base
+FROM mirror.gcr.io/library/python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170 AS build
+
+# git, because appcore is a pinned git dependency and uv clones it. The full
+# image had git, which is how a "slim" pin that kept turning full went
+# unnoticed: on slim alone, `uv sync` cannot fetch appcore. Here only.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=uv /uv /usr/local/bin/uv
+
+WORKDIR /srv/stocktake
+# Dependencies come from uv.lock — the single source of truth. The list used to
+# be hand-duplicated here with a "keep in step with pyproject.toml" comment,
+# which is a drift bug waiting to happen: the image would install a different
+# set from the one the tests ran against, and nothing would say so.
+COPY pyproject.toml uv.lock ./
+# --frozen: fail if the lock is out of date with pyproject rather than silently
+# re-resolving, so a forgotten `uv lock` breaks the build instead of shipping
+# unreviewed versions. --no-install-project: only the app's source is copied
+# below, and installing it as a package would need a rebuild on every edit.
+# --no-cache: uv keeps a download cache under ~/.cache/uv and hardlinks out of
+# it. Hardlinks do not survive being committed to an image layer, so the cache
+# ships as a second full copy of every wheel. Nothing in this image ever
+# re-resolves, so the cache has no reader.
+RUN uv sync --frozen --no-dev --no-install-project --no-cache
+
+# The same, with the development dependencies, for the test stage alone.
+FROM build AS build-test
+RUN uv sync --frozen --no-install-project --no-cache
+
+# --------------------------------------------------------------------------- #
+# base — what ships: the interpreter, OCR, the virtualenv and the source.
+# --------------------------------------------------------------------------- #
+FROM mirror.gcr.io/library/python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170 AS base
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
-# uv, also pinned by digest.
-COPY --from=ghcr.io/astral-sh/uv@sha256:cf4eedcaa81655197f625739489effcbe71b61ceb1506f332c3facae5deceded /uv /usr/local/bin/uv
-
-# The unprivileged user is created HERE, before anything large exists, and
-# every layer below is written as it.
+# The unprivileged user the app runs as, which owns only what the app writes:
+# /data, /config and /scratch. The code and the virtualenv stay root's, so the
+# process cannot rewrite itself.
 #
-# It used to be created in the runtime stage, which then ran
-# `chown -R 1000:1000 /srv/stocktake` — and a recursive chown rewrites
-# every file it touches into a new layer. With a 281 MB virtualenv above it,
-# that shipped the virtualenv TWICE: 300 MB to build it and another 297 MB to
-# change its ownership. It is what took the image from 680 MB to 1.04 GB, and
-# it looked like new dependencies rather than a chown.
+# Never a recursive chown over the virtualenv: it rewrites every file it
+# touches into a new layer. With a 281 MB virtualenv that once shipped it
+# TWICE, 300 MB to build and another 297 MB to change its ownership, and it
+# looked like new dependencies rather than a chown.
 #
 # The uid is fixed at 1000 rather than left to the distro because it has to be
 # predictable from outside the container:
@@ -96,44 +133,34 @@ RUN apt-get update \
 # uid the operator picks.
 RUN useradd --uid 1000 --create-home --shell /usr/sbin/nologin stocktake \
     && mkdir -p /srv/stocktake /data /config /scratch \
-    && chown -R 1000:1000 /srv /data /config /scratch \
+    && chown 1000:1000 /data /config \
     && chmod 1777 /scratch
-
-USER 1000:1000
 WORKDIR /srv/stocktake
 
-# Dependencies come from uv.lock — the single source of truth. The list used to
-# be hand-duplicated here with a "keep in step with pyproject.toml" comment,
-# which is a drift bug waiting to happen: the image would install a different
-# set from the one the tests ran against, and nothing would say so.
-COPY --chown=1000:1000 pyproject.toml uv.lock ./
-# --frozen: fail if the lock is out of date with pyproject rather than silently
-# re-resolving, so a forgotten `uv lock` breaks the build instead of shipping
-# unreviewed versions. --no-install-project: only the app's source is copied
-# below, and installing it as a package would need a rebuild on every edit.
-# --no-cache: uv keeps a download cache under ~/.cache/uv and hardlinks out of
-# it. Hardlinks do not survive being committed to an image layer, so the cache
-# ships as a second full copy of every wheel. Nothing in this image ever
-# re-resolves, so the cache has no reader.
-RUN uv sync --frozen --no-dev --no-install-project --no-cache
+# The virtualenv from `build`, at the same path, on the same interpreter, and
+# the files that describe it: pytest's settings live in pyproject.toml, and
+# without them the test stage runs with no markers and no deselection.
+COPY --from=build /srv/stocktake/.venv ./.venv
+COPY pyproject.toml uv.lock ./
 
 # The annotated default config, shipped so the first-run wizard has something
 # to write from. Without it a fresh container has no config.yaml and no way to
 # make one, which is the situation the wizard exists to fix.
-COPY --chown=1000:1000 config.yaml ./config.default.yaml
+COPY config.yaml ./config.default.yaml
 
 # App source last: it changes most often, so everything above stays cached.
 # Migrations live inside app/migrations so they ship with the source.
-COPY --chown=1000:1000 app ./app
-# `appcore` is no longer copied: it is a pinned git dependency, installed into
-# the virtualenv by `uv sync` in the layer above.
+COPY app ./app
 ENV PATH="/srv/stocktake/.venv/bin:$PATH"
 
 # --------------------------------------------------------------------------- #
 # test — the same image plus the suite. Never part of the shipped layers.
 # --------------------------------------------------------------------------- #
 FROM base AS test
-RUN uv sync --frozen --no-install-project --no-cache
+COPY --from=build-test /srv/stocktake/.venv ./.venv
+# The suite's own files are its user's, unlike the app's: the wizard tests save
+# the suite's config.yaml, and a config nobody can write turns those steps off.
+# Nothing in this stage ships.
 COPY --chown=1000:1000 tests ./tests
 # Files the suite READS but the runtime image has no use for. Without them the
 # containerised run is not the same run as the local one, which is the whole
@@ -165,31 +192,37 @@ COPY --chown=1000:1000 tests ./tests
 #                      and was easy to read as a flake. This stage has silently
 #                      stopped being the same run as the local one more than
 #                      once — check here first when the two disagree.
-COPY --chown=1000:1000 config.yaml ./config.yaml
-COPY --chown=1000:1000 deploy ./deploy
-COPY --chown=1000:1000 tools ./tools
-COPY --chown=1000:1000 docs ./docs
-COPY --chown=1000:1000 AGENTS.md ./AGENTS.md
-COPY --chown=1000:1000 mkdocs.yml ./mkdocs.yml
-COPY --chown=1000:1000 .github ./.github
+COPY config.yaml ./config.yaml
+COPY deploy ./deploy
+COPY tools ./tools
+COPY docs ./docs
+COPY AGENTS.md ./AGENTS.md
+COPY mkdocs.yml ./mkdocs.yml
+COPY .github ./.github
 # This file, because test_pagemap checks the image really does create the
 # scratch directory the settings point at.
-COPY --chown=1000:1000 Dockerfile ./Dockerfile
+COPY Dockerfile .dockerignore ./
 # Each test builds its database under pytest's tmp_path, so nothing is mounted.
-CMD ["python", "-m", "pytest", "tests", "-q"]
+# Run as the app's user, against code it cannot write, as it ships; so pytest
+# keeps no cache in the working directory.
+USER 1000:1000
+CMD ["python", "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider"]
 
 # --------------------------------------------------------------------------- #
 # runtime — what gets pushed. Last stage = the default build target.
 # --------------------------------------------------------------------------- #
 FROM base AS runtime
+USER 1000:1000
 
-# Nothing to do here but declare the volume: the user, the ownership and the
-# directories were all settled in `base`, before the virtualenv existed. See
-# the comment there for why that ordering matters — doing it in this stage cost
-# ~297 MB of duplicated layer.
+# The user, the ownership and the directories were all settled in `base`.
 VOLUME ["/data"]
 
 EXPOSE 8000
+# Docker's own view of whether the app answers, for compose and Unraid; on
+# Kubernetes the chart's probes do this. /healthz needs no database, and the
+# image has no curl, so Python asks it.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4)"]
 # config.yaml is mounted from a ConfigMap at /config/config.yaml in-cluster;
 # on compose/Unraid the wizard writes it there itself on first run.
 # Migrations run at startup (appcore.upgrade_to_head) before serving.

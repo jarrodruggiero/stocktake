@@ -117,7 +117,11 @@ spec:
             limits: {cpu: 500m, memory: 512Mi}
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false   # SQLite writes WAL files beside the db
+            # Not read-only: an upload over 1 MB is spooled to /tmp, and the
+            # format check unpacks into a temporary directory. The database is
+            # on the /data volume either way. Mount an emptyDir at /tmp to
+            # turn this on.
+            readOnlyRootFilesystem: false
             capabilities: {drop: [ALL]}
       volumes:
         - name: config
