@@ -25,7 +25,7 @@
 {# Submitted by the Delete button inside the trade form, through `form=`: a
    form cannot hold another form. #}
 <form id="deletetrade" method="post" action="/trade/{{ edit.id }}/delete" hidden
-      onsubmit="return confirm('Delete this {{ edit.type }} of {{ edit.quantity | qty }} {{ inst.ticker }} on {{ edit.date }}?');">
+      data-confirm="Delete this {{ edit.type }} of {{ edit.quantity | qty }} {{ inst.ticker }} on {{ edit.date }}?">
   <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
   {# Back where you came from, carried explicitly — see `trade_delete`. #}
   <input type="hidden" name="return_to" value="{{ return_to }}">

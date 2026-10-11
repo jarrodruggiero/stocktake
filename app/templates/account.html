@@ -246,7 +246,7 @@
   </div>
   {% if sessions | length > 1 %}
   <form method="post" action="/profile/sessions/revoke-others"
-        onsubmit="return confirm('Sign out every other session? You will stay signed in here.');">
+        data-confirm="Sign out every other session? You will stay signed in here.">
     <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
     <button type="submit">Sign out everywhere else</button>
   </form>

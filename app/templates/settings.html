@@ -88,7 +88,7 @@ preferences live on <a href="/profile">your profile</a>.</p>
        button, like the one beside it: `.linkish` is for actions inside a table
        row, and this is a commit bar. #}
     <button type="submit" name="restart" value="1" class="secondary"
-            onclick="return confirm('Save these settings and restart the application?')">
+            data-confirm="Save these settings and restart the application?">
       Save and restart</button>
     <span class="sub">Written to {{ config_path }}, comments and all.</span>
   </div>
@@ -108,7 +108,7 @@ preferences live on <a href="/profile">your profile</a>.</p>
 <form method="post" action="/admin/settings/restart" class="panel">
   <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
   <button type="submit"
-          onclick="return confirm({{ ('Restart the application now?' if supervision.restarts else 'This will STOP the application, and nothing will start it again. Continue?') | tojson }})">
+          data-confirm="{{ 'Restart the application now?' if supervision.restarts else 'This will STOP the application, and nothing will start it again. Continue?' }}">
     Restart now</button>
   <span class="sub">Running under {{ supervision.platform }}.</span>
 </form>

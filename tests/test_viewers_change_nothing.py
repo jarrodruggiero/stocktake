@@ -236,7 +236,6 @@ NO_SESSION_TOKEN = {
     "/api/v1/dividends": "a bearer key, which no browser sends on its own",
     "/oidc/backchannel-logout": "the provider's signature on the token is the "
                                 "authorisation (decisions.md #127)",
-    "/charts/preview": "draws a draft chart and writes nothing",
 }
 PRE_AUTH_TOKEN = {
     "/login/passkey", "/login/passkey/options", "/login/recover", "/invite/{token}/signup",

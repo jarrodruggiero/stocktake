@@ -123,7 +123,7 @@
             <a href="{{ holding_href(i.ticker, i.exchange, return='/holdings') }}">its page</a>.</p>
             {% endif %}
             <form method="post" action="/holdings/{{ i.id }}/delete-trades"
-                  onsubmit="return confirm('Delete every trade and distribution of {{ i.ticker }} in this portfolio?');">
+                  data-confirm="Delete every trade and distribution of {{ i.ticker }} in this portfolio?">
               <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
               <button type="submit" class="danger small">Delete all trades</button>
             </form>

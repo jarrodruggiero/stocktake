@@ -253,7 +253,10 @@
     msg.textContent = "drawing…";
     fetch("/charts/preview", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]').content,
+      },
       body: JSON.stringify(spec),
     })
       .then(async (r) => {

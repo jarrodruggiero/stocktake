@@ -95,8 +95,11 @@ def test_a_chart_preview_is_worked_out_in_a_thread(client, session_factory, app_
     monkeypatch.setattr(app_module.charts_build, "run", _slowly({"series": []}))
     make_login(client, session_factory)
 
+    token = session_csrf(session_factory)
+
     async def preview(http):
-        await http.post("/charts/preview", json={"kind": "line"})
+        await http.post("/charts/preview", json={"kind": "line"},
+                        headers={"x-csrf-token": token})
 
     took, health_took = health_during(app_module.app, preview, cookies=client.cookies)
 

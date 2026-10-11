@@ -4026,6 +4026,10 @@ async def chart_preview(request: Request):
     """
     spec = await request.json()
     with scoped(request) as (ctx, db):
+        # Checked though it writes nothing: SameSite is per site, so a page on
+        # another port of this host could post here, and the body is read as
+        # JSON whatever its type says. Each one runs the whole chart engine.
+        await auth.verify_csrf(request, db)
         try:
             # In a thread, as the charts page runs it: this is the whole
             # engine, asked again every time the builder is dragged.
