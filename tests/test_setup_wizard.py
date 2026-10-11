@@ -168,7 +168,27 @@ def test_a_directory_given_as_the_database_file_is_refused(tmp_path):
     assert "is a directory" in result.detail
 
 
-def test_an_unresolvable_postgres_host_is_explained_not_dumped():
+@pytest.fixture
+def unresolvable(monkeypatch):
+    """What the driver says for a hostname that does not resolve, without the
+    lookup: libpq resolves it in C, where no Python stub reaches, so these
+    tests asked real DNS about no-such-host.invalid. Only that host: on the
+    Postgres run the app's own database connects through the same function."""
+    import psycopg
+
+    real = psycopg.connect
+
+    def refuse(*args, **kwargs):
+        if "no-such-host.invalid" not in repr((args, kwargs)):
+            return real(*args, **kwargs)
+        raise psycopg.OperationalError(
+            'failed to resolve host "no-such-host.invalid": [Errno 8] nodename nor '
+            "servname provided, or not known")
+
+    monkeypatch.setattr(psycopg, "connect", refuse)
+
+
+def test_an_unresolvable_postgres_host_is_explained_not_dumped(unresolvable):
     """The driver says "failed to resolve host 'x': [Errno 8] nodename nor
     servname provided". That is not an error message for somebody typing a
     hostname into a setup wizard for the first time."""
@@ -1189,7 +1209,7 @@ def test_an_invalid_postgres_form_is_reported_without_connecting(
 
 
 def test_a_redrawn_database_form_keeps_what_was_typed_except_the_password(
-        client, unconfigured):
+        client, unconfigured, unresolvable):
     """Losing a password somebody just pasted, on a failed connection test, is
     its own small cruelty — and re-typing it is where the typo comes from."""
     page = client.post("/setup/database/test",

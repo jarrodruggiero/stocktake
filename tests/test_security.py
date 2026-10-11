@@ -16,11 +16,16 @@ import pytest
 from sqlalchemy import select
 
 import factories as fac
+from app import main as main_module
 from app import tenancy
 from app.models import Instrument, exchange_problem, ticker_problem
 from test_routes import bind_to_only_portfolio, make_login, reading, session_csrf
 
 BREAKOUT = "</script><script>alert(1)</script>"
+
+# The REAL refresh, captured at import: `conftest._no_network` replaces
+# `main.refresh_quotes_soon` with a no-op for every test.
+_REAL_REFRESH = main_module.refresh_quotes_soon
 
 
 # --------------------------------------------------------------------------- #
@@ -481,7 +486,7 @@ def test_live_prices_are_fetched_only_while_they_are_on(app_module, monkeypatch,
     monkeypatch.setattr(app_module, "_run_quotes", lambda: ran.set() or 0)
 
     async def sign_in_moment():
-        app_module.refresh_quotes_soon()
+        _REAL_REFRESH()           # conftest replaces the module's with a no-op
         await asyncio.sleep(0)
 
     asyncio.run(sign_in_moment())
