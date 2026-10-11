@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from formdata import as_sent
 
 import factories as fac
 from app.models import Instrument, Portfolio
@@ -73,6 +74,23 @@ def test_a_fee_that_is_not_one_is_refused(owner, session_factory, field, value):
     assert _settings(owner, session_factory, **{field: value}).status_code == 400
     p = _portfolio(session_factory)
     assert getattr(p, field) is None
+
+
+def test_a_refused_setting_comes_back_with_what_was_typed(owner, session_factory):
+    """A fee of "abc" was answered with a line of JSON in place of the page."""
+    page = owner.get("/members", headers=HTML).text
+    sent = {**as_sent(page, "/portfolio/settings"), "name": "Renamed",
+            "reporting_currency": "USD", "jurisdiction": "NZ",
+            "brokerage_flat": "9.50", "foreign_brokerage_percent": "abc"}
+
+    resp = owner.post("/portfolio/settings", data=sent, headers=HTML)
+
+    assert resp.status_code == 400
+    assert ('<p class="panel error">Percentage: &#39;abc&#39; is not a number.</p>'
+            in resp.text)
+    assert as_sent(resp.text, "/portfolio/settings") == sent
+    p = _portfolio(session_factory)
+    assert (p.name, p.brokerage_flat) == ("Test portfolio", None)
 
 
 def test_the_settings_show_what_is_set(owner, session_factory):

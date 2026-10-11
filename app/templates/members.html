@@ -19,13 +19,15 @@ all of them.</p>
   <h2>This portfolio</h2>
   <form class="panel" method="post" action="/portfolio/settings">
     <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-    <label>Name <input name="name" value="{{ auth.active.name if auth.active else '' }}"
+    {# `typed` is a refused submission coming back as it was sent. #}
+    <label>Name <input name="name" value="{{ typed.name if typed else (auth.active.name if auth.active else '') }}"
                        maxlength="80" required></label>
     <div class="row">
       <label>Reporting currency
         <select name="reporting_currency">
+          {% set chosen = typed.reporting_currency if typed else (portfolio.reporting_currency if portfolio else '') %}
           {% for code in currencies %}
-          <option value="{{ code }}" {% if portfolio and portfolio.reporting_currency == code %}selected{% endif %}>{{ code }}</option>
+          <option value="{{ code }}" {% if chosen == code %}selected{% endif %}>{{ code }}</option>
           {% endfor %}
         </select>
       </label>
@@ -34,8 +36,9 @@ all of them.</p>
          than an address. See Portfolio.jurisdiction. #}
       <label>Country
         <select name="jurisdiction">
+          {% set chosen = typed.jurisdiction if typed else (portfolio.jurisdiction if portfolio else '') %}
           {% for code, label in countries %}
-          <option value="{{ code }}" {% if portfolio and portfolio.jurisdiction == code %}selected{% endif %}>{{ label }}</option>
+          <option value="{{ code }}" {% if chosen == code %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </label>
@@ -44,7 +47,7 @@ all of them.</p>
     {% macro fee(column, kind, money=True) -%}
     {%- set v = portfolio[column] if portfolio else none -%}
     <td><input name="{{ column }}" inputmode="decimal" aria-label="{{ kind }}"
-               value="{{ ('%.2f' | format(v) if money else v | qty) if v is not none else '' }}"></td>
+               value="{{ typed[column] if typed else (('%.2f' | format(v) if money else v | qty) if v is not none else '') }}"></td>
     {%- endmacro %}
     <table class="feetable">
       <thead><tr><th></th><th scope="col">Flat fee</th><th scope="col">Percentage</th>

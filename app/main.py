@@ -663,7 +663,8 @@ def _holding_page(db: DbSession, inst: Instrument, **params) -> str:
                                 **params)
 
 
-def _render(request: Request, ctx, name: str, extra: dict) -> HTMLResponse:
+def _render(request: Request, ctx, name: str, extra: dict,
+            status_code: int = 200) -> HTMLResponse:
     """Render with what the chrome always needs: auth, the nav list, and which
     entry to highlight (routes pass `active_nav`)."""
     return templates.TemplateResponse(
@@ -681,6 +682,7 @@ def _render(request: Request, ctx, name: str, extra: dict) -> HTMLResponse:
             "theme_style": theming.css_variables(ctx.user.theme_colors),
             **extra,
         },
+        status_code=status_code,
     )
 
 
@@ -2975,6 +2977,46 @@ def admin_logs(request: Request, after: int = 0):
         ]})
 
 
+_FEE_COLUMNS = ("brokerage_flat", "brokerage_percent", "brokerage_minimum",
+                "foreign_brokerage_flat", "foreign_brokerage_percent",
+                "foreign_brokerage_minimum")
+
+
+def _portfolio_settings(typed: dict) -> tuple[str, str, str, dict]:
+    """The settings form's name, currency, country and fees, checked; a 400
+    saying which is wrong otherwise."""
+    cleaned = typed["name"].strip()
+    if not cleaned:
+        raise HTTPException(400, "A portfolio needs a name.")
+    currency = typed["reporting_currency"].strip().upper()
+    if currency not in money.SYMBOLS:
+        raise HTTPException(400, "That currency isn't one this app knows.")
+    place = typed["jurisdiction"].strip().upper()
+    if len(place) != 2 or not place.isalpha():
+        raise HTTPException(400, "Country has to be a two-letter code.")
+    fees = {}
+    for column in _FEE_COLUMNS:
+        text = typed[column]
+        # Blank is "not set", which is not the same as free.
+        if not text.strip():
+            fees[column] = None
+            continue
+        percent = column.endswith("percent")
+        label = "Percentage" if percent else "Brokerage"
+        try:
+            figure = money.parse(text, getattr(Portfolio, column), label)
+        except money.FigureError as exc:
+            raise HTTPException(400, f"{exc}.") from None
+        except ValueError:
+            raise HTTPException(400, f"{label} must be a number.") from None
+        if figure < 0:
+            raise HTTPException(400, f"{label} can't be negative.")
+        if percent and figure > 100:
+            raise HTTPException(400, "Percentage can't be more than 100.")
+        fees[column] = figure
+    return cleaned, currency, place, fees
+
+
 @app.post("/portfolio/settings")
 async def portfolio_settings(
     request: Request,
@@ -3002,42 +3044,22 @@ async def portfolio_settings(
     apply, which follows tax residency — but "country" is the word a person
     recognises for it. See `Portfolio.jurisdiction`.
     """
+    typed = {"name": name, "reporting_currency": reporting_currency,
+             "jurisdiction": jurisdiction,
+             "brokerage_flat": brokerage_flat, "brokerage_percent": brokerage_percent,
+             "brokerage_minimum": brokerage_minimum,
+             "foreign_brokerage_flat": foreign_brokerage_flat,
+             "foreign_brokerage_percent": foreign_brokerage_percent,
+             "foreign_brokerage_minimum": foreign_brokerage_minimum}
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
         _require_admin(ctx)
-        cleaned = name.strip()
-        if not cleaned:
-            raise HTTPException(400, "a portfolio needs a name")
-        currency = reporting_currency.strip().upper()
-        if currency not in money.SYMBOLS:
-            raise HTTPException(400, "unknown currency")
-        place = jurisdiction.strip().upper()
-        if len(place) != 2 or not place.isalpha():
-            raise HTTPException(400, "country must be a two-letter code")
-        typed = {"brokerage_flat": brokerage_flat, "brokerage_percent": brokerage_percent,
-                 "brokerage_minimum": brokerage_minimum,
-                 "foreign_brokerage_flat": foreign_brokerage_flat,
-                 "foreign_brokerage_percent": foreign_brokerage_percent,
-                 "foreign_brokerage_minimum": foreign_brokerage_minimum}
-        fees = {}
-        for column, text in typed.items():
-            # Blank is "not set", which is not the same as free.
-            if not text.strip():
-                fees[column] = None
-                continue
-            percent = column.endswith("percent")
-            label = "Percentage" if percent else "Brokerage"
-            try:
-                figure = money.parse(text, getattr(Portfolio, column), label)
-            except money.FigureError as exc:
-                raise HTTPException(400, f"{exc}.")
-            except ValueError:
-                raise HTTPException(400, f"{label} must be a number.")
-            if figure < 0:
-                raise HTTPException(400, f"{label} can't be negative.")
-            if percent and figure > 100:
-                raise HTTPException(400, "Percentage can't be more than 100.")
-            fees[column] = figure
+        try:
+            cleaned, currency, place, fees = _portfolio_settings(typed)
+        except HTTPException as exc:
+            # The page again, holding what was typed, with the reason on it.
+            return _members(request, ctx, db, error=exc.detail, typed=typed,
+                            status_code=exc.status_code)
         portfolio = db.get(Portfolio, ctx.active_portfolio_id)
         portfolio.name = cleaned[:80]
         portfolio.reporting_currency = currency
@@ -3074,46 +3096,55 @@ async def portfolio_new(request: Request, name: str = Form(...)):
 @app.get("/members", response_class=HTMLResponse)
 def members_page(request: Request, error: str = ""):
     with scoped(request) as (ctx, db):
-        rows = db.execute(
-            select(PortfolioMember, User)
-            .join(User, User.id == PortfolioMember.user_id)
-            .where(PortfolioMember.portfolio_id == ctx.active_portfolio_id)
-            .order_by(PortfolioMember.role, User.name)
-        ).all()
-        # Only people with an account can be added; accounts are created by an
-        # app admin on /users.
-        member_ids = {u.id for (_m, u) in rows}
-        candidates = [
-            u
-            for u in db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.name))
-            if u.id not in member_ids
-        ]
-        return _render(
-            request,
-            ctx,
-            "members.html",
-            {
-                # The portfolio's own settings, editable by an admin.
-                "portfolio": db.get(Portfolio, ctx.active_portfolio_id),
-                "currencies": sorted(money.SYMBOLS),
-                "countries": COUNTRIES,
-                "active_nav": "admin",
-                "rows": rows,
-                "candidates": candidates,
-                "roles": MEMBER_ROLES,
-                   "role_blurbs": ROLE_BLURBS,
-                "invitations": [
-                    {"id": i.id, "role": i.role, "state": invites.state(i),
-                     "created": ensure_utc(i.created_at)}
-                    for i in invites.outstanding(db, ctx.active_portfolio_id)
-                ],
-                # Shown once, straight after issuing: it is a credential, and
-                # the database keeps only its hash.
-                "new_invite": _invite_url(request,
-                                          request.query_params.get("invite", "")),
-                "error": error,
-            },
-        )
+        return _members(request, ctx, db, error=error)
+
+
+def _members(request: Request, ctx, db: DbSession, *, error: str = "",
+             typed: dict | None = None, status_code: int = 200) -> HTMLResponse:
+    """The portfolio's admin page. `typed` is a refused settings form's own
+    values, shown in place of the stored ones."""
+    rows = db.execute(
+        select(PortfolioMember, User)
+        .join(User, User.id == PortfolioMember.user_id)
+        .where(PortfolioMember.portfolio_id == ctx.active_portfolio_id)
+        .order_by(PortfolioMember.role, User.name)
+    ).all()
+    # Only people with an account can be added; accounts are created by an
+    # app admin on /users.
+    member_ids = {u.id for (_m, u) in rows}
+    candidates = [
+        u
+        for u in db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.name))
+        if u.id not in member_ids
+    ]
+    return _render(
+        request,
+        ctx,
+        "members.html",
+        {
+            # The portfolio's own settings, editable by an admin.
+            "portfolio": db.get(Portfolio, ctx.active_portfolio_id),
+            "currencies": sorted(money.SYMBOLS),
+            "countries": COUNTRIES,
+            "active_nav": "admin",
+            "rows": rows,
+            "candidates": candidates,
+            "roles": MEMBER_ROLES,
+            "role_blurbs": ROLE_BLURBS,
+            "invitations": [
+                {"id": i.id, "role": i.role, "state": invites.state(i),
+                 "created": ensure_utc(i.created_at)}
+                for i in invites.outstanding(db, ctx.active_portfolio_id)
+            ],
+            # Shown once, straight after issuing: it is a credential, and
+            # the database keeps only its hash.
+            "new_invite": _invite_url(request,
+                                      request.query_params.get("invite", "")),
+            "error": error,
+            "typed": typed,
+        },
+        status_code=status_code,
+    )
 
 
 @app.post("/members/add")
