@@ -430,6 +430,43 @@ def _record(s, d: _Distribution) -> None:
         franking_credits=d.franking, reinvest_trade=reinvest, note=d.note)))
 
 
+def _picked(s, ticker: str) -> tuple[str, str, str]:
+    """For a form opened from a holding: the instrument select's value for
+    it, and where the back button goes and what it says."""
+    found = queries.held_as(s, ticker) if ticker.strip() else []
+    if len(found) != 1:
+        return "", "/", "Portfolio"
+    inst = found[0]
+    value = next((v for v, _label in statements.choices(s)
+                  if v in (inst.ticker, f"{inst.ticker}:{inst.exchange}")), "")
+    return (value, queries.holding_path(inst.ticker, inst.exchange,
+                                        queries.ambiguous_tickers(s)), inst.ticker)
+
+
+@router.get("/dividend/new", response_class=HTMLResponse)
+def dividend_new(request: Request, ticker: str = ""):
+    """A distribution with no statement to upload, a US dividend among them:
+    the statement form, for the holding it was opened from."""
+    templates, settings, _ = _ctx(request)
+    with auth.scoped_session(request) as (ctx, s):
+        _require_write(ctx)
+        value, back, label = _picked(s, ticker)
+        return templates.TemplateResponse(
+            request,
+            "dividend_new.html",
+            {
+                "auth": ctx,
+                "nav": navigation.nav_for(ctx, settings),
+                "active_nav": "holdings",
+                "p": statements.ParsedStatement(text_sample="", ticker=value),
+                "tickers": statements.choices(s),
+                "filename": "",
+                "return_to": back,
+                "back_label": label,
+            },
+        )
+
+
 @router.post("/imports-exports/statement/commit")
 async def statement_commit(
     request: Request,
@@ -443,6 +480,7 @@ async def statement_commit(
     note_extra: str = Form(""),
     filename: str = Form(""),
     used_ocr: str = Form(""),
+    return_to: str = Form("", alias="return"),
 ):
     templates, settings, _ = _ctx(request)
     typed = {"ticker": ticker, "payment_date": payment_date, "net_amount": net_amount,
@@ -454,20 +492,22 @@ async def statement_commit(
         try:
             found = _distribution(s, **typed, note_extra=note_extra)
         except _Refused as exc:
+            # The form it came from: a statement's, or one typed in by hand.
+            back = navigation.safe_path(return_to or None, "/imports-exports")
             return templates.TemplateResponse(
                 request,
-                "statement_preview.html",
+                "statement_preview.html" if filename else "dividend_new.html",
                 {
                     "auth": ctx,
                     "nav": navigation.nav_for(ctx, settings),
-                    "active_nav": "imports",
+                    "active_nav": "imports" if filename else "holdings",
                     "p": statements.ParsedStatement(text_sample="", **typed,
                                                     used_ocr=bool(used_ocr),
                                                     problem=str(exc)),
                     "filename": filename,
                     "tickers": statements.choices(s),
-                    "return_to": _came_from(request)[0],
-                    "back_label": _came_from(request)[1],
+                    "return_to": back,
+                    "back_label": navigation.back_label(back, "Back"),
                 },
                 status_code=exc.status,
             )

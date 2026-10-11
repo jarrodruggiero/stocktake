@@ -1,0 +1,33 @@
+{# The statement form: a statement's figures checked against the PDF, or a
+   distribution typed in with no statement at all. One form for the statement
+   preview, the /dividend/new page and the holding page's dialog. #}
+<form action="/imports-exports/statement/commit" method="post" class="panel statement">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  {# Carried so a refusal can bring the form back as it was, warning and all. #}
+  <input type="hidden" name="filename" value="{{ filename or '' }}">
+  <input type="hidden" name="return" value="{{ return_to or '' }}">
+  {% if p.used_ocr %}<input type="hidden" name="used_ocr" value="1">{% endif %}
+  <label>Instrument
+    <select name="ticker" required>
+      <option value="" {{ 'selected' if not p.ticker }} disabled>— select —</option>
+      {% for value, label in tickers %}
+      <option value="{{ value }}"{{ ' selected' if value == p.ticker }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Payment date <input type="date" name="payment_date"
+      value="{{ p.payment_date or '' }}" required></label>
+  <label>Net amount ($) <input name="net_amount" value="{{ p.net_amount or '' }}" required></label>
+  <label>Franked amount ($) <input name="franked_amount" value="{{ p.franked_amount or '' }}"></label>
+  <label>Franking credits ($) <input name="franking_credits" value="{{ p.franking_credits or '' }}"></label>
+  <fieldset>
+    <legend>DRP reinvestment (if units were allotted)</legend>
+    <label>Units allotted <input name="drp_units" value="{{ p.drp_units or '' }}"></label>
+    <label>Allotment price ($) <input name="drp_price" value="{{ p.drp_price or '' }}"></label>
+  </fieldset>
+  <div class="commitbar">
+    <button type="submit">Save dividend</button>
+    {% if in_dialog %}<button type="button" class="secondary" data-close-dialog>Cancel</button>
+    {% else %}<a href="{{ return_to or '/imports-exports' }}">Cancel</a>{% endif %}
+  </div>
+</form>
