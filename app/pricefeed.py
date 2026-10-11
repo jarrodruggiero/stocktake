@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from appcore import dialect_insert, load_config, make_session_factory
 
 from . import clock, memory, providers, tenancy
-from .models import FxRate, Instrument, MarketDividend, Price, Trade
+from .models import Dividend, FxRate, Instrument, MarketDividend, Price, Trade
 from .settings import PortfolioSettings
 
 log = logging.getLogger(__name__)
@@ -367,10 +367,31 @@ def refresh_quotes(session: Session, settings: PortfolioSettings) -> int:
     return written
 
 
+def _backfill_rates(session: Session, model) -> int:
+    """Fill each `model` row's missing rate from the stored series, on or
+    before its date, never after: a rate published later could not have
+    applied on the day the money moved. How many were filled."""
+    filled = 0
+    for row in session.scalars(
+        select(model).join(Instrument).where(model.fx_rate.is_(None))
+    ).all():
+        rate = session.execute(
+            select(FxRate.rate)
+            .where(FxRate.pair == f"{row.instrument.currency}AUD", FxRate.date <= row.date)
+            .order_by(FxRate.date.desc())
+            .limit(1)
+        ).scalar()
+        if rate is not None:
+            session.execute(update(model).where(model.id == row.id).values(fx_rate=rate))
+            filled += 1
+    return filled
+
+
 def run_feed(session: Session, settings: PortfolioSettings) -> dict[str, int]:
     memory.log_snapshot("before feed run")
     today = clock.today()
-    counts = {"prices": 0, "fx": 0, "dividends": 0, "trade_fx_backfilled": 0, "names_filled": 0}
+    counts = {"prices": 0, "fx": 0, "dividends": 0, "trade_fx_backfilled": 0,
+              "dividend_fx_backfilled": 0, "names_filled": 0}
     # Who served what, keyed "kind:symbol". Published on the status page so a
     # fallback is visible: a primary that has been quietly dead for a month is
     # the failure this whole provider layer exists to make noticeable.
@@ -472,22 +493,12 @@ def run_feed(session: Session, settings: PortfolioSettings) -> dict[str, int]:
         counts["dividends"] += fetch_dividends(session, inst)
         session.commit()
 
-    # Repair: trades whose fx was unknown at import time.
-    for trade in session.scalars(
-        select(Trade).join(Instrument).where(Trade.fx_rate.is_(None))
-    ).all():
-        pair = f"{trade.instrument.currency}AUD"
-        rate = session.execute(
-            select(FxRate.rate)
-            .where(FxRate.pair == pair, FxRate.date <= trade.date)
-            .order_by(FxRate.date.desc())
-            .limit(1)
-        ).scalar()
-        if rate is not None:
-            session.execute(
-                update(Trade).where(Trade.id == trade.id).values(fx_rate=rate)
-            )
-            counts["trade_fx_backfilled"] += 1
+    # Repair: rows whose rate was unknown when they were written. A
+    # distribution as well as a trade: one imported without a rate, or one a
+    # currency correction cleared (decisions.md #143), was otherwise blank on
+    # the dashboard for good.
+    counts["trade_fx_backfilled"] = _backfill_rates(session, Trade)
+    counts["dividend_fx_backfilled"] = _backfill_rates(session, Dividend)
 
     session.commit()
     last_run_sources.update(sources)

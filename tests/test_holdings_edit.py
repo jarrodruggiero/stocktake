@@ -19,7 +19,7 @@ import pytest
 from sqlalchemy import select
 
 import factories as fac
-from app import tenancy
+from app import pricefeed, tenancy
 from app.models import HoldingPref, Instrument, Price, User
 from test_routes import make_login, session_csrf
 
@@ -267,7 +267,15 @@ def test_a_new_currency_forgets_the_rates_recorded_under_the_old_one(
     assert rates() == [Decimal(1), Decimal(1)]
     _save(client, session_factory, writer["zulu"], currency="USD", yahoo_symbol="ZULU.AX")
     assert rates() == [None, None]
-    assert kicked == [1], "the feed fills the trade's rate from the stored series"
+    assert kicked == [1], "the feed fills the rates from the stored series"
+    with session_factory() as s:                # what that run's repair does
+        tenancy.allow_unscoped(s)
+        fac.add_fx(s, "USDAUD", "2026-01-02", "1.50")
+        filled = (pricefeed._backfill_rates(s, Trade), pricefeed._backfill_rates(s, Dividend))
+        s.commit()
+    # The distribution too: the repair used to fill trades only, and the
+    # dashboard left this holding's distributions out for good (NEW-1).
+    assert filled == (1, 1) and rates() == [Decimal("1.500000"), Decimal("1.500000")]
     _save(client, session_factory, writer["zulu"], currency="AUD", yahoo_symbol="ZULU.AX")
     assert rates() == [Decimal(1), Decimal(1)] and kicked == [1], "AUD needs no rate"
     _save(client, session_factory, writer["zulu"], currency="AUD", yahoo_symbol="ZULU.AX")

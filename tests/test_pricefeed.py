@@ -228,6 +228,34 @@ def test_a_trade_with_no_rate_takes_the_one_on_or_before_its_date(feed_session, 
     assert trade.fx_rate == Decimal("1.400000")
 
 
+@pytest.mark.parametrize("recorded, repaired", [(None, Decimal("1.400000")),
+                                                ("1.55", Decimal("1.550000"))],
+                         ids=["none-recorded", "one-recorded"])
+def test_a_distribution_with_no_rate_takes_the_one_on_or_before_its_date(
+        feed_session, monkeypatch, recorded, repaired):
+    """The repair filled trades only. A distribution imported without a rate,
+    or one a currency correction cleared (decisions.md #143), stayed blank on
+    the dashboard for good, while the FY page found a rate for it. One that
+    has a rate keeps it."""
+    portfolio = fac.make_portfolio(feed_session, "Owner portfolio")
+    nova = fac.make_instrument(feed_session, "NOVA", exchange="NASDAQ", currency="USD",
+                               name="Nova")
+    dividend = fac.add_dividend(feed_session, nova, "2026-03-15", "12.00", fx_rate=recorded,
+                                portfolio_id=portfolio.id)
+    fac.add_fx(feed_session, "USDAUD", "2026-03-10", "1.40")
+    fac.add_fx(feed_session, "USDAUD", "2026-03-20", "1.90")      # after: never used
+    feed_session.commit()
+    stub_closes(monkeypatch, {})
+    stub_yf(monkeypatch)
+    stub_no_fx(monkeypatch)
+
+    counts = pricefeed.run_feed(feed_session, SETTINGS)
+
+    feed_session.refresh(dividend)
+    assert (counts["dividend_fx_backfilled"], dividend.fx_rate) == (
+        int(recorded is None), repaired)
+
+
 def test_a_trade_that_already_has_a_rate_is_left_alone(feed_session, monkeypatch):
     portfolio = fac.make_portfolio(feed_session, "Owner portfolio")
     nova = fac.make_instrument(feed_session, "NOVA", exchange="NASDAQ", currency="USD",
