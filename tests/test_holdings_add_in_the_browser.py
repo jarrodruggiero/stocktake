@@ -15,7 +15,8 @@ import subprocess
 import pytest
 from test_trade_dialog_in_the_browser import CHROME, HTML, _standalone
 
-from test_routes import make_login
+import factories as fac
+from test_routes import bind_to_only_portfolio, make_login
 
 pytestmark = pytest.mark.visual
 
@@ -138,3 +139,54 @@ def test_an_answer_that_arrives_late_does_not_overwrite_a_newer_one(
     assert found, "the driver did not finish"
     assert json.loads(found.group(1).replace("&quot;", '"')) == {
         "symbol": "GOOG", "name": "Alphabet Inc.", "currency": "USD"}
+
+
+# The page's own rows have fields named like the dialog's: name, currency,
+# yahoo_symbol. A lookup that searched the whole page filled the first row's.
+ROWS = """
+<script>
+window.addEventListener("load", async function () {
+  var pause = function () { return new Promise(function (r) { setTimeout(r, 60); }); };
+  var form = document.querySelector('form[action="/holdings/add"]');
+  var field = function (name) { return form.querySelector('[name="' + name + '"]'); };
+  var row = function (name) { return document.querySelector('[name="' + name + '"][form^="pref-"]'); };
+  var change = function (name) { field(name).dispatchEvent(new Event("change", {bubbles: true})); };
+  var read = function (of) {
+    return {name: of("name").value, currency: of("currency").value, symbol: of("yahoo_symbol").value};
+  };
+  var before = read(row);
+  document.getElementById("addinst-open").click(); await pause();
+  field("ticker").value = "GOOG"; change("ticker"); await pause();
+  field("exchange").value = "NASDAQ"; change("exchange"); await pause();
+  var pre = document.createElement("pre");
+  pre.id = "result";
+  pre.textContent = JSON.stringify({rowBefore: before, rowAfter: read(row), dialog: read(field)});
+  document.body.appendChild(pre);
+});
+</script>
+"""
+
+
+def test_the_lookup_fills_the_dialog_and_leaves_the_rows_alone(client, session_factory,
+                                                                tmp_path):
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        fac.hold(s, fac.make_instrument(s, "ACME", name="Acme"))   # this portfolio's alone
+        s.commit()
+    page = client.get("/holdings", headers=HTML)
+    target = tmp_path / "holdings.html"
+    target.write_text(_standalone(page.text, ROWS).replace("<head>", "<head>" + BY_EXCHANGE, 1),
+                      encoding="utf-8")
+    dom = subprocess.run(
+        [CHROME, "--headless", "--disable-gpu", "--dump-dom", "--no-sandbox",
+         "--allow-file-access-from-files", "--window-size=1400,1000",
+         "--virtual-time-budget=8000", target.as_uri()],
+        capture_output=True, text=True, timeout=90).stdout
+    found = re.search(r'<pre id="result">(.*?)</pre>', dom, re.S)
+    assert found, "the driver did not finish"
+    out = json.loads(found.group(1).replace("&quot;", '"'))
+
+    assert out["rowBefore"]["name"] == "Acme"
+    assert out["rowAfter"] == out["rowBefore"]
+    assert out["dialog"] == {"name": "Alphabet Inc.", "currency": "USD", "symbol": "GOOG"}

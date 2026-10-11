@@ -79,15 +79,8 @@
     if (check && field) { field.hidden = !check.checked; }
   }
 
-  /* Ask the server what the ticker is as soon as there is something to look
-     up. Anything typed by hand is kept, because overwriting someone's
-     correction is worse than not helping. What the lookup itself filled in is
-     replaced by its next answer: the exchange often changes after the ticker,
-     and the first answer, the ASX guess, is then wrong. */
-  /* Only the newest question's answer is used. The exchange is usually
-     changed straight after the ticker, so two lookups are in flight, and the
-     first can come back last: answering a question nobody is asking any more
-     put GOOG.AX back on a NASDAQ stock. */
+  /* Only the newest question's answer is used. The date is usually changed
+     more than once in a row, and the first answer can come back last. */
   var asked = {};
   function ask(kind) {
     asked[kind] = (asked[kind] || 0) + 1;
@@ -95,52 +88,20 @@
     return function () { return asked[kind] === mine; };
   }
 
-  function autofill(prefix) {
-    var ticker = byName(prefix + "ticker");
-    var exchange = byName(prefix + "exchange");
-    if (!ticker || !ticker.value.trim()) { return; }
-    var status = document.getElementById(prefix + "lookup-status");
-    if (status) { status.textContent = "looking up…"; }
-
-    var url = "/holdings/lookup?ticker=" + encodeURIComponent(ticker.value) +
-              "&exchange=" + encodeURIComponent(exchange ? exchange.value : "ASX");
-    var newest = ask("lookup" + prefix);
-    fetch(url)
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) {
-        if (!newest()) { return; }
-        if (!d) { if (status) { status.textContent = ""; } return; }
-        var fill = function (name, value) {
-          var el = byName(prefix + name);
-          if (!el || (el.value.trim() && el.value !== el.dataset.filled)) { return; }
-          el.value = value || "";
-          el.dataset.filled = el.value;
-        };
-        fill("name", d.name);
-        /* Not `fill`: the field starts at AUD, so it was never empty and a USD
-           stock stayed AUD. Replaced unless somebody typed it, and back to AUD
-           when the answer has none. */
-        var currency = byName(prefix + "currency");
-        if (currency && !currency.dataset.typed) {
-          currency.value = d.currency || currency.defaultValue;
-        }
-        fill("yahoo", d.symbol);
-        fill("yahoo_symbol", d.symbol);
-        showClass(d.asset_class);
-        if (status) {
-          status.textContent = d.found
-            ? "found: " + (d.name || d.symbol) + (d.currency ? " (" + d.currency + ")" : "")
-            : "no match for " + d.symbol + " — check the ticker and exchange";
-        }
-        /* Now that the symbol is known, the price for the date can be. Here
-           rather than beside the ticker's own handler because the symbol
-           arrives with this response — asking any earlier has nothing to ask
-           about. Asked when nothing was found too: the last answer's price
-           has to go, and a symbol typed by hand may still have one. */
-        priceForDate();
-      })
-      .catch(function () { if (status) { status.textContent = ""; } });
+  /* The lookup is shared with Manage holdings' Add dialog (lookup.js). What
+     this form does with an answer: show the class it gave, and, now that the
+     symbol is known, ask the price for the date. Asked when nothing was found
+     too: the last answer's price has to go, and a symbol typed by hand may
+     still have one. */
+  function autofill(prefix, form) {
+    if (window.lookupInstrument) { window.lookupInstrument(prefix, form); }
   }
+
+  document.addEventListener("instrument-answer", function (event) {
+    if (event.detail.prefix !== "new_") { return; }
+    showClass(event.detail.answer.asset_class);
+    priceForDate();
+  });
 
   /* What the price and FX fields should hold for the DATE on the form, asked
      of the server whenever that date moves. Empty answers are left empty
@@ -292,14 +253,14 @@
     if (target.id === "tradedate" || target.name === "new_yahoo") { priceForDate(); }
     if (target.id === "settime") { toggleTime(); }
     if (target.dataset && target.dataset.autofill && !switchToListed()) {
-      autofill(target.dataset.autofill);
+      autofill(target.dataset.autofill, target.form);
     }
   });
 
   document.addEventListener("blur", function (event) {
     var target = event.target;
     if (target.dataset && target.dataset.autofill && !switchToListed()) {
-      autofill(target.dataset.autofill);
+      autofill(target.dataset.autofill, target.form);
     }
   }, true);   // blur does not bubble; capture is how delegation sees it
 

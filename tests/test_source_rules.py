@@ -8,6 +8,8 @@
   platform's, which on Windows is cp1252, and the suite could not even be
   collected there.
 
+- **A ticker is looked up in one place.** The two forms that add an
+  instrument each had a copy of the lookup, and the copies drifted.
 - **An error panel is announced.** A refusal shown in a panel at the top of
   a page said nothing to a screen reader; `role="alert"` makes it speak.
 
@@ -97,3 +99,13 @@ def test_every_error_panel_is_announced():
              for tag in _unannounced_error_panels(path.read_text(encoding="utf-8"))]
 
     assert found == [], 'give it role="alert"'
+
+
+def test_a_ticker_is_looked_up_in_one_place():
+    asking = [str(path.relative_to(ROOT))
+              for folder in ("static", "templates")
+              for path in sorted((ROOT / "app" / folder).glob("*.*"))
+              if path.suffix in (".js", ".html")
+              and "/holdings/lookup?" in path.read_text(encoding="utf-8")]
+
+    assert asking == ["app/static/lookup.js"]
