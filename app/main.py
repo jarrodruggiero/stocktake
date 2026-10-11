@@ -3682,8 +3682,8 @@ def dashboard(request: Request, fy: int | None = None):
                 # Nothing has ever been recorded here, which is a different
                 # state from "everything has been sold" — one wants an
                 # invitation, the other wants five zeros and a closed-position
-                # history. `holdings` is every position ever held, so an empty
-                # list is the genuinely-new case.
+                # history. `holdings` is every instrument this portfolio has,
+                # so an empty list is the genuinely-new case.
                 "first_run": not holdings,
                 # The Record trade dialog renders the same include `/trade/new`
                 # does, so it needs the same two things. Cheap: one indexed

@@ -18,7 +18,7 @@ from sqlalchemy import select
 from test_api import bearer, issue_key
 
 import factories as fac
-from app import tenancy
+from app import queries, tenancy
 from app.models import Portfolio, Trade
 from test_routes import make_login, session_csrf
 
@@ -59,6 +59,21 @@ def test_another_portfolios_instrument_has_no_page_here(client, session_factory)
     page = client.get("/holding/OMEGA", headers=HTML)
     assert page.status_code == 404
     assert "Omega Holdings" not in page.text
+
+
+def test_holdings_are_built_from_this_portfolios_instruments_only(client, session_factory):
+    """`all_holdings` built one for every instrument in the catalogue, three
+    queries apiece, and the dashboard read any at all as something recorded
+    here: no portfolio after the first was offered the first-run panel."""
+    make_login(client, session_factory)
+    ids = _theirs(session_factory)
+
+    with session_factory() as s:
+        tenancy.bind(s, ids["mine"], None)
+        built = sorted((h.instrument.ticker, h.instrument.exchange)
+                       for h in queries.all_holdings(s))
+
+    assert built == [("ACME", "ASX"), ("BHP", "ASX")]
 
 
 def test_a_ticker_on_two_exchanges_shows_this_portfolios_one(client, session_factory):
