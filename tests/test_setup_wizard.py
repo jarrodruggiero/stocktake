@@ -1419,6 +1419,35 @@ def test_a_completely_unconfigured_install_boots_into_the_wizard(tmp_path):
 
 
 @pytest.mark.slow
+def test_the_zone_the_log_level_and_the_console_are_set_as_the_app_starts(tmp_path):
+    """Three lines at import every test inherits already run, with a zone and
+    a level the defaults happen to match: removing any of them left the suite
+    green. Here the configuration differs from every default."""
+    (tmp_path / "config.yaml").write_text("timezone: Asia/Tokyo\nlog_level: ERROR\n")
+    script = textwrap.dedent(f"""
+        import logging, os, sys
+        for name in [k for k in os.environ if k.startswith("APP_")]:
+            del os.environ[name]
+        os.environ.pop("STOCKTAKE_TEST_DB", None)
+        os.environ["APP_CONFIG_FILE"] = {str(tmp_path / "config.yaml")!r}
+        sys.path[:0] = [{str(APP_ROOT)!r},
+                        {str(APP_ROOT.parent.parent / "libs" / "appcore")!r}]
+
+        from app import clock, logbuffer, main  # noqa: F401 - importing is the test
+
+        root = logging.getLogger()
+        print(clock.zone().key, logging.getLevelName(root.level),
+              any(isinstance(h, logbuffer.BufferHandler) for h in root.handlers))
+    """)
+
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                            text=True, timeout=180)
+
+    assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+    assert result.stdout.split() == ["Asia/Tokyo", "ERROR", "True"]
+
+
+@pytest.mark.slow
 def test_the_database_step_probes_before_it_connects_and_connects_before_it_writes(
         tmp_path):
     """The database step, walked for real — the one part of the wizard this
