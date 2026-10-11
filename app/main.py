@@ -23,6 +23,7 @@ import threading
 import urllib.parse
 from contextlib import asynccontextmanager, contextmanager
 from decimal import Decimal
+from http import HTTPStatus
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote_plus
@@ -30,6 +31,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import Form, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
     HTMLResponse,
@@ -42,6 +44,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import object_session
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from appcore import (
     create_app,
@@ -734,6 +737,53 @@ def _nul_refused() -> PlainTextResponse:
     return PlainTextResponse("Text can't contain a NUL character.", status_code=400)
 
 
+def _wants_page(request: Request) -> bool:
+    """A person in a browser, who gets a page rather than JSON. The API's
+    clients, and a page's own fetch() calls, ask for anything else."""
+    return (not request.url.path.startswith("/api/")
+            and "text/html" in request.headers.get("accept", ""))
+
+
+def _error_page(request: Request, status: int, message: str,
+                headers: dict | None = None) -> HTMLResponse:
+    """Every refusal and fault a browser meets. No session is read for it:
+    a fault may be the database itself, so the page has no nav."""
+    heading = ("Something went wrong" if status >= 500
+               else {403: "Not allowed", 404: "Not found"}.get(status, "That didn't work"))
+    return templates.TemplateResponse(
+        request, "error.html",
+        {"auth": None, "heading": heading, "message": message[:1].upper() + message[1:]},
+        status_code=status, headers=headers)
+
+
+# A refusal that says no more than its status line gets a sentence instead.
+_SAID_PLAINLY = {404: "There's nothing at this address.",
+                 405: "This address doesn't take that kind of request."}
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _refused(request: Request, exc: StarletteHTTPException):
+    """A refusal, as a page in a browser. There was no HTML handler, and every
+    one of them answered a person with `{"detail": ...}`."""
+    if exc.status_code < 400 or not _wants_page(request):
+        return await http_exception_handler(request, exc)
+    phrase = HTTPStatus(exc.status_code).phrase
+    message = exc.detail if isinstance(exc.detail, str) and exc.detail != phrase else ""
+    return _error_page(request, exc.status_code,
+                       message or _SAID_PLAINLY.get(exc.status_code, f"{phrase}."),
+                       exc.headers)
+
+
+@app.exception_handler(Exception)
+async def _fault(request: Request, exc: Exception):
+    """A fault, as a page in a browser, saying nothing of the code. The
+    server still logs the traceback: Starlette raises it again after this."""
+    if _wants_page(request):
+        return _error_page(request, 500, "This could not be finished. The application's "
+                                         "log has the details.")
+    return PlainTextResponse("Internal Server Error", status_code=500)
+
+
 @app.exception_handler(RequestValidationError)
 async def _validation_failed(request: Request, exc: RequestValidationError):
     """FastAPI's own 422, able to say what it refused.
@@ -741,8 +791,11 @@ async def _validation_failed(request: Request, exc: RequestValidationError):
     The default echoes each bad value back as `input`. A bare NaN in a JSON
     body (Python's parser accepts one) cannot be written back out as JSON, so a
     request that was rightly refused ended in a 500 instead. A number that is
-    not finite goes back as text.
+    not finite goes back as text. A browser gets a page naming the fields.
     """
+    if _wants_page(request):
+        fields = sorted({str(error["loc"][-1]).replace("_", " ") for error in exc.errors()})
+        return _error_page(request, 422, f"Missing or unreadable: {', '.join(fields)}.")
     return JSONResponse(status_code=422,
                         content={"detail": jsonable_encoder(_finite(exc.errors()))})
 
