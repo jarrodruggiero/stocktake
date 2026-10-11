@@ -52,21 +52,14 @@ choose the address recorded against their own.
 docker compose pull && docker compose up -d
 ```
 
-The app migrates its own database at startup. **Back up first** — migrations
+The app migrates its own database at startup. **[Back up](https://jarrodruggiero.github.io/stocktake/deploy/#backing-up-and-restoring) first** — migrations
 roll forward, and rolling an image back after one has run is not supported.
 
 ## Backups
 
-```sh
-# Python's sqlite3 module: the image has no sqlite3 command.
-docker compose exec app python -c "import sqlite3; sqlite3.connect('/data/stocktake.db').backup(sqlite3.connect('/data/backup.db'))"
-docker compose cp app:/data/backup.db ./stocktake-backup.db
-docker compose cp app:/config/config.yaml ./stocktake-config.yaml
-```
-
-Those two files are the entire application state. Restore them with the app
-stopped, as `/data/stocktake.db` and `/config/config.yaml`. Test the restore —
-an untested backup is a hope.
+The database, any formats you added and `config.yaml`, copied while the app
+runs: [Backing up and restoring](https://jarrodruggiero.github.io/stocktake/deploy/#backing-up-and-restoring).
+Restoring SQLite has one step that is easy to miss, so read that part too.
 
 ## Useful commands
 

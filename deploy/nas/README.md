@@ -60,8 +60,8 @@ paths and set the dataset's owner to uid 1000:
 
 Then, once from a shell: `chown -R 1000:1000 /mnt/tank/apps/stocktake`.
 
-A dataset is worth the extra step here — ZFS snapshots of the directory holding
-`stocktake.db` are the best backup this app can have.
+A dataset is worth the extra step here — ZFS snapshots of the dataset holding
+both directories are the best backup this app can have.
 
 ## HexOS
 

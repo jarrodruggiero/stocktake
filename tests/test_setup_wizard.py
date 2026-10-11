@@ -2191,7 +2191,7 @@ def test_the_postgres_fields_lose_the_spaces_around_them(monkeypatch):
 
 def test_an_sqlite_path_loses_its_spaces_and_a_blank_one_is_the_default():
     assert setupwizard.sqlite_settings("  /data/mine.db  ").path == "/data/mine.db"
-    assert setupwizard.sqlite_settings("   ").path == "/data/portfolio.db"
+    assert setupwizard.sqlite_settings("   ").path == "/data/stocktake.db"
 
 
 def test_a_proxy_range_written_with_its_host_bits_is_accepted():
