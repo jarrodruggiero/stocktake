@@ -683,6 +683,27 @@ def test_the_instrument_page_shows_the_ledger(client, session_factory):
     assert "Betax Holdings" in page.text
 
 
+@freeze_time(ref.TODAY)
+@pytest.mark.parametrize("ticker, labelled", [("OMEGA", " (USD)"), ("BETAX", "")])
+def test_a_holdings_tiles_say_what_currency_they_are_in(client, session_factory, ticker,
+                                                        labelled):
+    """OMEGA's tiles read "Value 1,200.00" in US dollars, a page away from
+    the dashboard's 1,920.00 in Australian (decisions.md #80). The symbol is
+    part of the value, and "$" is both currencies, so a foreign holding's
+    tiles name theirs."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        ref.build_reference(s)
+
+    page = client.get(f"/holding/{ticker}", headers=HTML).text
+    tiles = re.sub(r"<[^>]+>", "", page[page.index('<section class="tiles">'):
+                                        page.index("</section>")])
+
+    for label in ("Avg price", "Cost", "Value", "Dividends"):
+        assert re.search(rf"{re.escape(label + labelled)}\s*\$[0-9]", tiles), label
+
+
 def test_an_unknown_instrument_page_is_a_404(client, session_factory):
     make_login(client, session_factory)
 
