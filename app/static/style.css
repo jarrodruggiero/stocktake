@@ -58,7 +58,9 @@
   --chrome: rgb(255 255 255 / 0.92);
   --chrome-active: var(--sunken);
   --text: #1a1d29;
-  --muted: #6b7186;
+  /* 4.8:1 on the table-heading band and 5.1:1 on the page, for 11px labels;
+     #6b7186 was 4.0:1 on the band. */
+  --muted: #5f6579;
   --line: rgb(24 24 60 / 0.10);
   --up: #1a7f37;
   --down: #c62828;
@@ -67,7 +69,12 @@
   --danger: #c62828;
   --shadow-sm: 0 1px 2px rgb(24 20 60 / 0.06);
   --shadow: 0 10px 30px rgb(24 20 60 / 0.10);
+  /* Words on the accent's gradient, and on a status badge. White in light
+     mode; dark ink in dark mode, where white on the lifted accent and on the
+     status colours measured 2.6:1 to 3.4:1. tests/test_contrast.py measures
+     every theme and accent against 4.5:1. */
   --on-accent: #ffffff;
+  --on-badge: #ffffff;
 
   /* The brand indigo, leading a gradient that runs toward violet. Chosen by
      measurement, not taste: green and red are already spent on gain and loss,
@@ -132,6 +139,8 @@
     --shadow: 0 16px 44px rgb(0 0 0 / 0.5);
     --accent: #8b83f0;
     --accent-grad: linear-gradient(135deg, #8b83f0, #b78af5);
+    --on-accent: #0d1018;
+    --on-badge: #0d1018;
     --viz-1: #a37ecd; --viz-2: #2ea043; --viz-3: #c77f3e;
     --viz-pos: #a37ecd; --viz-neg: #ef4444;
     --viz-grid: #242a3c; --viz-axis: #3a4159; --viz-ink: #98a0bb;
@@ -154,6 +163,8 @@ body[data-theme="dark"] {
   --shadow: 0 16px 44px rgb(0 0 0 / 0.5);
   --accent: #8b83f0;
   --accent-grad: linear-gradient(135deg, #8b83f0, #b78af5);
+  --on-accent: #0d1018;
+  --on-badge: #0d1018;
   --viz-1: #a37ecd; --viz-2: #2ea043; --viz-3: #c77f3e;
   --viz-pos: #a37ecd; --viz-neg: #ef4444;
   --viz-grid: #242a3c; --viz-axis: #3a4159; --viz-ink: #98a0bb;
@@ -162,9 +173,9 @@ body[data-theme="dark"] {
 /* Accents, per mode. Each keeps its own hue in the lead and runs to an
    analogous neighbour, so "teal" still reads teal rather than every account
    getting the same violet. */
-body[data-accent="teal"]   { --accent: #0f766e; --accent-grad: linear-gradient(135deg, #0f9488, #2f7fd1); }
-body[data-accent="violet"] { --accent: #6d28d9; --accent-grad: linear-gradient(135deg, #6d3fd1, #b34fd6); }
-body[data-accent="amber"]  { --accent: #b45309; --accent-grad: linear-gradient(135deg, #c2680a, #d1483f); }
+body[data-accent="teal"]   { --accent: #0f766e; --accent-grad: linear-gradient(135deg, #0f9488, #2f7fd1); --on-accent: #0d1018; }
+body[data-accent="violet"] { --accent: #6d28d9; --accent-grad: linear-gradient(135deg, #6d3fd1, #a847cc); }
+body[data-accent="amber"]  { --accent: #b45309; --accent-grad: linear-gradient(135deg, #b45309, #c4403a); }
 body[data-theme="dark"][data-accent="teal"]   { --accent: #2dd4bf; --accent-grad: linear-gradient(135deg, #2dd4bf, #5aa9f0); }
 body[data-theme="dark"][data-accent="violet"] { --accent: #a78bfa; --accent-grad: linear-gradient(135deg, #9b7cf6, #d07be0); }
 body[data-theme="dark"][data-accent="amber"]  { --accent: #fbbf24; --accent-grad: linear-gradient(135deg, #f5b02a, #f2766a); }
@@ -271,7 +282,7 @@ td.up { color: var(--up); } td.down { color: var(--down); }
 .notecell { white-space: normal; max-width: 26rem; color: var(--muted); font-size: var(--fs-small); }
 
 .ccy { font-size: 0.7rem; border: 1px solid var(--line); border-radius: 4px; padding: 0 0.25rem; margin-left: 0.3rem; color: var(--muted); }
-.badge { background: var(--accent); color: #fff; border-radius: 4px; font-size: 0.7rem; padding: 0.05rem 0.35rem; }
+.badge { background: var(--accent); color: var(--on-badge); border-radius: 4px; font-size: 0.7rem; padding: 0.05rem 0.35rem; }
 .event { font-size: 0.75rem; border-radius: 4px; padding: 0.1rem 0.4rem; text-transform: uppercase; letter-spacing: 0.03em; }
 .event-buy { background: rgba(37, 99, 235, 0.12); color: var(--accent); }
 .event-sell { background: rgba(176, 42, 55, 0.12); color: var(--down); }
@@ -1069,7 +1080,7 @@ form.inline { display: inline; margin: 0; }
 .wizrail .sub { grid-column: 2; font-size: 0.75rem; }
 .wizrail .wiz-active { color: var(--text); font-weight: 600; }
 .wizrail .wiz-active .wiznum { border-color: var(--accent); color: var(--accent); }
-.wizrail .wiz-done .wiznum { background: var(--up); border-color: var(--up); color: #fff; }
+.wizrail .wiz-done .wiznum { background: var(--up); border-color: var(--up); color: var(--on-badge); }
 .wizrail .wiz-skipped { opacity: 0.55; }
 
 /* What the welcome step found: a definition list, because that is what it is. */
