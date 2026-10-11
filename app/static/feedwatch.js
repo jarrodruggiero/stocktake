@@ -1,10 +1,59 @@
+/* Whether somebody is in the middle of something a reload would throw away.
+   Both watchers below ask it before reloading. */
+var feedwatchBusy = (function () {
+  "use strict";
+
+  /* Reloading rather than patching the numbers in place: handlers are bound at
+     load, so swapping the table out from under them would leave a page that
+     looks right and no longer works. What a reload must never do is throw
+     away what somebody was in the middle of. */
+  return function busy() {
+    /* Status menus are deliberately NOT counted: their whole content is what
+       this reload updates, so treating them as "in use" would mean the thing
+       you opened to watch is the thing that stops it moving. Every other menu
+       is a choice somebody is part-way through. */
+    if (document.querySelector("dialog[open], details.menu[open]:not(.statusmenu)")) {
+      return true;
+    }
+    /* A closed dialog's fields are not in use, focused or not: focus can stay
+       on one after the dialog closes, and opening it starts the form afresh. */
+    var shut = "dialog:not([open])";
+    var active = document.activeElement;
+    if (active && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName)
+        && !active.closest(shut)) { return true; }
+    var fields = document.querySelectorAll("form input, form textarea, form select");
+    for (var i = 0; i < fields.length; i++) {
+      var el = fields[i];
+      if (el.type === "hidden" || el.type === "submit" || el.disabled) { continue; }
+      if (el.closest(shut)) { continue; }
+      if (el.tagName === "SELECT") {
+        /* Two traps, and either one makes this watcher a no-op.
+           `defaultValue` on a select is `undefined` and never equals its
+           value. And comparing `selected` to `defaultSelected` per option
+           fails on the common case of a select whose markup names no
+           `selected` option: the browser picks the first, so option 0 reads
+           selected=true / defaultSelected=false on a page nobody has touched.
+           The default is the first option marked selected, or option 0. */
+        var def = 0;
+        for (var j = 0; j < el.options.length; j++) {
+          if (el.options[j].defaultSelected) { def = j; break; }
+        }
+        if (el.selectedIndex !== def) { return true; }
+      } else if (el.type === "checkbox" || el.type === "radio") {
+        if (el.checked !== el.defaultChecked) { return true; }
+      } else if (el.value !== el.defaultValue) { return true; }
+    }
+    return window.getSelection && String(window.getSelection()).length > 0;
+  };
+})();
+
 /* Watches the price feed while it is running.
  *
  * It ASKS rather than reloading on a timer, and reloads exactly once: when the
  * feed stops running. A blind `setTimeout(reload)` fires whether or not
  * anything has changed and throws away whatever you were reading — a sort
  * order, a half-filled Record trade dialog — every few seconds until the feed
- * happens to finish.
+ * happens to finish, and then waits until nothing on the page is in use.
  * Until then it shows a progress bar rather than nothing, because a refresh
  * that takes fifteen seconds with no sign of life reads as a broken button.
  */
@@ -34,15 +83,20 @@
         if (!state) { return schedule(); }
         if (state.running) { return schedule(); }
         /* Finished. Reload so the prices, totals and the chart all come from
-           one render rather than being patched in three places — this is the
-           one moment a full reload is the right tool. */
-        window.location.reload();
+           one render rather than being patched in three places — but not
+           under a half-typed trade: it waits until nothing is in use. */
+        reloadWhenFree();
       })
       .catch(function () {
         /* Offline, or the pod restarted mid-refresh. Keep asking: the page is
            still truthful, it just is not moving. */
         if (attempts < 40) { schedule(); } else { bar.remove(); }
       });
+  }
+
+  function reloadWhenFree() {
+    if (feedwatchBusy()) { setTimeout(reloadWhenFree, 2000); return; }
+    window.location.reload();
   }
 
   function schedule() {
@@ -75,52 +129,11 @@
   var drawnWith = body.dataset.quoted;
   var EVERY = 60000;
 
-  /* Reloading rather than patching the numbers in place: handlers are bound at
-     load, so swapping the table out from under them would leave a page that
-     looks right and no longer works. The whole render is the honest unit —
-     prices, totals and the chart all agree because they came from one query.
-     What a reload must never do is throw away what somebody was in the middle
-     of — which is why this asks before reloading rather than firing on a
-     timer. */
-  function busy() {
-    /* Status menus are deliberately NOT counted: their whole content is what
-       this reload updates, so treating them as "in use" would mean the thing
-       you opened to watch is the thing that stops it moving. Every other menu
-       is a choice somebody is part-way through. */
-    if (document.querySelector("dialog[open], details.menu[open]:not(.statusmenu)")) {
-      return true;
-    }
-    var active = document.activeElement;
-    if (active && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName)) { return true; }
-    var fields = document.querySelectorAll("form input, form textarea, form select");
-    for (var i = 0; i < fields.length; i++) {
-      var el = fields[i];
-      if (el.type === "hidden" || el.type === "submit" || el.disabled) { continue; }
-      if (el.tagName === "SELECT") {
-        /* Two traps, and either one makes this watcher a no-op.
-           `defaultValue` on a select is `undefined` and never equals its
-           value. And comparing `selected` to `defaultSelected` per option
-           fails on the common case of a select whose markup names no
-           `selected` option: the browser picks the first, so option 0 reads
-           selected=true / defaultSelected=false on a page nobody has touched.
-           The default is the first option marked selected, or option 0. */
-        var def = 0;
-        for (var j = 0; j < el.options.length; j++) {
-          if (el.options[j].defaultSelected) { def = j; break; }
-        }
-        if (el.selectedIndex !== def) { return true; }
-      } else if (el.type === "checkbox" || el.type === "radio") {
-        if (el.checked !== el.defaultChecked) { return true; }
-      } else if (el.value !== el.defaultValue) { return true; }
-    }
-    return window.getSelection && String(window.getSelection()).length > 0;
-  }
-
   function look() {
     fetch("/feed/status", { headers: { accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (state) {
-        if (state && state.quoted && state.quoted !== drawnWith && !busy()) {
+        if (state && state.quoted && state.quoted !== drawnWith && !feedwatchBusy()) {
           window.location.reload();
         }
       })
