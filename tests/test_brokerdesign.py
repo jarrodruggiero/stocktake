@@ -409,7 +409,7 @@ def test_confirming_the_mapping_previews_the_trades(client, session_factory):
         headers=HTML)
 
     assert page.status_code == 200
-    assert "2 trade(s) read" in page.text
+    assert "2 trades read" in page.text
     assert ">ALPHA<" in page.text and ">BETAX<" in page.text
 
 
@@ -829,7 +829,7 @@ def test_the_page_says_how_many_drp_rows_were_left_out(client, session_factory):
 
     page, _fmt = _second_pass(client, session_factory, body=body, act_DRP="drp")
 
-    assert "1 DRP allotment(s) left out." in page.text
+    assert "1 DRP allotment left out." in page.text
 
 
 def test_a_field_past_the_csv_modules_limit_is_a_sentence_on_the_page(client, session_factory):
@@ -911,7 +911,7 @@ def test_an_empty_file_field_beside_the_text_keeps_the_text(client, session_fact
                              **SECOND_PASS},
                        files={"file": ("", b"", "application/octet-stream")})
 
-    assert "2 trade(s) read" in page.text
+    assert "2 trades read" in page.text
 
 
 def test_the_first_pass_says_nothing_of_drp_rows_left_out(client, session_factory):

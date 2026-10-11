@@ -182,10 +182,10 @@ anywhere; it is held in this form until you leave the page.</p>
   {% if result.errors %}
   <p role="alert" class="panel error">{% for e in result.errors %}{{ e }}<br>{% endfor %}</p>
   {% else %}
-  <p class="panel ok">{{ result.candidates | length }} trade(s) read from the sample.
+  <p class="panel ok">{{ result.candidates | length | plural('trade') }} read from the sample.
   If these look right, the format below is ready.</p>
   {% if drp_skipped %}
-  <p class="panel warn"><strong>{{ drp_skipped }} DRP allotment(s) left out.</strong>
+  <p class="panel warn"><strong>{{ drp_skipped | plural('DRP allotment') }} left out.</strong>
   They carry units and no price, because the registry bought them out of the
   distribution — so this file cannot say what they cost. Import the dividend
   statement instead, which carries the cost base and creates the units with it.
@@ -206,7 +206,7 @@ anywhere; it is held in this form until you leave the page.</p>
   </div>
   {% endif %}
   {% if result.adjusted %}
-  <div class="note tipline">{{ result.adjusted }} time(s) moved into {{ exchange }} trading hours
+  <div class="note tipline">{{ result.adjusted | plural('time') }} moved into {{ exchange }} trading hours
     {%- set time_tip %}
     <p>A time outside the session is not when a trade happened — it is a
     settlement stamp, or a clock in another timezone.</p>
@@ -219,7 +219,7 @@ anywhere; it is held in this form until you leave the page.</p>
   {% endif %}
 
   {% if result.skipped %}
-  <p class="note">{{ result.skipped | length }} row(s) skipped (not a buy or a sell):
+  <p class="note">{{ result.skipped | length | plural('row') }} skipped (not a buy or a sell):
     {{ result.skipped[:3] | join('; ') }}{% if result.skipped | length > 3 %} …{% endif %}</p>
   {% endif %}
 </section>

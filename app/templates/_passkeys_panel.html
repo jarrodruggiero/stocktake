@@ -29,8 +29,8 @@
 <section class="narrow">
   <h2>Your passkeys</h2>
   {% if not passkeys %}
-  <p class="note">None yet. Your password{% if totp_enabled %} and authenticator
-  code{% endif %} still sign you in.</p>
+  <p class="note">None yet. {% if totp_enabled %}Your password and authenticator
+  code still sign you in.{% else %}Your password still signs you in.{% endif %}</p>
   {% else %}
   <div class="tablewrap">
   <table class="keys">

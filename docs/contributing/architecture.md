@@ -60,6 +60,7 @@ Two consequences worth internalising:
 | `auth.py` | Passwords, sessions, CSRF, lockout. The one choke point (below). |
 | `tenancy.py` | Per-portfolio filtering, applied automatically (below). |
 | `textfield.py` | Typed text held to the length of the column it is going into: refused, never cut. |
+| `wording.py` | How a count is said: "1 trade", "2 trades", never "trade(s)". |
 | `twofactor.py`, `recover.py` | TOTP, recovery codes, and getting back in. |
 | `passkeys.py` | WebAuthn: enrolling a passkey, and signing in with one. |
 | `invites.py` | Single-use invitations into one portfolio, at one role. |

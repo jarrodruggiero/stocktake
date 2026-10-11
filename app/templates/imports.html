@@ -13,8 +13,8 @@
   </div>
 </div>
 {% if request.query_params.get('done') == 'csv' %}
-<p class="flash">CSV committed — {{ request.query_params.get('inserted') }} trade(s) inserted,
-{{ request.query_params.get('skipped') }} duplicate(s) skipped.</p>
+<p class="flash">CSV committed — {{ request.query_params.get('inserted') | plural('trade') }} inserted,
+{{ request.query_params.get('skipped') | plural('duplicate') }} skipped.</p>
 {% elif request.query_params.get('done') == 'statement' %}
 {% set saved = request.query_params.get('saved', '0') | int %}
 <p class="flash">Advice saved: {{ saved }} distribution{{ '' if saved == 1 else 's' }} recorded.</p>
@@ -148,7 +148,7 @@
        warning. The server refuses this combination with a 400 either way — the
        notice exists so nobody discovers that by clicking Download. #}
     <p class="panel warn" id="csv-single-sheet" hidden>
-      <strong>A CSV file holds one sheet.</strong> “Everything” is nine
+      <strong>A CSV file holds one sheet.</strong> “Everything” is {{ reports | length }}
       reports, so it needs <strong>Excel</strong> — one workbook, one sheet per
       report. Choose Excel, or pick a single report to get a CSV of it.
     </p>
@@ -164,7 +164,7 @@
       <label>Financial year <span class="sub">dividends and realised gains only</span>
         <select name="fy">
           <option value="">All years</option>
-          {% for y in fys %}<option value="{{ y }}">FY{{ (y-1)|string|truncate(4,true,'') }}/{{ y|string|truncate(4,true,'') }}</option>{% endfor %}
+          {% for y in fys %}<option value="{{ y }}">{{ fy_label(y) }}</option>{% endfor %}
         </select>
       </label>
       <label>Instrument <span class="sub">trades only</span>

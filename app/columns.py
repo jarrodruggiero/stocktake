@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from . import money
+from .models import ASSET_CLASSES
 
 # Groups exist so the chooser is scannable rather than a wall of twenty
 # checkboxes. They carry no behaviour.
@@ -92,7 +93,8 @@ COLUMNS: list[Column] = [
     Column("ticker", "Ticker", GROUP_POSITION, lambda h: h, render="ticker",
            numeric=False, locked=True, sort=lambda h: h.instrument.ticker,
            help="The holding, linking to its full ledger."),
-    Column("asset_class", "Class", GROUP_POSITION, lambda h: h.instrument.asset_class,
+    Column("asset_class", "Class", GROUP_POSITION,
+           lambda h: ASSET_CLASSES.get(h.instrument.asset_class, h.instrument.asset_class),
            render="text", numeric=False,
            help="ETF, share or crypto."),
     Column("name", "Name", GROUP_POSITION, lambda h: h.instrument.name or "",
