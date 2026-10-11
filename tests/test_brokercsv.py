@@ -267,11 +267,11 @@ def test_a_commsec_row_for_no_units_is_refused_as_the_trade_form_would():
 # --------------------------------------------------------------------------- #
 
 def _candidate(ticker="ACME", date="2025-01-06", type="buy", quantity="100",
-               price="5.00", brokerage="9.50"):
+               price="5.00", brokerage="9.50", time=None):
     return brokercsv.CandidateTrade(
         date=fac.d(date), ticker=ticker, type=type, quantity=Decimal(quantity),
         unit_price=Decimal(price), brokerage=Decimal(brokerage), currency="AUD",
-        exchange="ASX")
+        exchange="ASX", time=time)
 
 
 def test_a_row_already_in_the_ledger_is_flagged_as_a_duplicate(pf):
@@ -296,6 +296,64 @@ def test_a_row_differing_in_any_matched_field_is_new(pf):
     brokercsv.annotate(pf, candidates, STRICT)
 
     assert candidates[0].status == "new"
+
+
+def test_a_second_identical_fill_on_the_day_is_new_when_one_is_recorded(pf):
+    """An export taken mid-morning, then one taken that evening after a second
+    fill of the same size at the same price. Both rows matched the one trade
+    recorded, and the second fill was skipped as a duplicate of it."""
+    acme = fac.make_instrument(pf, "ACME")
+    fac.add_trade(pf, acme, "2025-01-06", "buy", 100, "5.00", brokerage="9.50")
+    pf.commit()
+    candidates = [_candidate(), _candidate()]
+
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    assert [c.status for c in candidates] == ["duplicate", "new"]
+
+
+def test_a_row_with_a_time_matches_the_trade_recorded_at_that_time(pf):
+    """Matched in file order, the 10:05 row took the 14:30 trade, and the 14:30
+    fill went in again under its own time while the 10:05 one never did."""
+    acme = fac.make_instrument(pf, "ACME")
+    recorded = fac.add_trade(pf, acme, "2025-01-06", "buy", 100, "5.00", brokerage="9.50",
+                             time=dt.time(14, 30))
+    pf.commit()
+    candidates = [_candidate(time=dt.time(10, 5)), _candidate(time=dt.time(14, 30))]
+
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    assert [c.status for c in candidates] == ["new", "duplicate"]
+    assert f"#{recorded.id}" in candidates[1].detail
+
+
+def test_a_row_matched_by_its_time_leaves_the_other_trade_for_the_next_row(pf):
+    """One fill imported with its time, the other typed in. Each row of a
+    later export takes one of them, so neither goes in twice."""
+    acme = fac.make_instrument(pf, "ACME")
+    fac.add_trade(pf, acme, "2025-01-06", "buy", 100, "5.00", brokerage="9.50",
+                  time=dt.time(14, 30))
+    fac.add_trade(pf, acme, "2025-01-06", "buy", 100, "5.00", brokerage="9.50")
+    pf.commit()
+    candidates = [_candidate(time=dt.time(14, 30)), _candidate(time=dt.time(16, 0))]
+
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    assert [c.status for c in candidates] == ["duplicate", "duplicate"]
+
+
+def test_a_row_with_a_time_still_matches_a_trade_typed_without_one(pf):
+    """A trade typed without a time sits at market open. The time picks
+    between trades that match otherwise; it is never a reason to import a
+    trade a second time."""
+    acme = fac.make_instrument(pf, "ACME")
+    fac.add_trade(pf, acme, "2025-01-06", "buy", 100, "5.00", brokerage="9.50")
+    pf.commit()
+    candidates = [_candidate(time=dt.time(14, 30))]
+
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    assert candidates[0].status == "duplicate"
 
 
 def test_a_ticker_we_do_not_track_is_flagged(pf):
