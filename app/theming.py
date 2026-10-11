@@ -26,6 +26,9 @@ SURFACES = {"light": "#f7f8fc", "dark": "#1b2030"}
 # uses of these colours are all bold or large, which is the same floor.
 MIN_CONTRAST = 3.0
 
+# Words on a chosen accent's buttons: the dark ground's own colour, or white.
+INK = "#0d1018"
+
 
 @dataclass(frozen=True)
 class Swatch:
@@ -117,6 +120,22 @@ def clean(submitted: dict[str, str]) -> dict[str, str]:
     return out
 
 
+def _toward(colour: str, other: str, share: float) -> str:
+    """`colour` moved `share` of the way to `other`, in sRGB."""
+    a = [int(colour[i:i + 2], 16) for i in (1, 3, 5)]
+    b = [int(other[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(x + (y - x) * share):02x}" for x, y in zip(a, b))
+
+
+def _accent(value: str) -> list[str]:
+    """A chosen accent as buttons paint it: the gradient, and the words on
+    it. White or ink, whichever reads better; the gradient runs from the
+    colour away from the words, so its far end is never harder to read."""
+    words = "#ffffff" if contrast("#ffffff", value) >= contrast(INK, value) else INK
+    far = _toward(value, "#000000" if words == "#ffffff" else "#ffffff", 0.2)
+    return [f"--accent-grad:linear-gradient(135deg, {value}, {far})", f"--on-accent:{words}"]
+
+
 def css_variables(colors: dict | None) -> str:
     """The overrides as a `style` attribute value for <body>.
 
@@ -135,6 +154,9 @@ def css_variables(colors: dict | None) -> str:
             # --viz-pos keeps a stale hue when series 1 changes.
             if swatch.token == "viz-1":
                 parts.append(f"--viz-pos:{value}")
+            # Buttons paint the gradient, which the theme otherwise fixes.
+            if swatch.token == "accent":
+                parts += _accent(value)
     return ";".join(parts)
 
 

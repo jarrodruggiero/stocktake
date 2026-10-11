@@ -56,9 +56,26 @@ def test_an_unknown_token_is_dropped():
 
 
 def test_the_overrides_render_as_css_custom_properties():
-    css = theming.css_variables({"accent": "#112233"})
+    css = theming.css_variables({"up": "#112233"})
 
-    assert css == "--accent:#112233"
+    assert css == "--up:#112233"
+
+
+@pytest.mark.parametrize("accent", ["#0f766e", "#fbbf24", "#7c3aed", "#888888", "#ff8800"])
+def test_a_chosen_accent_paints_the_buttons_in_words_that_read_on_it(accent):
+    """Only `--accent` was set, but buttons paint `--accent-grad`, which kept
+    the theme's own colours: the swatch promised "Buttons, links…" and moved
+    no button. The words on them follow the colour too."""
+    style = dict(part.split(":", 1) for part in theming.css_variables({"accent": accent}).split(";"))
+    stops = re.findall(r"#[0-9a-f]{6}", style["--accent-grad"])
+    words = style["--on-accent"]
+
+    assert style["--accent"] == accent and stops[0] == accent and len(stops) == 2
+    assert words in ("#ffffff", "#0d1018")
+    # The better of the two, and the far end no harder to read than the near.
+    other = "#0d1018" if words == "#ffffff" else "#ffffff"
+    assert theming.contrast(words, accent) >= theming.contrast(other, accent)
+    assert theming.contrast(words, stops[1]) >= theming.contrast(words, stops[0]) >= 4.5
 
 
 def test_changing_the_first_series_moves_the_positive_pole_with_it():
@@ -130,6 +147,7 @@ def test_a_saved_colour_reaches_the_page(client, session_factory):
     page = client.get("/", headers=HTML).text
 
     assert "--accent:#ff8800" in page
+    assert "--accent-grad:linear-gradient(135deg, #ff8800, " in page
 
 
 def test_saving_junk_leaves_the_palette_alone(client, session_factory):
