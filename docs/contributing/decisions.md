@@ -1357,4 +1357,6 @@ MSFT.AX. A row only saves for an instrument this portfolio has. A new currency
 forgets the rates recorded under the old one, in every portfolio: an AUD row
 holds 1, and kept under USD that 1 books US dollars as Australian (#5). They
 become 1 again for AUD, and otherwise unknown until the feed fills them from
-the stored series.
+the stored series. Where another portfolio has the holding too, the admin is
+asked first, and every reset is logged with whose rows it changed: it is the
+one bulk update on a request path that crosses portfolios.
