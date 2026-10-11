@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import select
+from test_slow_work_runs_in_a_thread import health_during
 
 from app import configfile, setupwizard, twofactor
 from app import db as database
@@ -1240,42 +1241,25 @@ def test_a_database_that_never_answers_is_given_up_on(monkeypatch):
     ("/setup/database", "probe"),
     ("/setup/database", "connect"),     # which migrates, and can take as long
 ])
-def test_the_database_step_leaves_the_app_answering(app_module, unconfigured, monkeypatch,
-                                                    tmp_path, action, slow_step):
+def test_the_database_step_leaves_the_app_answering(client, app_module, unconfigured,
+                                                    monkeypatch, tmp_path, action, slow_step):
     """It ran on the event loop: one slow database, typed in by anybody before
     the first account exists, and /healthz stopped answering, so the liveness
     probe restarted the pod mid-wizard."""
-    import asyncio
     import time
-
-    import httpx
 
     def slow(chosen, **kw):
         time.sleep(1)
         return database.Probe(True, "Connected.")
 
     monkeypatch.setattr(app_module.database, slow_step, slow)
+    token = _token(client)
 
-    async def both() -> tuple[float, float]:
-        transport = httpx.ASGITransport(app=app_module.app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
-            page = await http.get("/setup", headers=HTML)
-            token = re.search(r'name="_csrf" value="([^"]+)"', page.text).group(1)
-            began = time.monotonic()
+    async def press(http):
+        await http.post(action, headers=HTML, data={
+            "_csrf": token, "kind": "sqlite", "path": str(tmp_path / "p.db")})
 
-            async def press():
-                await http.post(action, headers=HTML, data={
-                    "_csrf": token, "kind": "sqlite", "path": str(tmp_path / "p.db")})
-                return time.monotonic() - began
-
-            async def health():
-                await asyncio.sleep(0.1)
-                await http.get("/healthz")
-                return time.monotonic() - began
-
-            return tuple(await asyncio.gather(press(), health()))
-
-    step_took, health_took = asyncio.run(both())
+    step_took, health_took = health_during(app_module.app, press, cookies=client.cookies)
 
     assert step_took >= 1
     assert health_took < 0.6, "the health check waited for the probe"
