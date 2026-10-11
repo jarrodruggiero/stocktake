@@ -683,6 +683,27 @@ def _positions(**spec) -> dict:
     return {"grain": "positions", "x": "ticker", "measures": ["pos_value"], **spec}
 
 
+def test_dividends_are_charted_in_australian_dollars_like_every_other_figure(pf):
+    """The measure was each holding's own currency beside AUD values, so a
+    bar per asset class added US dollars to Australian ones, under a "$"."""
+    acme = make_instrument(pf, "ACME", asset_class="share")
+    omega = make_instrument(pf, "OMEGA", exchange="NASDAQ", currency="USD", asset_class="share")
+    nova = make_instrument(pf, "NOVA", exchange="LSE", currency="GBP", asset_class="share")
+    for inst in (acme, omega, nova):
+        add_trade(pf, inst, "2026-01-05", "buy", 10, "10.00",
+                  fx_rate="1.5" if inst is omega else "auto")
+        add_prices(pf, inst, [("2026-01-05", "10.00")])
+    add_dividend(pf, acme, "2026-02-05", "4.00")
+    add_dividend(pf, omega, "2026-02-05", "10.00", fx_rate="1.5")   # A$15.00
+    add_dividend(pf, nova, "2026-02-05", "7.00")                    # no rate for pounds
+
+    data = charts_build.run(pf, _positions(x="asset_class", measures=["pos_dividends"],
+                                           type="bar"))
+
+    # Withheld for want of a rate, never a pound counted as a dollar (#5).
+    assert data["datasets"][0]["data"] == [19.0]
+
+
 def test_a_positions_chart_keeps_to_its_filters(crossing_lines):
     data = charts_build.run(crossing_lines, _positions(type="bar",
                                                        filters={"asset_class": ["etf"]}))
