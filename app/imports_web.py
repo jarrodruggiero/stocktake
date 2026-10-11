@@ -844,7 +844,7 @@ KINDS = ("statement", "broker")
 def _require_admin(ctx) -> None:
     """A template changes how EVERY user's imports are parsed — it is not
     portfolio-scoped, so installing one is not a per-member decision."""
-    if ctx is None or not ctx.is_admin:
+    if not ctx.is_admin:
         raise HTTPException(403, "Admins only")
 
 

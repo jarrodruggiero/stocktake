@@ -465,7 +465,7 @@ def read_with(text: str, label: str, type_: str) -> Reading:
     label = (label or "").strip()
     if not label:
         return Reading(problem="type the words that come before this value")
-    got = _first_value(FieldSpec(after=[label.lower()], type=type_), text)
+    got = _first_value(FieldSpec(after=[label], type=type_), text)    # matched ignoring case
     if got is None:
         return Reading(problem=f"nothing found after {label!r} in this document")
     return Reading(value=got)

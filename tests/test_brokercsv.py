@@ -983,3 +983,22 @@ def test_a_row_shorter_than_the_header_is_skipped_by_line_not_a_crash():
 
     assert [c.ticker for c in result.candidates] == ["ACME"]
     assert result.skipped == ["line 3: action ''"]
+
+
+def test_an_exchange_written_in_lower_case_keeps_to_its_session():
+    """A format names its exchange as typed."""
+    assert brokercsv.in_trading_hours(dt.time(9, 0), "asx") == (None, True)
+
+
+def test_a_commsec_layout_with_times_reports_those_moved_into_the_session():
+    """The shipped layout is dates only, but a format can say otherwise."""
+    timed = COMMSEC.model_copy(update={"date_format": "%d/%m/%Y %H:%M"})
+
+    result = brokercsv.parse_csv(
+        "Date,Reference,Details,Debit($),Credit($),Balance($)\n"
+        "06/01/2025 17:30,N1,B 10 WIDGET @ 20.000000,209.50,,0.00\n"
+        "07/01/2025 11:00,N2,B 10 WIDGET @ 20.000000,209.50,,0.00\n", "commsec", timed)
+
+    assert result.errors == []
+    assert (result.adjusted, [c.time for c in result.candidates]) == (
+        1, [dt.time(16, 0), dt.time(11, 0)])

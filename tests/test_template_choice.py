@@ -429,3 +429,96 @@ def test_the_template_picker_comes_before_the_parse_button(client, session_facto
     form = re.search(r'<form action="/imports-exports/statement"[^>]*>.*?</form>', page, re.S).group(0)
 
     assert form.index('name="template"') < form.index(">Parse<")
+
+
+# ---- what the last mutation pass found the editor left unchecked --------- #
+
+def _editing(page: str) -> tuple[str, str, dict]:
+    """The name box, the markers box and the starting mapping: the three
+    things that say WHICH template is being edited. Every template's name is
+    also in the picker list, so a name found anywhere on the page proves
+    nothing about which one was opened."""
+    import html
+    import json
+    import re
+
+    name = re.search(r'<input name="name"[^>]*value="([^"]*)"', page).group(1)
+    markers = re.search(r'<textarea name="marker"[^>]*>([^<]*)</textarea>', page).group(1)
+    mapping = re.search(r'<script type="application/json" id="startmapping">(.*?)</script>',
+                        page, re.S).group(1)
+    return html.unescape(name), html.unescape(markers), json.loads(mapping)
+
+
+def test_opening_a_template_to_edit_opens_that_one(client, session_factory, store_dir,
+                                                   monkeypatch):
+    """Not the first in the list: MUFG's comes after both Computershare ones."""
+    make_login(client, session_factory)
+    token = _visual_token(client, session_factory, monkeypatch)
+
+    page = client.post("/imports-exports/statement/visual/edit", headers=HTML,
+                       data={"_csrf": session_csrf(session_factory), "token": token,
+                             "template": "mufg-drp-advice"}).text
+
+    name, markers, mapping = _editing(page)
+    mufg = next(t for t in docformats.load_statement_templates(None)
+                if t.key == "mufg-drp-advice")
+    assert (name, markers.splitlines()) == ("MUFG / Link distribution advice", mufg.match_any)
+    assert mapping == docformats.mapping_of(mufg)
+
+
+def test_the_editor_and_the_imports_page_list_installed_templates_first(
+        client, session_factory, store_dir, monkeypatch, app_module, tmp_path):
+    """A template somebody installed is the one they are likely to want."""
+    import re
+
+    monkeypatch.setattr(app_module.settings.imports, "templates_dir", str(tmp_path / "formats"))
+    mine = tmp_path / "formats" / "statements"
+    mine.mkdir(parents=True)
+    (mine / "zz-mine.yaml").write_text(
+        "name: Zz mine\nfields:\n  net_amount:\n    after: [Net amount]\n    type: money\n")
+    make_login(client, session_factory)
+    token = _visual_token(client, session_factory, monkeypatch)
+
+    editor = client.post("/imports-exports/statement/visual/edit", headers=HTML,
+                         data={"_csrf": session_csrf(session_factory), "token": token}).text
+    imports = client.get("/imports-exports", headers=HTML).text
+
+    for page in (editor, imports):
+        offered = re.findall(r'<option value="([a-z0-9-]+)"', page)
+        assert offered.index("zz-mine") < offered.index("computershare-drp-etf")
+
+
+def test_a_pdf_the_mapper_cannot_draw_goes_back_with_a_reason(client, session_factory,
+                                                             store_dir, monkeypatch, caplog):
+    import logging
+
+    from app import pagemap
+
+    def cannot(data, resolution):
+        raise ValueError("no pages")
+    monkeypatch.setattr(pagemap, "_render", cannot)
+    caplog.set_level(logging.INFO, logger="app.imports_web")
+    make_login(client, session_factory)
+
+    resp = client.post("/imports-exports/statement/visual", headers=HTML,
+                       follow_redirects=False, data={"_csrf": session_csrf(session_factory)},
+                       files={"file": ("broken.pdf", b"%PDF", "application/pdf")})
+
+    assert resp.status_code == 303 and "could+not+be+rendered" in resp.headers["location"]
+    assert any(r.getMessage() == "visual mapper could not render broken.pdf: no pages"
+               for r in caplog.records)
+
+
+def test_the_editors_way_back_follows_where_you_came_from(client, session_factory, store_dir,
+                                                         monkeypatch):
+    import re
+
+    make_login(client, session_factory)
+    token = _visual_token(client, session_factory, monkeypatch)
+
+    page = client.post("/imports-exports/statement/visual/edit?return=/holdings", headers=HTML,
+                       data={"_csrf": session_csrf(session_factory), "token": token}).text
+
+    back = re.search(r'class="backlink" href="([^"]*)">\s*<button[^>]*>\s*&larr;\s*([^<]*?)\s*<',
+                     page)
+    assert back.groups() == ("/holdings", "Holdings")

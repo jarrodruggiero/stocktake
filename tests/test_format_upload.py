@@ -263,3 +263,218 @@ def test_a_shipped_template_cannot_be_deleted(client, session_factory, admin, tm
     from app import docformats
     assert (docformats.BUILTIN_DIR / "statements" / "generic-au.yaml").is_file()
     assert resp.status_code in (303, 404)
+
+
+# --------------------------------------------------------------------------- #
+# What the last mutation pass found the install routes left unchecked
+# --------------------------------------------------------------------------- #
+
+def _installed_or_error(resp) -> str:
+    from urllib.parse import unquote_plus
+
+    return unquote_plus(resp.headers["location"])
+
+
+def test_the_first_install_makes_the_folders_and_a_second_shares_them(
+        client, session_factory, admin, tmp_path, app_module, monkeypatch):
+    """A fresh install has no formats folder at all; the next template goes
+    into the folder the first one made."""
+    monkeypatch.setattr(app_module.settings.imports, "templates_dir", str(tmp_path / "formats"))
+
+    first = _upload(client, session_factory)
+    second = _upload(client, session_factory, name="other-registry.yaml")
+
+    assert (first.status_code, second.status_code) == (303, 303)
+    assert sorted(p.name for p in (tmp_path / "formats" / "statements").iterdir()) == [
+        "example-registry.yaml", "other-registry.yaml"]
+
+
+def test_installing_and_removing_say_who_did_it_in_the_log(client, session_factory, admin,
+                                                           caplog):
+    import logging
+
+    caplog.set_level(logging.INFO, logger="app.imports_web")
+    _upload(client, session_factory)
+    client.post("/imports-exports/formats/statement/example-registry/delete",
+                data={"_csrf": session_csrf(session_factory)}, headers=HTML,
+                follow_redirects=False)
+
+    said = [r.getMessage() for r in caplog.records if r.name == "app.imports_web"]
+    assert any(m.startswith("installed statement template example-registry by user ")
+               for m in said)
+    assert any(m.startswith("removed statement template example-registry by user ")
+               for m in said)
+
+
+@pytest.mark.parametrize("filename, slug", [("pasted-registry.yaml", "pasted-registry"),
+                                            ("", "template")])
+def test_pasted_yaml_beside_an_empty_file_field_is_what_installs(client, session_factory,
+                                                                 admin, tmp_path, filename,
+                                                                 slug):
+    """The designers post the template as text, and a browser sends the page's
+    file input as an empty part beside it."""
+    resp = client.post(
+        "/imports-exports/formats", headers=HTML, follow_redirects=False,
+        files={"file": ("", io.BytesIO(b""), "application/octet-stream")},
+        data={"kind": "statement", "body": GOOD_STATEMENT.decode(), "filename": filename,
+              "_csrf": session_csrf(session_factory)})
+
+    assert _installed_or_error(resp).endswith(f"installed={slug}")
+    assert (tmp_path / "statements" / f"{slug}.yaml").is_file()
+
+
+@pytest.mark.parametrize("body", ["", "   \n"], ids=["empty", "spaces"])
+def test_nothing_to_install_is_said_so(client, session_factory, admin, body):
+    resp = client.post("/imports-exports/formats", headers=HTML, follow_redirects=False,
+                       data={"kind": "statement", "body": body,
+                             "_csrf": session_csrf(session_factory)})
+
+    assert _installed_or_error(resp).endswith("error=Choose a template file.")
+
+
+@pytest.mark.parametrize("kind, slug, said", [("nonsense", "x", "unknown template kind"),
+                                              ("statement", "", "that file needs a name")])
+def test_the_path_builder_refuses_an_unknown_kind_and_a_missing_name(app_module, kind, slug,
+                                                                    said):
+    from fastapi import HTTPException
+
+    from app import imports_web
+
+    with pytest.raises(HTTPException) as caught:
+        imports_web._template_path(app_module.settings, kind, slug)
+    assert (caught.value.status_code, caught.value.detail) == (400, said)
+
+
+def test_a_template_of_rows_alone_installs(client, session_factory, admin, tmp_path):
+    """A combined advice has no one payment to read: its rows are everything."""
+    rows_only = (b'name: Rows only\nrows:\n  shape: "TICKER NUM INT NUM NUM NUM NUM INT NUM"\n'
+                 b"  columns: [ticker, drp_price, units_held, per_security, tax_withheld,\n"
+                 b"            amount, brought_forward, allotted, carried_forward]\n")
+
+    resp = _upload(client, session_factory, name="rows-only.yaml", body=rows_only)
+
+    assert _installed_or_error(resp).endswith("installed=rows-only")
+
+
+@pytest.mark.parametrize("body, said", [
+    (b"name: No kind\nexchange: ASX\n", "That is not a broker format — it needs a `kind`."),
+    # The model's own sentence, not pydantic's "Value error, …" around it.
+    (GOOD_BROKER.replace(b"currency: AUD", b"currency: AUSD"),
+     "A currency is a three-letter code, like AUD or USD."),
+    (GOOD_BROKER.replace(b"exchange: ASX", b"exchange: [1, 2]"),
+     "Input should be a valid string"),
+], ids=["no-kind", "model-sentence", "type-error"])
+def test_a_broker_format_is_refused_with_its_reason(client, session_factory, admin, body, said):
+    resp = _upload(client, session_factory, name="bad.yaml", body=body, kind="broker")
+
+    assert _installed_or_error(resp).endswith(f"error=bad.yaml: {said}")
+
+
+def test_the_slug_keeps_a_dotted_name_and_never_ends_on_a_hyphen():
+    from app import imports_web
+
+    assert imports_web._slug("my.registry.yaml") == "my-registry"
+    cut = imports_web._slug("a" * (imports_web.SLUG_MAX - 1) + " b.yaml")
+    assert cut == "a" * (imports_web.SLUG_MAX - 1)
+
+
+# The statement designer's three ways out: download, install and contribute.
+
+GOOD_MAPPING = {"net_amount": {"after": ["Net amount"], "type": "money"},
+                "payment_date": {"after": ["Payment date"], "type": "date"}}
+
+
+def _designed(client, factory, route, **fields):
+    import json
+
+    return client.post(f"/imports-exports/statement/design/{route}", headers=HTML,
+                       follow_redirects=False,
+                       data={"_csrf": session_csrf(factory), "name": "Example Registry",
+                             "mapping": json.dumps(GOOD_MAPPING), "marker": "", **fields})
+
+
+def test_a_design_with_one_unreadable_field_is_refused(client, session_factory, admin):
+    import json
+
+    bad = {**GOOD_MAPPING, "payment_date": {"after": "Payment date", "type": "date"}}
+
+    assert _designed(client, session_factory, "export",
+                     mapping=json.dumps(bad)).status_code == 400
+
+
+@pytest.mark.parametrize("name, written", [("Example Registry", "Example Registry"),
+                                           ("  ", "My registry")])
+def test_a_design_carries_its_name_or_a_plain_one(client, session_factory, admin, name,
+                                                  written):
+    resp = _designed(client, session_factory, "export", name=name)
+
+    assert f'name: "{written}"' in resp.text
+
+
+def test_a_design_that_would_read_nothing_is_not_installed(client, session_factory, admin,
+                                                           tmp_path, caplog):
+    import logging
+
+    caplog.set_level(logging.INFO, logger="app.imports_web")
+    refused = _designed(client, session_factory, "install", mapping="{}")
+    installed = _designed(client, session_factory, "install")
+
+    assert "error=" in _installed_or_error(refused)
+    assert _installed_or_error(installed).endswith("installed=example-registry")
+    assert [p.name for p in (tmp_path / "statements").iterdir()] == ["example-registry.yaml"]
+    assert any(r.getMessage().startswith("installed designed statement template "
+                                         "example-registry by user ") for r in caplog.records)
+
+
+def test_a_designed_install_makes_the_folders_on_a_fresh_install(client, session_factory, admin,
+                                                                tmp_path, app_module,
+                                                                monkeypatch):
+    monkeypatch.setattr(app_module.settings.imports, "templates_dir", str(tmp_path / "formats"))
+
+    first = _designed(client, session_factory, "install")
+    second = _designed(client, session_factory, "install", name="Other Registry")
+
+    assert (first.status_code, second.status_code) == (303, 303)
+    assert len(list((tmp_path / "formats" / "statements").iterdir())) == 2
+
+
+@pytest.mark.parametrize("route, fields, filename", [
+    ("statement/design/contribute", {"name": "  "}, "my-registry-contribution.zip"),
+    # An empty field takes the form's own default; a name with no letters at
+    # all is the one that slugs to nothing.
+    ("broker/design/export", {"body": "kind: mapped\n", "filename": "!!!.yaml"}, "broker.yaml"),
+], ids=["contribution", "broker-format"])
+def test_a_download_with_no_usable_name_gets_a_plain_one(client, session_factory, admin, route,
+                                                         fields, filename):
+    import json
+
+    data = {"_csrf": session_csrf(session_factory), "mapping": json.dumps(GOOD_MAPPING),
+            "marker": "", "text": "", **fields}
+    resp = client.post(f"/imports-exports/{route}", data=data, headers=HTML)
+
+    assert resp.headers["content-disposition"] == f'attachment; filename="{filename}"'
+
+
+def _designer(client, factory, route, **fields):
+    return client.post(f"/imports-exports/statement/design/{route}", headers=HTML,
+                       data={"_csrf": session_csrf(factory), **fields}).json()
+
+
+def test_pointing_at_a_date_for_a_money_field_says_they_differ(client, session_factory, admin):
+    found = _designer(client, session_factory, "infer", index="2", expect="money",
+                      text="Payment date 15/03/2026 Net amount 123.45")
+
+    assert found["type"] == "date" and "expects a money" in found["mismatch"]
+
+
+def test_pointing_past_the_last_word_finds_no_value_rather_than_the_word_none(
+        client, session_factory, admin):
+    assert _designer(client, session_factory, "infer", index="999",
+                     text="Net amount 123.45")["value"] is None
+
+
+def test_a_typed_label_is_tried_against_the_document(client, session_factory, admin):
+    reading = _designer(client, session_factory, "check", label="Net amount", type="money",
+                        text="Net amount 123.45")
+
+    assert (reading["value"], reading["problem"]) == ("123.45", None)
