@@ -163,14 +163,14 @@
   {# The arrow carries direction alongside the colour, the same way the holdings
      table has. Red and green are one colour to ~8% of men, and to
      any printer — the tiles were the last place that was still true. #}
-  <div class="tile {{ 'up' if totals.gain >= 0 else 'down' }}">
+  <div class="tile {{ totals.gain | trend }}">
     <span class="label">Gain</span>
-    <span class="big"><span class="dir" aria-hidden="true">{{ '▲' if totals.gain >= 0 else '▼' }}</span>{{ totals.gain | cash }}</span>
+    <span class="big">{{ totals.gain | arrow }}{{ totals.gain | cash }}</span>
     <span class="sub">{{ totals.gain_pct | pct }}</span>
   </div>
-  <div class="tile {{ 'up' if totals.day_change >= 0 else 'down' }}">
+  <div class="tile {{ totals.day_change | trend }}">
     <span class="label">Change today</span>
-    <span class="big"><span class="dir" aria-hidden="true">{{ '▲' if totals.day_change >= 0 else '▼' }}</span>{{ totals.day_change | cash }}</span>
+    <span class="big">{{ totals.day_change | arrow }}{{ totals.day_change | cash }}</span>
     <span class="sub">{{ totals.day_pct | pct }} vs previous close</span>
   </div>
   <div class="tile"><span class="label">Dividends received</span><span class="big">{{ totals.dividends | cash }}</span></div>
@@ -316,8 +316,8 @@ short by those holdings, not by a rounding.</p>
         {%- set pct = h.gain_pct if c.key == 'gain_reporting' else h.day_pct %}
         {# Direction is carried by the arrow as well as the colour: red/green
            alone is unreadable for ~8% of men and invisible in print. #}
-        <td class="num {{ 'up' if v is not none and v >= 0 else 'down' if v is not none }}">
-          {%- if v is not none %}<span class="dir" aria-hidden="true">{{ '▲' if v >= 0 else '▼' }}</span> {% endif -%}
+        <td class="num {{ v | trend }}">
+          {%- if v | trend %}{{ v | arrow }} {% endif -%}
           {{ v | money }}<span class="sub">{{ pct | pct }}</span></td>
         {%- elif c.render == 'qty' %}
         <td class="num">{{ v | qty }}</td>

@@ -74,8 +74,8 @@
         <td class="num">{{ e.unit_price | money }}</td>
         <td class="num">{{ e.brokerage | money }}</td>
         <td class="num">{{ e.cash | money }}</td>
-        <td class="num {{ 'up' if e.gain is not none and e.gain >= 0 else 'down' if e.gain is not none }}">{{ e.gain | money }}</td>
-        <td class="num {{ 'up' if e.gain_pct is not none and e.gain_pct >= 0 else 'down' if e.gain_pct is not none }}">{{ e.gain_pct | pct }}</td>
+        <td class="num {{ e.gain | trend }}">{{ e.gain | arrow }}{{ e.gain | money }}</td>
+        <td class="num {{ e.gain_pct | trend }}">{{ e.gain_pct | arrow }}{{ e.gain_pct | pct }}</td>
         <td class="notecell">{{ e.note or '' }}</td>
         {# Viewers see the ledger and no way to change it. #}
         {% if auth.can_write %}
