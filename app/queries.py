@@ -1173,43 +1173,6 @@ def annual_series(session: Session, series: dict | None = None) -> dict:
             "gain_pct": gain_pct, "gain_yr": gain_yr, "yr_pct": yr_pct}
 
 
-def allocation_series(session: Session) -> dict:
-    """Invested (all-time buys) and current value by asset class, AUD."""
-    holdings = all_holdings(session)
-    classes = ["etf", "share", "crypto"]
-    invested = {c: Decimal(0) for c in classes}
-    value = {c: Decimal(0) for c in classes}
-    for h in holdings:
-        c = h.instrument.asset_class
-        if h.cost_aud is not None:
-            invested[c] += h.cost_aud
-        if h.value_aud is not None and h.units > 0 and h.instrument.active:
-            value[c] += h.value_aud
-    return {
-        "labels": ["ETFs", "Shares", "Crypto"],
-        "invested": [round(float(invested[c]), 2) for c in classes],
-        "value": [round(float(value[c]), 2) for c in classes],
-    }
-
-
-def today_moves(session: Session) -> dict:
-    """Last close vs previous close per open instrument (native ccy, %)."""
-    out = {"labels": [], "pct": []}
-    for h in all_holdings(session):
-        if h.units <= 0 or not h.instrument.active:
-            continue
-        rows = session.execute(
-            select(Price.close)
-            .where(Price.instrument_id == h.instrument.id)
-            .order_by(Price.date.desc())
-            .limit(2)
-        ).scalars().all()
-        if len(rows) == 2 and rows[1]:
-            out["labels"].append(h.instrument.ticker)
-            out["pct"].append(round(float((rows[0] - rows[1]) / rows[1]), 4))
-    return out
-
-
 def instrument_series(session: Session, inst: Instrument) -> dict:
     """Daily holding value + cumulative invested for one instrument (native ccy)."""
     price_rows = session.execute(
