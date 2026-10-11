@@ -706,7 +706,7 @@ def sandbox(monkeypatch, tmp_path):
     The restart is the one that matters most: the real `request_stop` sends
     SIGTERM to this process, which ends the whole test session.
     """
-    from app import imports_web, lifecycle
+    from app import lifecycle
 
     stub_yf(monkeypatch, info=dict(YAHOO_SAYS))
     # The statement upload reads its file as text, as the statement tests do:
@@ -720,7 +720,7 @@ def sandbox(monkeypatch, tmp_path):
     config.write_text(original, encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(config))
     monkeypatch.setattr(main_mod.settings.imports, "templates_dir", str(tmp_path / "formats"))
-    monkeypatch.setattr(imports_web, "STAGING", tmp_path / "staged")
+    monkeypatch.setattr(main_mod.settings.imports, "staging_dir", str(tmp_path / "staged"))
     yield
     # Before this fixture existed, the settings page wrote straight into the
     # suite's own config. Anything new that writes it would do the same.

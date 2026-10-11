@@ -46,6 +46,7 @@ WITHHELD: dict[str, str] = {
     # somebody edits YAML anyway, which is the opposite of the point.
     "imports.templates_dir": "A server path, not a preference.",
     "imports.visual_dir": "A server path, not a preference.",
+    "imports.staging_dir": "A server path, not a preference.",
 
     # Per-broker column mappings: structured data with its own editor.
     "imports.brokers.kind": "Edited in the broker designer, not as a scalar.",

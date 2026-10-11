@@ -1,9 +1,9 @@
 """/imports-exports — upload broker CSVs and dividend-statement PDFs.
 
 Both flows are two-step: parse → human-reviewed preview → commit. CSV previews
-are staged as JSON under /tmp (pod-local, minutes-lived); the statement preview
-is an editable form that carries its own values, so imperfect PDF parsing is
-corrected in the browser rather than trusted blindly.
+are staged as JSON under `imports.staging_dir` (scratch, swept after a day);
+the statement preview is an editable form that carries its own values, so
+imperfect PDF parsing is corrected in the browser rather than trusted blindly.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ import datetime as dt
 import json
 import logging
 import re
-import tempfile
 import uuid
 from decimal import Decimal
 from pathlib import Path
@@ -52,7 +51,12 @@ def _require_write(ctx) -> None:
     if not ctx.can_write:
         raise HTTPException(403, "You have read-only access to this portfolio")
 
-STAGING = Path(tempfile.gettempdir()) / "portfolio-staged"
+
+
+def staging(settings) -> Path:
+    """Where a broker CSV waits between its preview and its commit."""
+    return Path(settings.imports.staging_dir)
+
 _CHUNK = 64 * 1024
 
 
@@ -163,11 +167,11 @@ async def csv_preview(request: Request, file: UploadFile, broker: str = Form(...
 
     uid = None
     if result.candidates and not result.errors:
-        STAGING.mkdir(mode=0o700, exist_ok=True)
+        staging(settings).mkdir(mode=0o700, parents=True, exist_ok=True)
         uid = str(uuid.uuid4())
         # The staged file records who uploaded it: commit refuses to import one
         # person's CSV into another's portfolio.
-        (STAGING / f"{uid}.json").write_text(
+        (staging(settings) / f"{uid}.json").write_text(
             json.dumps(
                 {
                     "broker": broker,
@@ -218,7 +222,7 @@ async def csv_resolve(request: Request, uid: str):
     templates, settings, _ = _ctx(request)
     if not _UID.match(uid):
         raise HTTPException(400, "bad staging id")
-    staged_path = STAGING / f"{uid}.json"
+    staged_path = staging(settings) / f"{uid}.json"
     if not staged_path.is_file():
         raise HTTPException(404, "that preview has expired — upload the file again")
     staged = json.loads(staged_path.read_text(encoding="utf-8"))
@@ -273,7 +277,7 @@ async def csv_commit(request: Request, uid: str):
     _, settings, _ = _ctx(request)
     if not _UID.match(uid):
         raise HTTPException(400, "bad staging id")
-    staged_path = STAGING / f"{uid}.json"
+    staged_path = staging(settings) / f"{uid}.json"
     if not staged_path.exists():
         raise HTTPException(410, "staged upload expired — re-upload the CSV")
     staged = json.loads(staged_path.read_text(encoding="utf-8"))

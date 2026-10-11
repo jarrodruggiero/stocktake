@@ -236,6 +236,9 @@ class ImportSettings(BaseModel):
     # 30 minutes after last use (app/pagemap.py). `/scratch`, deliberately NOT
     # the backed-up data directory — decisions.md #22.
     visual_dir: str = "/scratch/visual"
+    # A broker CSV's parsed rows between its preview and its commit: real trade
+    # data, 0700, swept after `maintenance.staged_upload_hours`. Scratch too.
+    staging_dir: str = "/scratch/staged"
     # Broker CSV formats. Anything here is layered OVER the formats shipped in
     # app/formats/brokers/, per broker name — so this is for adding your own or
     # correcting a shipped one, not for redeclaring the lot. Read it through

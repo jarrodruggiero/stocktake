@@ -306,9 +306,11 @@ imports:
   # renderings. `templates_dir` holds work you want to keep, so it belongs on
   # a volume that survives a restart. `visual_dir` is scratch — page images
   # from a document you are mapping, deletable at any time, and it must NOT be
-  # inside the data directory that gets backed up.
+  # inside the data directory that gets backed up. So is `staging_dir`, where
+  # a broker CSV's rows wait between the preview and the commit.
   # templates_dir: /data/formats
   # visual_dir: /scratch/visual
+  # staging_dir: /scratch/staged
   # Reading statements that arrive as SCANS — a photograph of a page wrapped in
   # a PDF, with no text in it. On by default; where the tesseract program is
   # missing the app says so per upload and carries on.

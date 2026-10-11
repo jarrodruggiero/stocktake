@@ -32,12 +32,14 @@ formats you added. Back it up; it is the whole application state.
 
 **`/scratch` is deliberately disposable.** The visual statement mapper renders
 page images there while somebody is using it, and sweeps them thirty minutes
-after they stop. The Kubernetes manifest and the Helm chart mount an `emptyDir`
-over it, with a size limit; under Docker it is just a directory in the
-container. **Do not put it on a persistent volume and do not back it up** —
-these are pictures of a dividend statement, they are written `0700` so one
-signed-in user cannot read another's, and a snapshot repository keeping seven
-daily copies is the opposite of what the app promises about them.
+after they stop. A broker CSV's rows wait there between its preview and its
+commit, and are swept after a day. The Kubernetes manifest and the Helm chart
+mount an `emptyDir` over it, with a size limit; under Docker it is just a
+directory in the container. **Do not put it on a persistent volume and do not
+back it up** — these are pictures of a dividend statement and the trades you
+were about to import, they are written `0700` so one signed-in user cannot
+read another's, and a snapshot repository keeping seven daily copies is the
+opposite of what the app promises about them.
 
 There is a practical reason too. Back /scratch up and the backup itself breaks:
 a restic mover that drops `DAC_OVERRIDE` cannot traverse a `0700` directory it

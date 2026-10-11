@@ -260,10 +260,12 @@ imports:
   # max_upload_mb: 10
 
   # Where saved broker and statement layouts are kept, and where the visual
-  # mapper writes its working files. Both are server paths rather than
-  # preferences; change them only if those directories are not writable.
+  # mapper and a CSV awaiting its commit keep their working files. All are
+  # server paths rather than preferences; change them only if those
+  # directories are not writable.
   # templates_dir: /data/formats
   # visual_dir: /scratch/visual
+  # staging_dir: /scratch/staged
   # Reading statements that arrive as SCANS — a photograph of a page wrapped in
   # a PDF, with no text in it. On by default; where the tesseract program is
   # missing the app says so per upload and carries on.
