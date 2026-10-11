@@ -171,7 +171,37 @@ class _Parcel:
         return billed
 
 
-def instrument_disposals(inst: Instrument, fx_book=None) -> list[Disposal]:
+@dataclass(frozen=True)
+class Oversold:
+    """A sale of more units than were held at the time.
+
+    The trade forms and the importer refuse one (`queries.balance_breach`), but
+    a ledger written before they did can hold one. What it sold has no parcel
+    to match, and neither does any later sale of the holding.
+    """
+
+    instrument: Instrument
+    trade: Trade
+    held: Decimal  # units held just before it
+
+    def sentence(self) -> str:
+        return (f"{self.instrument.ticker}'s sell of {queries._units(self.trade.quantity)} "
+                f"units on {self.trade.date.isoformat()} is more than the "
+                f"{queries._units(self.held)} units held then.")
+
+
+class OversoldError(ValueError):
+    """An `Oversold` sale. Matching only the parcels there are would understate
+    the gain, so the engine stops instead of guessing at the missing one."""
+
+    def __init__(self, sale: Oversold):
+        super().__init__(f"{sale.instrument.ticker}: sell of {sale.trade.quantity} on "
+                         f"{sale.trade.date} exceeds held parcels")
+        self.sale = sale
+
+
+def instrument_disposals(inst: Instrument, fx_book=None,
+                         until: dt.date | None = None) -> list[Disposal]:
     """FIFO-match this instrument's sells against its acquisition parcels.
 
     `fx_book` is a `queries.FxBook` used to resolve a trade whose own
@@ -179,6 +209,9 @@ def instrument_disposals(inst: Instrument, fx_book=None) -> list[Disposal]:
     only the rates captured on the trades are known. A parcel or a sale with
     no rate keeps its units in the matching, and its AUD figures are None.
     Every session-taking entry point here passes one.
+
+    `until` ends the walk after that day, so a later `Oversold` sale does not
+    stop a year that sold nothing after it.
     """
     fifo: list[_Parcel] = []
     disposals: list[Disposal] = []
@@ -186,6 +219,8 @@ def instrument_disposals(inst: Instrument, fx_book=None) -> list[Disposal]:
     # different prices must be consumed in the order they were acquired, or a
     # later sale is matched against the wrong cost base.
     for t in sorted(inst.trades, key=trade_order):
+        if until is not None and t.date > until:
+            break
         fx = _rate(t, inst, fx_book)
         if t.type in ("buy", "drp"):
             fifo.append(
@@ -220,10 +255,8 @@ def instrument_disposals(inst: Instrument, fx_book=None) -> list[Disposal]:
             remaining -= take
             if parcel.remaining <= 0:
                 fifo.pop(0)
-        if remaining > 0:  # more sold than held — data problem, surface loudly
-            raise ValueError(
-                f"{inst.ticker}: sell of {t.quantity} on {t.date} exceeds held parcels"
-            )
+        if remaining > 0:
+            raise OversoldError(Oversold(inst, t, held=t.quantity - remaining))
 
         # Running-total differencing, so the parts sum to the whole by
         # construction. Per-unit-then-round does not — decisions.md #93.
@@ -270,6 +303,9 @@ class CgtSummary:
     # Holdings with a sale this year that has no exchange rate behind it: the
     # sale is listed, and every figure above leaves it out (decisions.md #5).
     withheld: list[str] = field(default_factory=list)
+    # Holdings sold this year whose parcels an `Oversold` sale leaves nothing
+    # to match: every figure above leaves them out, and the sale is named.
+    oversold: list[Oversold] = field(default_factory=list)
 
 
 def fy_cgt(session: Session, fy_end_year: int) -> CgtSummary:
@@ -286,9 +322,14 @@ def fy_cgt(session: Session, fy_end_year: int) -> CgtSummary:
     ).unique().all()
     fx_book = queries.FxBook(session)
     for inst in instruments:
-        if not any(t.type == "sell" for t in inst.trades):
+        if not any(t.type == "sell" and start <= t.date <= end for t in inst.trades):
             continue
-        for d in instrument_disposals(inst, fx_book):
+        try:
+            found = instrument_disposals(inst, fx_book, until=end)
+        except OversoldError as err:
+            out.oversold.append(err.sale)
+            continue
+        for d in found:
             if not (start <= d.date <= end):
                 continue
             out.disposals.append(d)
@@ -317,6 +358,7 @@ def fy_cgt(session: Session, fy_end_year: int) -> CgtSummary:
         out.net_capital_gain = (out.gains_other - out.losses_applied_other) + disc_after - out.discount
     out.disposals.sort(key=lambda d: d.date)
     out.withheld.sort()
+    out.oversold.sort(key=lambda sale: sale.trade.date)
     return out
 
 

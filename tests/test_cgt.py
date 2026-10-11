@@ -139,6 +139,47 @@ def test_selling_more_than_is_held_raises_naming_the_ticker(pf):
         _disposals(pf, inst)
 
 
+def test_a_sale_of_more_than_was_held_is_named_and_its_holding_left_out(pf):
+    quark = make_instrument(pf, "QUARK", asset_class="share")
+    add_trade(pf, quark, "2023-01-01", "buy", 100, "1.00")
+    add_trade(pf, quark, "2024-01-01", "sell", 150, "2.00")   # 50 more than held
+    acme = make_instrument(pf, "ACME", asset_class="share")
+    add_trade(pf, acme, "2022-01-01", "buy", 100, "10.00")
+    add_trade(pf, acme, "2024-03-01", "sell", 100, "15.00")   # 500.00 gain, held 2 years
+
+    cgt = fyreport.fy_cgt(pf, 2024)
+
+    # The forms and the importer refuse such a sale, but a ledger from before
+    # they did can hold one. QUARK's gain has no parcels to match, so it is
+    # left out and named (decisions.md #5), and ACME's still counts.
+    (sale,) = cgt.oversold
+    assert (sale.instrument.ticker, sale.trade.date, sale.held) == (
+        "QUARK", dt.date(2024, 1, 1), Decimal("100"))
+    assert [d.instrument.ticker for d in cgt.disposals] == ["ACME"]
+    assert cgt.net_capital_gain == Decimal("250.00")       # 500.00 less the discount
+
+
+def test_a_sale_of_more_than_was_held_is_named_in_the_years_that_depend_on_it(pf):
+    quark = make_instrument(pf, "QUARK", asset_class="share")
+    add_trade(pf, quark, "2020-01-01", "buy", 100, "1.00")
+    add_trade(pf, quark, "2021-03-01", "sell", 50, "2.00")    # FY2021, matched
+    add_trade(pf, quark, "2024-01-01", "sell", 100, "2.00")   # FY2024, only 50 held
+    add_trade(pf, quark, "2025-01-01", "buy", 100, "3.00")    # FY2025, nothing sold
+    add_trade(pf, quark, "2026-01-01", "sell", 10, "4.00")    # FY2026
+
+    def named(fy):
+        return [sale.trade.date for sale in fyreport.fy_cgt(pf, fy).oversold]
+
+    # A year before it is matched as usual. A later sale's parcels depend on
+    # what the oversold one used up, so its year names it too. A year that
+    # sold nothing has no gain to depend on it.
+    assert [d.date for d in fyreport.fy_cgt(pf, 2021).disposals] == [dt.date(2021, 3, 1)]
+    assert named(2021) == []
+    assert named(2024) == [dt.date(2024, 1, 1)]
+    assert named(2025) == []
+    assert named(2026) == [dt.date(2024, 1, 1)]
+
+
 def test_parcel_proceeds_sum_to_the_net_sale_proceeds(pf):
     """What the ATO schedule reports as proceeds has to be what was received."""
     inst = make_instrument(pf, "PIXEL", asset_class="share")

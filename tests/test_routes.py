@@ -515,6 +515,28 @@ def test_the_ticker_filter_has_to_be_a_ticker(client, session_factory):
     assert resp.status_code == 400
 
 
+@pytest.mark.parametrize("report,fmt", [("realised_cgt", "csv"), ("unrealised_cgt", "csv"),
+                                        ("closed_positions", "csv"), ("all", "xlsx")])
+def test_a_capital_gains_export_names_a_sale_of_more_than_was_held(
+        client, session_factory, report, fmt):
+    """A ledger from before the forms and the importer refused such a sale.
+    Two of these were a 500, and the unrealised one listed parcels the sale
+    had already used up."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        quark = fac.make_instrument(s, "QUARK", asset_class="share")
+        fac.add_trade(s, quark, "2023-01-01", "buy", 100, "1.00")
+        fac.add_trade(s, quark, "2024-01-01", "sell", 150, "2.00")
+        fac.add_prices(s, quark, [("2024-01-02", "2.00")])
+        s.commit()
+
+    resp = client.get("/export/download", params={"report": report, "fmt": fmt})
+
+    assert resp.status_code == 409
+    assert "sell of 150 units on 2024-01-01 is more than the 100 units held then" in resp.text
+
+
 def test_an_unknown_report_is_rejected(client, session_factory):
     make_login(client, session_factory)
 

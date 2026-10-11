@@ -421,7 +421,8 @@ def balance_after(
     negative.
 
     Guards manual sell entry: `fyreport.instrument_disposals` raises when a sell
-    exceeds the parcels held, which would take out the whole FY report. Checking
+    exceeds the parcels held, which leaves the holding out of the FY report's
+    capital gains and refuses the CGT exports (`fyreport.Oversold`). Checking
     the *running* balance (not just the total) also catches a backdated sell
     that only balances because of units bought later.
 

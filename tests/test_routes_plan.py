@@ -10,6 +10,7 @@ chart belongs to a person, not a portfolio.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from decimal import Decimal
 
 import pytest
@@ -18,7 +19,7 @@ from sqlalchemy import select
 
 import factories as fac
 import fixture_portfolio as ref
-from app import chart_templates, plans, tenancy
+from app import chart_templates, money, plans, tenancy
 from app.models import (
     InvestmentPlan,
     InvestmentPlanEntry,
@@ -634,6 +635,29 @@ def test_the_fy_tab_names_what_its_totals_leave_out(client, session_factory):
     page = client.get(f"/?fy={ref.FY2024}", headers=HTML).text
 
     assert "Totals exclude NOVA — no exchange rate stored" in page
+
+
+@freeze_time(ref.TODAY)
+def test_the_fy_tab_names_a_sale_of_more_than_was_held(client, session_factory):
+    """A ledger from before the forms and the importer refused such a sale.
+    The whole tab was a 500; now only that holding's gain is left out."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        ref.build_reference(s)
+        quark = fac.make_instrument(s, "QUARK", asset_class="share")
+        fac.add_trade(s, quark, "2023-08-01", "buy", 100, "1.00")
+        fac.add_trade(s, quark, "2023-09-01", "sell", 150, "2.00")
+        s.commit()
+
+    page = client.get(f"/?fy={ref.FY2024}", headers=HTML)
+
+    assert page.status_code == 200
+    text = re.sub(r"<[^>]+>", "", page.text)
+    assert ("Capital gains exclude QUARK: its sell of 150 units on 2023-09-01 is more "
+            "than the 100 units held then.") in text
+    # Every other holding's gain still counts.
+    assert f"Net capital gain{money.plain(ref.FY2024_NET_CAPITAL_GAIN)}" in text
 
 
 @freeze_time(ref.TODAY)

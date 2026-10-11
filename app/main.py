@@ -4365,7 +4365,11 @@ def export_download(
         raise HTTPException(400, "that is not a ticker")
     ticker = ticker.strip()
     with scoped(request) as (ctx, db):
-        sheets = exports.build(db, wanted, fy=year, ticker=ticker.upper() or None)
+        try:
+            sheets = exports.build(db, wanted, fy=year, ticker=ticker.upper() or None)
+        except fyreport.OversoldError as err:
+            raise HTTPException(409, f"{err.sale.sentence()} Correct it or record the "
+                                     "missing buy, then export again.") from None
         stem = "everything" if report == "all" else report
         if fmt == "csv":
             headers, rows = next(iter(sheets.values()))

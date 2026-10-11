@@ -244,6 +244,9 @@ def unrealised_cgt(session: Session, **_) -> Report:
                         fifo.pop(0)
                     else:
                         fifo[0][1] -= take
+                if remaining > 0:
+                    raise fyreport.OversoldError(
+                        fyreport.Oversold(inst, t, held=t.quantity - remaining))
         for acquired, units, unit_cost in fifo:
             # A spreadsheet will happily add a USD number to an AUD column, so
             # a figure we can't convert is left EMPTY rather than converted at

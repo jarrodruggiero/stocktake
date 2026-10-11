@@ -213,6 +213,18 @@ def get_fy(request: Request, year: int) -> dict:
                 "discount": _num(cgt.discount),
                 "net_capital_gain": _num(cgt.net_capital_gain),
                 "net_capital_loss": _num(cgt.net_capital_loss),
+                # A sale of more units than were held then leaves its holding
+                # out of every figure above; this names it, for a person to fix.
+                "oversold": [
+                    {
+                        "ticker": sale.instrument.ticker,
+                        "exchange": sale.instrument.exchange,
+                        "date": sale.trade.date.isoformat(),
+                        "units": _num(sale.trade.quantity),
+                        "held": _num(sale.held),
+                    }
+                    for sale in cgt.oversold
+                ],
             },
         }
 

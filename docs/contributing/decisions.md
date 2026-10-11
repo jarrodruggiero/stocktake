@@ -34,7 +34,10 @@ guessed. The rule has three parts: use the nearest stored FX rate within a
 tracked pair; **withhold and name the holding** when the pair is unknown; never
 fall back to 1:1, which books a foreign holding as though the currency did not
 exist. `totals.excluded`, `dividends_excluded` and the FY report's `withheld`
-are how the withholding gets said out loud.
+are how the withholding gets said out loud. A sale of more units than were held
+then is the same rule for capital gains: there is no parcel to match it to, so
+the holding is left out of each year whose gains depend on it and the sale is
+named (`CgtSummary.oversold`), and the CGT exports refuse until it is fixed.
 
 **6. …but a same-currency row needs no rate at all.** AUD → AUD is 1 by
 arithmetic, so requiring a stored `fx_rate` on an AUD row turns a fact about
