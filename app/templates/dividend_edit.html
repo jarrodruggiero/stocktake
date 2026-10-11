@@ -58,7 +58,7 @@ it bought. Both save together or not at all.</p>
 </form>
 
 <form class="panel narrow danger" method="post" action="/dividend/{{ dividend.id }}/delete"
-      onsubmit="return confirm('Delete this {{ inst.ticker }} distribution of {{ dividend.cash_amount | qty }} on {{ dividend.date }}?{% if drp %} The {{ drp.quantity | qty }} reinvested units go with it.{% endif %}');">
+      data-confirm="Delete this {{ inst.ticker }} distribution of {{ dividend.cash_amount | qty }} on {{ dividend.date }}?{% if drp %} The {{ drp.quantity | qty }} reinvested units go with it.{% endif %}">
   <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
   <h2>Delete this distribution</h2>
   <p class="note">

@@ -219,7 +219,7 @@
        kept and what goes is explained by the confirm, once. #}
     {% if plan %}
     <form class="commitbar" method="post" action="/schedule/delete"
-          onsubmit="return confirm('Delete this plan and its rotation? Buys you have already recorded are kept.');">
+          data-confirm="Delete this plan and its rotation? Buys you have already recorded are kept.">
       <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
       <button type="submit" class="danger">Delete plan</button>
     </form>

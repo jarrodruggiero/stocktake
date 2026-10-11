@@ -97,7 +97,7 @@
     {# Removal lives here rather than on the charts page, where it would sit
        one stray click away from a chart you wanted. #}
     <form class="panel" method="post" action="/charts/{{ existing.id }}/delete"
-          onsubmit="return confirm('Remove “{{ existing.name }}” from your charts page? You can add it again from the templates list.')">
+          data-confirm="Remove “{{ existing.name }}” from your charts page? You can add it again from the templates list.">
       <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
       <button class="danger" type="submit">Remove this chart</button>
       <p class="sub">Only from your page — nobody else's, and no data is touched.</p>

@@ -44,14 +44,14 @@ they must change it at next login. It won't be shown again.</p>
       </td>
       <td class="rowactions">
         {% if u.id != auth.user.id %}
-        <form method="post" action="/users/{{ u.id }}/active">
+        {# Said before the click: a portfolio only they are in goes out of
+           everyone's view, because membership is the only way to one. #}
+        <form method="post" action="/users/{{ u.id }}/active"
+          {%- if u.is_active and sole_of.get(u.id) %}
+              data-confirm="Disabling {{ u.name }} takes {{ sole_of[u.id] | join(' and ') }} out of everyone's view — nobody else is in {{ 'them' if sole_of[u.id] | length > 1 else 'it' }}. Continue?"
+          {%- endif %}>
           <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-          {# Said before the click: a portfolio only they are in goes out of
-             everyone's view, because membership is the only way to one. #}
-          <button class="linkish" type="submit"
-            {%- if u.is_active and sole_of.get(u.id) %} onclick="return confirm(
-              'Disabling {{ u.name }} takes {{ sole_of[u.id] | join(' and ') }} out of everyone\'s view — nobody else is in {{ 'them' if sole_of[u.id] | length > 1 else 'it' }}. Continue?')"
-            {%- endif %}>{{ 'Enable' if not u.is_active else 'Disable' }}</button>
+          <button class="linkish" type="submit">{{ 'Enable' if not u.is_active else 'Disable' }}</button>
         </form>
         <form method="post" action="/users/{{ u.id }}/reset" class="inline">
           <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
@@ -61,7 +61,7 @@ they must change it at next login. It won't be shown again.</p>
         {# Last resort for someone who lost the phone AND the recovery codes. #}
         {% if u.totp_enabled_at %}
         <form method="post" action="/users/{{ u.id }}/2fa/clear"
-              onsubmit="return confirm('Clear two-factor for {{ u.email }}? They will be able to sign in with their password alone until they set it up again.');">
+              data-confirm="Clear two-factor for {{ u.email }}? They will be able to sign in with their password alone until they set it up again.">
           <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
           <button class="linkish" type="submit">Clear 2FA</button>
         </form>

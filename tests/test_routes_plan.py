@@ -364,7 +364,8 @@ def test_a_chart_can_be_previewed_without_saving(client, session_factory):
         bind_to_only_portfolio(s)
         ref.build_reference(s)
 
-    resp = client.post("/charts/preview", json=SPEC)
+    resp = client.post("/charts/preview", json=SPEC,
+                       headers={"x-csrf-token": session_csrf(session_factory)})
 
     assert resp.status_code == 200
     body = resp.json()
@@ -380,7 +381,8 @@ def test_an_undrawable_spec_explains_itself(client, session_factory):
 
     resp = client.post("/charts/preview",
                        json={"grain": "positions", "x": "ticker", "measures": [],
-                             "type": "bar"})
+                             "type": "bar"},
+                       headers={"x-csrf-token": session_csrf(session_factory)})
 
     assert resp.status_code == 400
     assert "measure" in resp.json()["detail"].lower()
@@ -458,7 +460,8 @@ def test_a_chart_of_the_wrong_shape_is_refused_and_not_saved(
 def test_a_preview_of_the_wrong_shape_is_refused(client, session_factory, spec):
     make_login(client, session_factory)
 
-    resp = client.post("/charts/preview", json=spec)
+    resp = client.post("/charts/preview", json=spec,
+                       headers={"x-csrf-token": session_csrf(session_factory)})
 
     assert resp.status_code == 400
 
