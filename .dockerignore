@@ -1,0 +1,18 @@
+# What the build never reads. The Dockerfile copies named paths, so this is
+# mostly about not sending a local virtualenv and caches to the daemon, and
+# about a stray __pycache__ under app/ never reaching the image.
+.git
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+.hypothesis
+.coverage
+htmlcov
+site
+dist
+build
+*.db
+*.db-wal
+*.db-shm
