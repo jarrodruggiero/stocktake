@@ -781,3 +781,127 @@ def test_a_closed_position_with_a_rate_missing_has_no_gain_to_show(pf, bought, s
     assert [row[headers.index(h)] for h in (
         "Gross capital gain (AUD)", "CGT discount (AUD)", "Capital gain after discount (AUD)",
         "Total return incl. dividends (AUD)")] == [""] * 4
+
+
+# --------------------------------------------------------------------------- #
+# What the text columns carry, the order rows come in, and the workbook
+# --------------------------------------------------------------------------- #
+
+def _written_out(pf):
+    """A holding with a name, a note, reinvestment on, a noted buy, a noted
+    distribution and a sale; and a closed position with its own note."""
+    from factories import hold
+
+    alpha = make_instrument(pf, "ALPHA", name="Alpha Index Fund")
+    pref = hold(pf, alpha)
+    pref.note, pref.drp = "core holding", True
+    add_trade(pf, alpha, "2025-06-02", "buy", 100, "10.00", note="first buy")
+    add_dividend(pf, alpha, "2025-12-20", "50.00", note="December payout")
+    add_trade(pf, alpha, "2026-03-02", "sell", 10, "12.00")
+    add_prices(pf, alpha, [("2026-07-14", "11.00")])
+    closed = make_instrument(pf, "CLOSED", name="Closed Co")
+    hold(pf, closed).note = "sold out"
+    add_trade(pf, closed, "2025-01-02", "buy", 10, "5.00")
+    add_trade(pf, closed, "2026-02-02", "sell", 10, "6.00")
+    pf.commit()
+
+
+@freeze_time("2026-07-15")
+def test_names_notes_and_who_recorded_it_come_through_on_every_report(pf):
+    """Each was `x or ""`, and blanking every one of them passed: no test read
+    a text column."""
+    from app import tenancy
+
+    _written_out(pf)
+    out = {key: exports.BUILDERS[key](pf, fy=2026) for key in exports.BUILDERS}
+
+    def row(key, **wanted):
+        headers, rows = out[key]
+        return next(r for r in rows if all(cell(headers, r, k) == v for k, v in wanted.items()))
+
+    h = out["transactions"][0]
+    buy = row("transactions", Ticker="ALPHA", Type="buy")
+    assert (cell(h, buy, "Name"), cell(h, buy, "Note"), cell(h, buy, "Recorded by")) == (
+        "Alpha Index Fund", "first buy", tenancy.current_user_id(pf))
+    h = out["holdings"][0]
+    held = row("holdings", Ticker="ALPHA")
+    assert (cell(h, held, "Name"), cell(h, held, "Note"), cell(h, held, "DRP")) == (
+        "Alpha Index Fund", "core holding", "yes")
+    h = out["dividends"][0]
+    paid = row("dividends", Ticker="ALPHA")
+    assert (cell(h, paid, "Name"), cell(h, paid, "Note")) == ("Alpha Index Fund", "December payout")
+    for key in ("realised_cgt", "unrealised_cgt"):
+        assert cell(out[key][0], row(key, Ticker="ALPHA"), "Name") == "Alpha Index Fund", key
+    h = out["closed_positions"][0]
+    gone = row("closed_positions", Ticker="CLOSED")
+    assert (cell(h, gone, "Name"), cell(h, gone, "Note")) == ("Closed Co", "sold out")
+
+
+def _two(pf, *, sell_on=None, close=False):
+    """AAA, a share named "Zeta", and ZZZ, an ETF named "Alpha": every order
+    there is to get wrong (ticker, name, class, insertion) disagrees."""
+    for ticker, name, kind in (("ZZZ", "Alpha", "etf"), ("AAA", "Zeta", "share")):
+        inst = make_instrument(pf, ticker, name=name, asset_class=kind)
+        add_trade(pf, inst, "2025-01-02", "buy", 10, "5.00")
+        add_prices(pf, inst, [("2026-07-14", "6.00")])
+        if sell_on:
+            add_trade(pf, inst, sell_on, "sell", 10 if close else 5, "6.00")
+    pf.commit()
+
+
+@freeze_time("2026-07-15")
+def test_sales_on_one_day_are_listed_in_ticker_order(pf):
+    _two(pf, sell_on="2026-03-02")
+
+    headers, rows = exports.realised_cgt(pf, fy=2026)
+
+    assert column(headers, rows, "Ticker") == ["AAA", "ZZZ"]
+
+
+@freeze_time("2026-07-15")
+def test_parcels_still_held_are_listed_in_ticker_order(pf):
+    _two(pf)
+
+    headers, rows = exports.unrealised_cgt(pf)
+
+    assert column(headers, rows, "Ticker") == ["AAA", "ZZZ"]
+
+
+@freeze_time("2026-07-15")
+def test_closed_positions_are_listed_in_ticker_order(pf):
+    _two(pf, sell_on="2026-03-02", close=True)
+
+    headers, rows = exports.closed_positions(pf)
+
+    assert column(headers, rows, "Ticker") == ["AAA", "ZZZ"]
+
+
+@freeze_time("2026-07-15")
+def test_distributions_come_in_date_order_whatever_order_they_were_written(pf):
+    alpha = make_instrument(pf, "ALPHA")
+    add_trade(pf, alpha, "2025-01-02", "buy", 10, "5.00")
+    for paid in ("2026-03-20", "2025-09-20", "2025-12-20"):
+        add_dividend(pf, alpha, paid, "5.00")
+    pf.commit()
+
+    headers, rows = exports.dividends(pf)
+
+    assert column(headers, rows, "Payment date") == ["2025-09-20", "2025-12-20", "2026-03-20"]
+
+
+def test_a_workbook_opens_ready_to_read():
+    """Headers bold and left-aligned, the top row frozen, each column as wide
+    as its widest text plus three but never past 40, and an About sheet that
+    carries every line it was given."""
+    sheets = {"All trades": (["Ticker", "Note"], [["A", "x" * 60], ["B", "y"]])}
+
+    wb = load(exports.to_xlsx(sheets, note="line one\nline two"))
+
+    ws = wb["All trades"]
+    assert [(c.font.bold, c.alignment.horizontal) for c in ws[1]] == [(True, "left")] * 2
+    assert ws.freeze_panes == "A2"
+    assert (ws.column_dimensions["A"].width, ws.column_dimensions["B"].width) == (9, 40)
+    about = wb["About"]
+    assert [r[0].value for r in about.iter_rows()] == ["line one", "line two"]
+    assert about.column_dimensions["A"].width == 100
+
