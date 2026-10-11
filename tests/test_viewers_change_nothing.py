@@ -13,6 +13,12 @@ and leave every table as it was.
 
 It is an inventory too: every POST route is either a write, refused here, or
 one a viewer may use, with the reason. A new route has to be put in one.
+
+And nothing writes without the session's CSRF token. `verify_csrf` had its
+own tests, and about 17 routes had a test that they needed it; removing the
+check from any of 12 others passed everything. Every route that checks is
+now sent the careful request without the token, and the routes that don't
+check are written down with why.
 """
 
 from __future__ import annotations
@@ -215,3 +221,88 @@ def test_every_post_route_is_either_a_write_or_one_a_viewer_may_use():
     assert not stale, f"VIEWER_MAY names routes that no longer exist: {stale}"
     assert len(WRITES) >= 40, "the sweep is not empty"
     assert {"/trade/new", "/schedule/complete", "/schedule/save"} <= set(WRITES)
+
+
+# --------------------------------------------------------------------------- #
+# Nothing writes without the session's CSRF token
+# --------------------------------------------------------------------------- #
+
+# POST routes that do not check the session's token, and why. Before anyone
+# signs in, the forms carry the pre-auth token instead (`auth.verify_pre_auth
+# _csrf`, double-submit against a cookie); test_security covers that one.
+NO_SESSION_TOKEN = {
+    "/api/v1/trades": "a bearer key, which no browser sends on its own",
+    "/api/v1/dividends": "a bearer key, which no browser sends on its own",
+    "/oidc/backchannel-logout": "the provider's signature on the token is the "
+                                "authorisation (decisions.md #127)",
+    "/charts/preview": "draws a draft chart and writes nothing",
+}
+PRE_AUTH_TOKEN = {
+    "/login/passkey", "/login/passkey/options", "/login/recover", "/invite/{token}/signup",
+    "/setup", "/setup/database", "/setup/database/test", "/setup/profile",
+}
+
+
+def _token_check(route) -> str:
+    called = set()
+    for node in ast.walk(ast.parse(textwrap.dedent(inspect.getsource(route.endpoint)))):
+        if isinstance(node, ast.Call):
+            func = node.func
+            called.add(func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", ""))
+    if "verify_csrf" in called:
+        return "session"
+    return "pre-auth" if any("pre_auth" in name for name in called) else "none"
+
+
+# Checked against the session's token, and tested elsewhere. Once setup is
+# finished the wizard is closed, so its steps refuse before any token is read:
+# test_setup_wizard sends them without one while the wizard is open. A stale
+# sign-in form gets the sign-in page back rather than a 403 (decisions.md #43).
+ELSEWHERE = {path for path in (r.path for r in _all_routes() if "POST" in r.methods)
+             if path.startswith("/setup/")} - PRE_AUTH_TOKEN | {"/login"}
+
+POSTS = {r.path: r for r in _all_routes() if "POST" in r.methods}
+SESSION_CHECKED = sorted(set(POSTS) - set(NO_SESSION_TOKEN) - PRE_AUTH_TOKEN - ELSEWHERE)
+
+
+def test_every_post_route_checks_a_token_or_says_why_not():
+    """Read off the handlers, and held to the lists above: a route that loses
+    its check stops reading as checked, and shows up here."""
+    found = {path: _token_check(route) for path, route in POSTS.items()}
+
+    assert {p for p, k in found.items() if k == "none"} == set(NO_SESSION_TOKEN)
+    assert {p for p, k in found.items() if k == "pre-auth"} == PRE_AUTH_TOKEN
+    assert {found[p] for p in ELSEWHERE} == {"session"}
+    assert len(SESSION_CHECKED) >= 70, "the sweep is not empty"
+
+
+@pytest.mark.parametrize("path", SESSION_CHECKED)
+def test_nothing_is_written_without_the_csrf_token(client, session_factory, contained,
+                                                  monkeypatch, path):
+    """Signed in with every right (a site admin who owns the portfolio), the
+    careful request with no token in the form or the header: refused, and
+    every table as it was."""
+    import test_hostile_input
+
+    monkeypatch.setitem(test_hostile_input.FILES, "/imports-exports/statement/visual",
+                        ("statement.pdf", b"%PDF-1.4", "application/pdf"))
+    route = POSTS[path]
+    world = _signed_in(client, session_factory)
+    if path in SCHEDULED:
+        client.post("/schedule/save", headers=HTML, follow_redirects=False, data={
+            "name": "Regular buys", "interval_days": "28", "amount": "500",
+            "brokerage": "9.50", "start_date": WHEN, "tickers": "ACME",
+            "_csrf": world.csrf()})
+    fields = _fields(route)
+    made = {f.name: _fresh(world, f.name) for f in fields if f.where == "path"}
+    values = _typed(world, route, world.tick(), made)
+    values.setdefault("token", "0" * 32)
+    values.setdefault("code", "123456")        # or FastAPI refuses before the handler runs
+    before = _everything(session_factory)
+    world.csrf = lambda: None              # `_send` adds a token only when there is one
+
+    resp = _send(world, route, fields, values)
+
+    assert resp.status_code == 403, (path, resp.status_code, resp.text[:200])
+    assert _everything(session_factory) == before, path
+
