@@ -86,7 +86,7 @@ def test_a_refused_setting_comes_back_with_what_was_typed(owner, session_factory
     resp = owner.post("/portfolio/settings", data=sent, headers=HTML)
 
     assert resp.status_code == 400
-    assert ('<p class="panel error">Percentage: &#39;abc&#39; is not a number.</p>'
+    assert ('<p role="alert" class="panel error">Percentage: &#39;abc&#39; is not a number.</p>'
             in resp.text)
     assert as_sent(resp.text, "/portfolio/settings") == sent
     p = _portfolio(session_factory)

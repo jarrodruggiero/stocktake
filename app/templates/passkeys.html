@@ -7,7 +7,7 @@ password.</p>
 
 {% if saved == 'added' %}<p class="panel ok">Passkey added. You can sign in with it now.</p>{% endif %}
 {% if saved == 'removed' %}<p class="panel ok">Passkey removed.</p>{% endif %}
-{% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+{% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
 
 {% include "_passkeys_panel.html" %}
 

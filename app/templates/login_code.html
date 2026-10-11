@@ -7,7 +7,7 @@
   <p class="note">Enter the six-digit code from your authenticator app. If you
   can't reach it, one of your recovery codes works here instead.</p>
 
-  {% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+  {% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
 
   <form method="post" action="/login/code" autocomplete="off">
     <input type="hidden" name="_csrf" value="{{ csrf }}">

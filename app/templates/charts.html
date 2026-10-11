@@ -16,7 +16,7 @@
 </div>
 
 {% for b in broken %}
-<p class="panel error"><strong>{{ b.name }}</strong> can't be drawn: {{ b.why }}
+<p role="alert" class="panel error"><strong>{{ b.name }}</strong> can't be drawn: {{ b.why }}
   — <a href="/charts/build?edit={{ b.id }}">fix it</a>.</p>
 {% endfor %}
 

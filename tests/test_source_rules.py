@@ -8,6 +8,9 @@
   platform's, which on Windows is cp1252, and the suite could not even be
   collected there.
 
+- **An error panel is announced.** A refusal shown in a panel at the top of
+  a page said nothing to a screen reader; `role="alert"` makes it speak.
+
 Each scan is shown a planted violation first, so a scan that finds nothing
 cannot be a scan that looks at nothing.
 """
@@ -73,3 +76,24 @@ def test_text_is_read_and_written_as_utf8():
              for line in _text_io_without_an_encoding(path.read_text(encoding="utf-8"))]
 
     assert found == [], 'pass encoding="utf-8"'
+
+
+ERROR_PANEL = re.compile(r'<[a-z]+\b[^>]*class="[^"]*\bpanel error\b[^"]*"[^>]*>')
+
+
+def _unannounced_error_panels(source: str) -> list[str]:
+    return [tag for tag in ERROR_PANEL.findall(source) if 'role="alert"' not in tag]
+
+
+def test_the_error_panel_scan_finds_a_planted_one():
+    planted = '<p class="panel error">no</p><p class="panel error" role="alert">yes</p>'
+
+    assert _unannounced_error_panels(planted) == ['<p class="panel error">']
+
+
+def test_every_error_panel_is_announced():
+    found = [f"{path.relative_to(ROOT)}: {tag}"
+             for path in sorted((ROOT / "app" / "templates").glob("*.html"))
+             for tag in _unannounced_error_panels(path.read_text(encoding="utf-8"))]
+
+    assert found == [], 'give it role="alert"'

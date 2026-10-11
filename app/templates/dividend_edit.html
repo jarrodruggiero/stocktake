@@ -16,7 +16,7 @@ it bought. Both save together or not at all.</p>
 <p class="note">Cash paid out, in {{ inst.currency }}.</p>
 {% endif %}
 
-{% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+{% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
 
 <form class="panel narrow" method="post" action="/dividend/{{ dividend.id }}/edit"
       autocomplete="off">

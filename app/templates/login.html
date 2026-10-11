@@ -15,8 +15,8 @@
     <span class="visually-hidden">{{ app_name }}</span>
   </h1>
   {% if timed_out %}<p class="panel warn">Signed out after inactivity.</p>{% endif %}
-  {% if insecure %}<p class="panel error">{{ insecure }}</p>{% endif %}
-  {% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+  {% if insecure %}<p role="alert" class="panel error">{{ insecure }}</p>{% endif %}
+  {% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
   <form class="panel" method="post" action="/login" autocomplete="on">
     <input type="hidden" name="_csrf" value="{{ csrf }}">
     <label>Email
@@ -42,7 +42,7 @@
     <button type="button" id="passkeysignin" data-csrf="{{ csrf }}">
       Sign in with a passkey</button>
   </p>
-  <p class="panel error" id="passkeyerror" hidden></p>
+  <p role="alert" class="panel error" id="passkeyerror" hidden></p>
   {% endif %}
   <p class="note"><a href="/login/recover">Recover account</a></p>
 </div>

@@ -221,7 +221,7 @@
   <p class="note">A template teaches the app one registry's statement layout or
   one broker's CSV columns.</p>
 
-  {% if installed_error %}<p class="panel error">{{ installed_error }}</p>{% endif %}
+  {% if installed_error %}<p role="alert" class="panel error">{{ installed_error }}</p>{% endif %}
   {% if installed_ok %}<p class="panel ok">Installed <code>{{ installed_ok }}.yaml</code>.</p>{% endif %}
   {% if removed_ok %}<p class="panel ok">Removed <code>{{ removed_ok }}.yaml</code>.</p>{% endif %}
 

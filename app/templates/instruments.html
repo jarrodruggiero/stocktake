@@ -17,7 +17,7 @@
 </div>
 {% if removed %}<p class="panel {{ 'warn' if unplanned else 'ok' }}"><strong>{{ removed }}</strong> removed{% if unplanned %}, and taken out of the DCA plan{% endif %}.</p>{% endif %}
 
-{% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+{% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
 {# The same words whether or not the instrument was new to the catalogue:
    saying so would tell this portfolio what another one had added. #}
 {% if added %}<p class="panel ok"><strong>{{ added }}</strong> added.</p>{% endif %}

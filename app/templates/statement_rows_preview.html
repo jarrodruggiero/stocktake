@@ -14,7 +14,7 @@
 figure against the document before saving.</p>
 {% endif %}
 {% if p.problem %}
-<p class="panel error">{{ p.problem }}</p>
+<p role="alert" class="panel error">{{ p.problem }}</p>
 {% endif %}
 {% if not p.payment_date %}
 <p class="panel warn">The payment date wasn't read from this file: enter it on each row.</p>
@@ -75,7 +75,7 @@ should match “units in app”; a mismatch means missing trades.</p>
       <td class="notecell">{{ r.carry_note }}</td>
     </tr>
     {% if r.problem %}
-    <tr><td colspan="9"><p class="panel error">{{ r.ticker }}: {{ r.problem }}</p></td></tr>
+    <tr><td colspan="9"><p role="alert" class="panel error">{{ r.ticker }}: {{ r.problem }}</p></td></tr>
     {% endif %}
     {% endfor %}
   </tbody>

@@ -7,7 +7,7 @@
 <h1>Map a broker CSV <small>{{ read.headers | length }} columns</small></h1>
 
 {% if read.problem %}
-<p class="panel error">{{ read.problem }}</p>
+<p role="alert" class="panel error">{{ read.problem }}</p>
 {% else %}
 
 <p class="note">Say which column is which — the app has guessed from the headings, so check
@@ -180,7 +180,7 @@ anywhere; it is held in this form until you leave the page.</p>
 <section>
   <h2>What that mapping produces</h2>
   {% if result.errors %}
-  <p class="panel error">{% for e in result.errors %}{{ e }}<br>{% endfor %}</p>
+  <p role="alert" class="panel error">{% for e in result.errors %}{{ e }}<br>{% endfor %}</p>
   {% else %}
   <p class="panel ok">{{ result.candidates | length }} trade(s) read from the sample.
   If these look right, the format below is ready.</p>

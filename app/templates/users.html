@@ -24,7 +24,7 @@ They can set it up again from their account page.</p>
 out everywhere. New temporary password: <code class="reveal">{{ temp_password }}</code> —
 they must change it at next login. It won't be shown again.</p>
 {% endif %}
-{% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+{% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
 
 <div class="tablewrap">
 <table>

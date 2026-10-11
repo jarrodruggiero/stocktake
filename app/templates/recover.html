@@ -5,7 +5,7 @@
   <h1>Forgotten password</h1>
   <p class="note">Enter one of the recovery codes you saved when your account
   was created. Each works once.</p>
-  {% if error %}<p class="panel error">{{ error }}</p>{% endif %}
+  {% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
   <form class="panel" method="post" action="/login/recover" autocomplete="on">
     <input type="hidden" name="_csrf" value="{{ csrf }}">
     <label>Email

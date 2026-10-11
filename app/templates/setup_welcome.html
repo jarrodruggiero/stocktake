@@ -19,7 +19,7 @@
    is configured and unreachable is the one thing on this page that stops
    everything, and it needs reading before the list explaining itself. #}
 {% if db_probe and not db_probe.ok %}
-<p class="panel error"><strong>The configured database can't be reached.</strong><br>
+<p role="alert" class="panel error"><strong>The configured database can't be reached.</strong><br>
 {{ db_probe.detail }}</p>
 {% endif %}
 {% if config_writable and not config_writable.writable %}

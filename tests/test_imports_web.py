@@ -490,7 +490,7 @@ def test_a_refused_statement_comes_back_with_what_was_typed(client, session_fact
     resp = client.post("/imports-exports/statement/commit", data=sent, headers=HTML)
 
     assert resp.status_code == 400
-    assert '<p class="panel error">Net amount has to be more than zero.</p>' in resp.text
+    assert '<p role="alert" class="panel error">Net amount has to be more than zero.</p>' in resp.text
     again = as_sent(resp.text, "/imports-exports/statement/commit")
     assert again == sent, "everything as it was sent"
     assert "<small>march.pdf</small>" in resp.text
