@@ -539,11 +539,33 @@ templates.env.globals["market_stamp"] = lambda d, t, ex: (
     markettime.aware(d, t, ex).isoformat() if markettime.aware(d, t, ex) else ""
 )
 
+def _trend(value) -> str:
+    """`up`, `down`, or nothing: no change is neither a gain nor a loss."""
+    if value is None or value == 0:
+        return ""
+    return "up" if value > 0 else "down"
+
+
+def _arrow(value):
+    """Direction as a glyph beside the colour, which ~8% of men cannot tell
+    apart. Nothing for no change."""
+    from markupsafe import Markup
+
+    trend = _trend(value)
+    if not trend:
+        return ""
+    return Markup(f'<span class="dir" aria-hidden="true">{"▲" if trend == "up" else "▼"}</span>')
+
+
+templates.env.filters["trend"] = _trend
+templates.env.filters["arrow"] = _arrow
 templates.env.filters["money"] = _money
 templates.env.filters["cash"] = _cash
 templates.env.filters["money_plain"] = _money_plain
 templates.env.filters["qty"] = lambda v: f"{v.normalize():f}" if v is not None else "—"
-templates.env.filters["pct"] = lambda v: f"{v * 100:+.2f}%" if v is not None else "—"
+# Signed, as a change is, but no change has no sign.
+templates.env.filters["pct"] = (lambda v: "—" if v is None else "0.00%" if v == 0
+                                else f"{v * 100:+.2f}%")
 # Cache-buster for static assets: browsers kept serving stale charts.js across
 # releases (StaticFiles sends no Cache-Control). Any asset change → new URL.
 templates.env.globals["asset_v"] = str(

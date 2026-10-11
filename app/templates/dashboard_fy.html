@@ -31,8 +31,8 @@
   <div class="tile"><span class="label">Invested this year</span><span class="big">{{ r.activity.invested | cash }}</span></div>
   <div class="tile"><span class="label">Dividend income</span><span class="big">{{ r.income_cash | cash }}</span></div>
   {# Direction as a glyph as well as a colour — see the dashboard tiles. #}
-  <div class="tile {{ 'up' if r.cgt.net_capital_gain >= 0 else 'down' }}">
-    <span class="label">Net capital gain</span><span class="big"><span class="dir" aria-hidden="true">{{ '▲' if r.cgt.net_capital_gain >= 0 else '▼' }}</span>{{ r.cgt.net_capital_gain | cash }}</span>
+  <div class="tile {{ r.cgt.net_capital_gain | trend }}">
+    <span class="label">Net capital gain</span><span class="big">{{ r.cgt.net_capital_gain | arrow }}{{ r.cgt.net_capital_gain | cash }}</span>
     {% if r.cgt.net_capital_loss %}<span class="sub">loss carried: {{ r.cgt.net_capital_loss | money_plain }}</span>{% endif %}</div>
 </section>
 {% if r.withheld %}
@@ -71,8 +71,8 @@ yet. The next price refresh fills it in.</p>
            the pair always reads together. The arrow carries direction as well
            as the colour — red/green alone is unreadable for ~8% of men and
            invisible in print. #}
-        <td class="num {{ 'up' if row.gain_aud is not none and row.gain_aud >= 0 else 'down' if row.gain_aud is not none }}">
-          {%- if row.gain_aud is not none %}<span class="dir" aria-hidden="true">{{ '▲' if row.gain_aud >= 0 else '▼' }}</span> {% endif -%}
+        <td class="num {{ row.gain_aud | trend }}">
+          {%- if row.gain_aud | trend %}{{ row.gain_aud | arrow }} {% endif -%}
           {# "N/A" when a percentage cannot exist (nothing was invested), an em
              dash when it merely is not known yet (no price stored). An em dash
              for both would say "no information" about a case where the
@@ -171,7 +171,7 @@ yet. The next price refresh fills it in.</p>
         <td class="num">{{ d.quantity | qty }}</td>
         <td class="num">{{ d.cost_base | money }}</td>
         <td class="num">{{ d.proceeds | money }}</td>
-        <td class="num {{ 'up' if d.gain is not none and d.gain >= 0 else 'down' if d.gain is not none }}">{{ d.gain | money }}</td>
+        <td class="num {{ d.gain | trend }}">{{ d.gain | arrow }}{{ d.gain | money }}</td>
         <td class="sub">{% for p in d.parcels %}{{ p.acquired }}{% if p.discountable %} ✓{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</td>
       </tr>
       {% endfor %}
