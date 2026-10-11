@@ -306,3 +306,40 @@ def test_what_a_workflow_installs_comes_from_the_lock(workflow: Path):
              or (re.search(r"\buv sync\b", line) and not re.search(r"--(locked|frozen)\b", line))]
 
     assert loose == []
+
+
+SHIPPED_PYTHON = re.search(r"/python:(3\.\d+)-slim@",
+                           (ROOT / "Dockerfile").read_text(encoding="utf-8")).group(1)
+
+
+def test_a_release_is_tested_on_the_python_it_ships():
+    """No version was given, so a release's tests ran on whatever the runner
+    had, 3.12, while the image runs the version its base pins."""
+    verify = _document(RELEASE)["jobs"]["verify"]
+    setups = [step.get("with") or {} for step in verify["steps"]
+              if str(step.get("uses", "")).startswith("astral-sh/setup-uv@")]
+
+    assert setups
+    assert [str(setup.get("python-version")) for setup in setups] == [SHIPPED_PYTHON] * len(setups)
+
+
+def test_a_release_runs_the_suite_inside_its_image_before_publishing():
+    """CI runs the suite inside the image and a release did not, so a tag
+    could ship an image whose own test stage failed."""
+    jobs = _document(RELEASE)["jobs"]
+    in_image = [name for name, job in jobs.items()
+                if any("--target test" in str(step.get("run") or "") for step in job["steps"])]
+    needs = jobs["publish"]["needs"]
+
+    assert in_image
+    assert set(in_image) <= set([needs] if isinstance(needs, str) else needs)
+
+
+def test_ci_tests_postgres_on_the_python_it_ships():
+    """Kept in step by hand, ci.yml says, and it was not: the pin moved to 3.14
+    and Postgres stayed on 3.12, the one combination the image runs left
+    untested."""
+    matrix = _document(ROOT / ".github" / "workflows" / "ci.yml")["jobs"]["test"]["strategy"]["matrix"]
+
+    assert [str(leg["python"]) for leg in matrix["include"] if leg.get("backend") == "postgres"] == [
+        SHIPPED_PYTHON]

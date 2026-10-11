@@ -58,6 +58,10 @@ jobs:
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
+          # The interpreter the image runs, which its base pins; without one
+          # this ran whatever the runner had. tests/test_workflows.py keeps
+          # the two in step.
+          python-version: "3.14"
       - run: uv sync --dev --locked
       # The same paths CI lints, held in step by `tests/test_workflows.py`:
       # `appcore` stayed here after it became a dependency, and a tag was the
@@ -72,8 +76,22 @@ jobs:
           PGPASSWORD: postgres
         run: uv run pytest tests -q
 
+  # The suite inside the image, as CI runs it: what a tag ships has to pass its
+  # own test stage, and nothing else here built that stage. amd64, as in CI.
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+      - name: Run the suite inside the image
+        run: |
+          docker build --target test -t stocktake:release-test .
+          docker run --rm stocktake:release-test
+
   publish:
-    needs: verify
+    needs: [verify, image]
     runs-on: ubuntu-latest
     permissions:
       contents: write   # create the Release
