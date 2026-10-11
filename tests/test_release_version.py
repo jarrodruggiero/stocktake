@@ -75,17 +75,20 @@ def test_the_chart_here_refuses_to_guess_an_image():
     assert container["image"] == "ghcr.io/jarrodruggiero/stocktake:0.67.1"
 
 
-def _chart_step() -> dict | None:
+def _release_steps() -> list[dict]:
     document = yaml.safe_load(RELEASE.read_text(encoding="utf-8"))
-    steps = [step for job in document["jobs"].values() for step in job.get("steps", [])]
-    return next((s for s in steps if s.get("id") == "chart"), None)
+    return [step for job in document["jobs"].values() for step in job.get("steps", [])]
+
+
+def _release_step(step_id: str) -> dict | None:
+    return next((s for s in _release_steps() if s.get("id") == step_id), None)
 
 
 @needs_helm
 def test_the_released_chart_runs_its_own_release(tmp_path):
     """The release's own step, with real Helm doing the packaging and only the
     registry calls stood in for: what it would push deploys the tag's image."""
-    step = _chart_step()
+    step = _release_step("chart")
     assert step is not None, "release.yml does not publish the Helm chart"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -109,3 +112,49 @@ def test_the_released_chart_runs_its_own_release(tmp_path):
     container = deployment["spec"]["template"]["spec"]["containers"][0]
     assert container["image"] == "ghcr.io/jarrodruggiero/stocktake:1.2.3"
     assert deployment["metadata"]["labels"]["app.kubernetes.io/version"] == "1.2.3"
+
+
+TAGS = ["v0.9.0", "v0.66.3", "v0.67.0", "v0.67.9", "v0.67.10", "v0.68.0-rc1"]
+
+
+@pytest.mark.parametrize("tag, latest, minor", [
+    ("v0.67.10", "true", "true"),       # newer than 0.9.0 and 0.67.9: versions, not text
+    ("v0.67.9", "false", "false"),
+    ("v0.66.3", "false", "true"),       # the newest 0.66, not the newest
+    ("v0.68.0-rc1", "false", "false"),  # a prerelease moves neither
+])
+def test_latest_follows_the_newest_release_not_the_last_one_built(tmp_path, tag, latest, minor):
+    """Building an older tag again by hand repointed `latest` and its `X.Y` at
+    it, and a `:latest` install then refused to start against the database the
+    newer release had migrated."""
+    step = _release_step("newest")
+    assert step is not None, "release.yml does not work out the newest release"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    git = bin_dir / "git"
+    git.write_text("#!/bin/sh\n" + "".join(f"printf '0000\\trefs/tags/{t}\\n'\n" for t in TAGS),
+                   encoding="utf-8")
+    git.chmod(0o755)
+    output = tmp_path / "output"
+
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]], capture_output=True, text=True,
+        stdin=subprocess.DEVNULL,
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "TAG": tag,
+             "GITHUB_OUTPUT": str(output)})
+
+    assert result.returncode == 0, result.stderr
+    said = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").split())
+    assert said == {"latest": latest, "minor": minor}
+
+
+def test_the_image_tags_and_the_release_ask_which_is_newest():
+    by_action = {step["uses"].split("@")[0]: step.get("with", {})
+                 for step in _release_steps() if "uses" in step}
+    meta = by_action["docker/metadata-action"]
+    minor = [line for line in meta["tags"].splitlines() if "{{major}}.{{minor}}" in line]
+
+    assert "latest=${{ steps.newest.outputs.latest }}" in meta["flavor"].splitlines()
+    assert minor and all("enable=${{ steps.newest.outputs.minor }}" in line for line in minor)
+    assert (by_action["softprops/action-gh-release"]["make_latest"]
+            == "${{ steps.newest.outputs.latest }}")
