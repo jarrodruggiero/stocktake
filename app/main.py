@@ -602,7 +602,9 @@ def _set_pre_auth_csrf(resp: Response, token: str) -> None:
         auth.PRE_AUTH_CSRF_COOKIE,
         token,
         max_age=PRE_AUTH_CSRF_SECONDS,
-        httponly=False,  # double-submit token; paired with a hidden form field
+        # A double-submit token, paired with a hidden form field. Scripts read
+        # the field, never the cookie, so a script on the page gets nothing here.
+        httponly=True,
         samesite="lax",
         secure=settings.auth.cookie_secure,
         path="/",
