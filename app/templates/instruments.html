@@ -12,7 +12,7 @@
   <div class="headactions">
     {# Above the table, not below it: under a list that needs scrolling,
        somebody opening this page for the first time never finds it. #}
-    <button type="button" id="addinst-open" class="primary">+ Add an instrument</button>
+    {% if auth.can_write %}<button type="button" id="addinst-open" class="primary">+ Add an instrument</button>{% endif %}
   </div>
 </div>
 {% if removed %}<p class="panel {{ 'warn' if unplanned else 'ok' }}"><strong>{{ removed }}</strong> removed{% if unplanned %}, and taken out of the DCA plan{% endif %}.</p>{% endif %}
@@ -31,6 +31,9 @@
    pointing the inputs at it with `form="pref-N"` puts each control back in the
    cell its header describes. Same trick the column chooser uses for its reset
    button. #}
+{# A viewer is offered nothing the server would refuse them: the row's
+   details are text for them, and there is nothing to add or remove. #}
+{% if auth.can_write %}
 {% for i in instruments %}
 <form id="pref-{{ i.id }}" method="post" action="/holdings/{{ i.id }}/pref"
       hidden onsubmit="return savePref(this, event)">
@@ -38,6 +41,7 @@
   {% if i.id in editable %}<input type="hidden" name="catalogue" value="1">{% endif %}
 </form>
 {% endfor %}
+{% endif %}
 
 <div class="tablewrap">
 <table class="instruments">
@@ -85,6 +89,7 @@
       {% else %}
       <td class="sub">{{ i.yahoo_symbol or '—' }}</td>
       {% endif %}
+      {% if auth.can_write %}
       {# Saves on change — a checkbox that needs a second click to take effect
          reads as broken, and did. The button is the no-JavaScript path. #}
       <td><label class="check"><input type="checkbox" name="drp" value="1"
@@ -131,6 +136,11 @@
         </form>
         {% endif %}
       </td>
+      {% else %}
+      <td class="sub">{{ 'reinvest' if pref and pref.drp }}</td>
+      <td class="notecell">{{ pref.note if pref and pref.note else '' }}</td>
+      <td></td>
+      {% endif %}
     </tr>
     {% endfor %}
   </tbody>
@@ -139,6 +149,7 @@
 
 {# Open when the server rejected the form, so the error is not rendered behind
    a closed dialog with the page looking like it did nothing. #}
+{% if auth.can_write %}
 <dialog id="addinst" {% if error %}open{% endif %}>
   <form class="panel" method="post" action="/holdings/add">
     <h2>Add an instrument</h2>
@@ -188,6 +199,7 @@
     #addinst-open, #addinst-close { display: none; }
   </style>
 </noscript>
+{% endif %}
 
 <script>
   /* Ask the server what the ticker is as soon as there's something to look up.

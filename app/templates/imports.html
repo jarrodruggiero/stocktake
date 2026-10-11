@@ -20,6 +20,8 @@
 <p class="flash">Advice saved: {{ saved }} distribution{{ '' if saved == 1 else 's' }} recorded.</p>
 {% endif %}
 
+{# A viewer reads the exports; importing is a write the server refuses them. #}
+{% if auth.can_write %}
 <h2 class="sectionhead">Imports</h2>
 {# Equal halves, not `.columns` (1fr 2fr): the two panels are the same kind of
    thing and neither is the more important. #}
@@ -135,6 +137,7 @@
     </div>
   </form>
 </dialog>
+{% endif %}
 
 <h2 class="sectionhead">Exports</h2>
 <section class="evenpair" id="exports">

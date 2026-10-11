@@ -4273,6 +4273,7 @@ def _verify_next(db: DbSession, ticker: str, due_date: str) -> plans.UpcomingBuy
 @app.get("/schedule/complete", response_class=HTMLResponse)
 def plan_complete_form(request: Request):
     with scoped(request) as (ctx, db):
+        _require_write(ctx)              # as /trade/new: a form there is no saving
         nxt = plans.next_buy(db)
         if nxt is None:
             return _redirect("/schedule")
@@ -4552,6 +4553,8 @@ def _breach(
 @app.get("/trade/new", response_class=HTMLResponse)
 def trade_form(request: Request, ticker: str = "", error: str = "", exchange: str = ""):
     with scoped(request) as (ctx, db):
+        # A form there is no saving: refused before it is filled in, not after.
+        _require_write(ctx)
         instruments = queries.portfolio_instruments(db)
         return _render(
             request,

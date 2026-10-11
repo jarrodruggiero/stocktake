@@ -18,8 +18,10 @@
     </p>
   </div>
   <div class="headactions">
+    {% if auth.can_write %}
     <button type="button" id="openplan" class="primary">
       {{ 'Edit plan' if plan else 'Create a plan' }}</button>
+    {% endif %}
   </div>
 </div>
 
@@ -84,7 +86,7 @@
           {# Only on the FIRST scheduled buy: these advance the rotation, and
              the rotation has one next step. Offering them on every row would
              imply you can record the third buy before the first. #}
-          {% if e.kind == 'buy-planned' and loop.first %}
+          {% if e.kind == 'buy-planned' and loop.first and auth.can_write %}
           <div class="upactions">
             <a href="/schedule/complete"><button type="button" class="secondary">Record buy</button></a>
             <form action="/schedule/skip" method="post" class="inline">
@@ -115,6 +117,8 @@
 
 {# The plan itself. A dialog, the same pattern as Record trade and Add an
    instrument — `showModal()` gives focus handling, Escape and the backdrop. #}
+{# A viewer is offered nothing the server would refuse them. #}
+{% if auth.can_write %}
 <dialog id="plandialog" {% if edit %}open{% endif %}>
   <h2>{{ 'Edit plan' if plan else 'Create a plan' }}</h2>
   {% if not plan %}
@@ -257,6 +261,7 @@
 {# Without script the dialog cannot be opened by a button, so the deep link is
    the way in — same form either way. #}
 <noscript><a href="/schedule?edit=1">Edit the plan</a></noscript>
+{% endif %}
 
 <script src="/static/tradeform.js?v={{ asset_v }}" defer></script>
 <script src="/static/planpage.js?v={{ asset_v }}" defer></script>
