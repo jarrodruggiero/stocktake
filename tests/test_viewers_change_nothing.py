@@ -17,6 +17,10 @@ one a viewer may use, with the reason. A new route has to be put in one.
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
+
 import pytest
 from sqlalchemy import select, text
 from test_hostile_input import (
@@ -75,6 +79,22 @@ WRITES = sorted(r.path for r in _all_routes() if "POST" in r.methods
                 and r.path not in VIEWER_MAY)
 
 
+def _gate(route) -> str | None:
+    """The role check a handler makes itself, read off the calls it makes."""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(route.endpoint)))
+    called = {node.func.id for node in ast.walk(tree)
+              if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
+    return next((g for g in ("_require_admin", "_require_owner") if g in called), None)
+
+
+# Each right, and the role holding every right below it but not that one: a
+# portfolio's owner who is not a site admin, and a member who writes but owns
+# nothing.
+JUST_BELOW = {"_require_admin": "owner", "_require_owner": "member"}
+GATED = sorted((_method(r), r.path, JUST_BELOW[gate])
+               for r in _all_routes() if (gate := _gate(r)))
+
+
 @pytest.fixture
 def contained(monkeypatch, tmp_path):
     """What test_hostile_input's `sandbox` points away: the config file, the
@@ -113,16 +133,16 @@ def _everything(session_factory) -> dict:
     return out
 
 
-@pytest.mark.parametrize("path", WRITES)
-def test_a_viewer_is_refused_every_write(client, session_factory, contained, monkeypatch,
-                                         path):
+def _refused(client, session_factory, monkeypatch, method: str, path: str, role: str):
+    """Send the careful request as somebody with `role` and no site admin, and
+    hold the route to a 403 that changed nothing."""
     import test_hostile_input
 
     # The walker leaves the OCR route out (it needs tesseract); a refusal comes
     # before any of that, so any file reaches it.
     monkeypatch.setitem(test_hostile_input.FILES, "/imports-exports/statement/visual",
                         ("statement.pdf", b"%PDF-1.4", "application/pdf"))
-    route = next(r for r in _all_routes() if r.path == path and "POST" in r.methods)
+    route = next(r for r in _all_routes() if r.path == path and method in r.methods)
     world = _signed_in(client, session_factory)
     if path in SCHEDULED:
         client.post("/schedule/save", headers=HTML, follow_redirects=False, data={
@@ -136,8 +156,8 @@ def test_a_viewer_is_refused_every_write(client, session_factory, contained, mon
     with session_factory() as s:
         s.scalar(select(PortfolioMember).where(
             PortfolioMember.user_id == world.user_id,
-            PortfolioMember.portfolio_id == world.portfolio_id)).role = "viewer"
-        s.get(User, world.user_id).is_admin = False     # a viewer, and nothing more
+            PortfolioMember.portfolio_id == world.portfolio_id)).role = role
+        s.get(User, world.user_id).is_admin = False     # that role, and nothing more
         s.commit()
     before = _everything(session_factory)
 
@@ -145,7 +165,48 @@ def test_a_viewer_is_refused_every_write(client, session_factory, contained, mon
 
     assert resp.status_code == 403, (path, resp.status_code, resp.text[:200])
     assert _everything(session_factory) == before, path
-    assert _method(route) == "POST"
+
+
+@pytest.mark.parametrize("path", WRITES)
+def test_a_viewer_is_refused_every_write(client, session_factory, contained, monkeypatch,
+                                         path):
+    _refused(client, session_factory, monkeypatch, "POST", path, "viewer")
+
+
+@pytest.mark.parametrize("method, path, role", GATED,
+                         ids=[f"{method} {path}" for method, path, _role in GATED])
+def test_each_right_is_refused_to_the_role_just_below_it(client, session_factory, contained,
+                                                         monkeypatch, method, path, role):
+    """A viewer has no right at all, so the sweep above cannot tell an admin
+    check from a write check: with one swapped for the other on deleting an
+    import format, everything passed, and an owner who is no site admin could
+    delete a format for the whole app. Here each admin route is sent by such an
+    owner, and each owner route by a member who can write."""
+    _refused(client, session_factory, monkeypatch, method, path, role)
+
+
+# Written out rather than taken from GATED, which is read off the handlers: a
+# check swapped for a weaker one takes its route out of GATED, and a test that
+# reads its own expectation cannot notice (test_tenancy's PERSONAL_MODELS).
+ADMIN_ROUTES = {
+    "GET /users", "GET /admin/accounts", "GET /admin/settings", "GET /admin/logs.json",
+    "POST /users/add", "POST /users/{user_id}/active", "POST /users/{user_id}/reset",
+    "POST /users/{user_id}/2fa/clear", "POST /admin/settings", "POST /admin/settings/restart",
+    "POST /portfolio/settings", "POST /imports-exports/formats",
+    "POST /imports-exports/formats/{kind}/{slug}/delete",
+    "POST /imports-exports/statement/design/install",
+}
+OWNER_ROUTES = {
+    "POST /members/add", "POST /members/invite", "POST /members/invite/{invite_id}/revoke",
+    "POST /members/{member_id}/role", "POST /members/{member_id}/remove",
+}
+
+
+def test_the_gated_routes_are_the_ones_written_down():
+    gated = {(f"{method} {path}", role) for method, path, role in GATED}
+
+    assert gated == ({(route, "owner") for route in ADMIN_ROUTES}
+                     | {(route, "member") for route in OWNER_ROUTES})
 
 
 def test_every_post_route_is_either_a_write_or_one_a_viewer_may_use():
