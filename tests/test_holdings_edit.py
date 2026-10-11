@@ -195,6 +195,27 @@ def test_another_portfolios_plan_makes_it_shared(client, session_factory, writer
     assert _fields(_row(page, "ZULU")) == set()
 
 
+@pytest.mark.parametrize("how", ["setting", "distribution"])
+def test_another_portfolios_setting_or_distribution_alone_makes_it_shared(
+        client, session_factory, writer, how):
+    """The plan and the trade were tested; a setting or a distribution on its
+    own is "has" too (decisions.md #143)."""
+    from app.models import Portfolio
+
+    with session_factory() as s:
+        theirs = s.scalar(select(Portfolio).where(Portfolio.name == "Theirs"))
+        zulu = s.get(Instrument, writer["zulu"])
+        if how == "setting":
+            fac.hold(s, zulu, portfolio_id=theirs.id)
+        else:
+            fac.add_dividend(s, zulu, "2026-02-05", "1.00", portfolio_id=theirs.id)
+        s.commit()
+
+    page = client.get("/holdings", headers=HTML).text
+
+    assert _fields(_row(page, "ZULU")) == set()
+
+
 def test_the_row_actions_are_buttons(client, session_factory, writer):
     page = client.get("/holdings", headers=HTML).text
     zulu, acme = _row(page, "ZULU"), _row(page, "ACME")

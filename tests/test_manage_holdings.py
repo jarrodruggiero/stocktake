@@ -115,6 +115,41 @@ def test_the_last_portfolio_to_remove_it_stops_its_prices(client, session_factor
         assert s.get(Instrument, two["zulu"]).active is False
 
 
+@pytest.mark.parametrize("how", ["setting", "distribution", "plan"])
+def test_a_portfolio_still_having_it_any_way_at_all_keeps_its_prices(
+        client, session_factory, two, how):
+    """Removed from Other, ZULU is still Mine's by a setting, a distribution or
+    a place in its plan alone, and any one of them keeps the feed fetching it
+    (decisions.md #139). Only a trade had been tested."""
+    from app.models import InvestmentPlan, InvestmentPlanEntry
+
+    with session_factory() as s:
+        tenancy.allow_unscoped(s)
+        for trade in s.scalars(select(Trade).where(Trade.instrument_id == two["zulu"])):
+            s.delete(trade)
+        zulu = s.get(Instrument, two["zulu"])
+        s.add(HoldingPref(portfolio_id=two["other"], instrument_id=zulu.id))   # to remove
+        if how == "setting":
+            s.add(HoldingPref(portfolio_id=two["mine"], instrument_id=zulu.id))
+        elif how == "distribution":
+            fac.add_dividend(s, zulu, "2026-02-05", "1.00", portfolio_id=two["mine"])
+        else:
+            plan = InvestmentPlan(name="Mine", interval_days=28, portfolio_id=two["mine"])
+            s.add(plan)
+            s.flush()
+            s.add(InvestmentPlanEntry(plan_id=plan.id, position=0, instrument_id=zulu.id))
+        s.commit()
+    _switch(client, session_factory, two["other"])
+
+    resp = client.post(f"/holdings/{two['zulu']}/remove",
+                       data={"_csrf": session_csrf(session_factory)}, headers=HTML,
+                       follow_redirects=False)
+
+    assert resp.status_code == 303, resp.text
+    with session_factory() as s:
+        assert s.get(Instrument, two["zulu"]).active is True
+
+
 def test_adding_one_removed_everywhere_brings_it_back(client, session_factory, two):
     """Deactivated, not deleted: adding it again lists it and prices it again."""
     with session_factory() as s:

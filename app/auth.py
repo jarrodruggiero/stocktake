@@ -660,7 +660,9 @@ def load_api_key(db: DbSession, raw: str | None) -> ApiKey | None:
 
 def key_reach(db: DbSession, key: ApiKey) -> list[tuple[Portfolio, str | None]]:
     """Every portfolio this key was given, each with the role its creator holds
-    there NOW — None if they are no longer a member, or no longer active.
+    there NOW — None if they are no longer a member. A creator who is no longer
+    active never gets this far: `api_session` refuses their key first, and the
+    profile page lists only the signed-in person's own keys.
 
     A key belongs to the person who made it and never does more than they can
     do today — GHSA-cjcx-g69x-63jq, decisions.md #128. They saw the raw key, so
@@ -673,9 +675,7 @@ def key_reach(db: DbSession, key: ApiKey) -> list[tuple[Portfolio, str | None]]:
     if key.created_by is not None:
         roles = dict(db.execute(
             select(PortfolioMember.portfolio_id, PortfolioMember.role)
-            .join(User, User.id == PortfolioMember.user_id)
-            .where(PortfolioMember.user_id == key.created_by,
-                   User.is_active.is_(True))
+            .where(PortfolioMember.user_id == key.created_by)
         ).all())
     return [(portfolio, roles.get(portfolio.id)) for portfolio in key.portfolios]
 
