@@ -89,15 +89,16 @@ One file, five resources, no Helm:
 
 ```sh
 kubectl create namespace stocktake
-# edit the six CHANGE ME markers first
+# edit the seven CHANGE ME markers first
 kubectl apply -f deploy/kubernetes/stocktake.yaml
 kubectl -n stocktake rollout status deploy/stocktake
 ```
 
-The markers are: the timezone (twice — config and the `TZ` environment
-variable), `cookie_secure` and `trusted_proxies` for when TLS is in front, the
-StorageClass if your cluster has no default, and the Ingress host. Delete the
-Ingress if you reach the Service another way.
+The markers are: the release to run, the timezone (twice — config and the
+`TZ` environment variable), `cookie_secure` and `trusted_proxies` for when TLS
+is in front, the StorageClass if your cluster has no default, and the Ingress
+host. Delete the Ingress if you reach the Service another way. Upgrading is
+changing the release, after [a backup](#backing-up-and-restoring).
 
 !!! warning "`strategy: Recreate` is not a preference"
     The volume is ReadWriteOnce, so a second pod cannot attach it while the
