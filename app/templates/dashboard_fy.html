@@ -39,6 +39,9 @@
 <p class="note">Totals exclude {{ r.withheld | join(', ') }} — no exchange rate stored
 yet. The next price refresh fills it in.</p>
 {% endif %}
+{% for sale in r.cgt.oversold %}
+<p class="note">Capital gains exclude <a href="{{ holding_href(sale.instrument.ticker, sale.instrument.exchange, return=back) }}">{{ sale.instrument.ticker }}</a>: its sell of {{ sale.trade.quantity | qty }} units on {{ sale.trade.date }} is more than the {{ sale.held | qty }} units held then.</p>
+{% endfor %}
 
 <section>
   <h2>Holdings at {{ r.asof }}</h2>

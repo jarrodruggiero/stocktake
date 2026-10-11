@@ -646,6 +646,27 @@ def test_the_fy_endpoint_names_what_its_totals_leave_out(client, session_factory
     assert Decimal(str(payload["cgt"]["net_capital_gain"])) == ref.FY2024_NET_CAPITAL_GAIN
 
 
+@freeze_time(ref.TODAY)
+def test_the_fy_endpoint_names_a_sale_of_more_than_was_held(client, session_factory, furnished):
+    """A ledger from before the forms and the importer refused such a sale. It
+    was a 500; now that holding's gain is left out and the sale named."""
+    portfolio_id, user_id = furnished
+    with bound(session_factory, portfolio_id, user_id) as s:
+        quark = fac.make_instrument(s, "QUARK", asset_class="share")
+        fac.add_trade(s, quark, "2023-08-01", "buy", 100, "1.00")
+        fac.add_trade(s, quark, "2023-09-01", "sell", 150, "2.00")
+        s.commit()
+    raw = issue_key(session_factory, portfolio_id, created_by=user_id)
+
+    resp = client.get(f"/api/v1/fy/{ref.FY2024}", headers=bearer(raw))
+
+    assert resp.status_code == 200
+    cgt = resp.json()["cgt"]
+    assert cgt["oversold"] == [{"ticker": "QUARK", "exchange": "ASX", "date": "2023-09-01",
+                                "units": 150.0, "held": 100.0}]
+    assert Decimal(str(cgt["net_capital_gain"])) == ref.FY2024_NET_CAPITAL_GAIN
+
+
 @pytest.mark.parametrize("year", [1999, 2101])
 def test_a_year_outside_the_supported_range_is_rejected(client, session_factory, furnished,
                                                         year):
