@@ -1570,8 +1570,7 @@ async def setup_finish_save(request: Request):
     target = _post_setup_url(current)
     setupwizard.discard()
     if wants_restart and lifecycle.supervision().restarts:
-        resp = _redirect("/setup/restarting?to=" + quote_plus(target))
-        return resp
+        return _restarting_page(request, target)
     return _redirect(target)
 
 
@@ -1586,23 +1585,22 @@ def _post_setup_url(current) -> str:
     return url.url + "/" if url is not None else "/"
 
 
-@app.get("/setup/restarting", response_class=HTMLResponse)
-def setup_restarting(request: Request, to: str = "/"):
-    """The page that survives the restart.
+def _restarting_page(request: Request, target: str):
+    """The page that survives the restart, as the Finish step's own answer.
 
     Rendered, THEN the stop is requested — the other order sends a SIGTERM
     before the browser has the page telling it what is happening, and the
     person is left looking at a connection error with no idea whether the
     wizard worked.
 
-    Deliberately not gated on the wizard being in progress: the draft has
-    already been discarded by the time this loads, and this page has no power
-    of its own — it polls a URL and redirects.
+    It was a GET of its own, taking where to go next from the address. Only
+    Finish, gated and token-checked, draws it now, and the target is the one
+    it worked out.
     """
     resp = templates.TemplateResponse(
         request,
         "setup_restarting.html",
-        {"auth": None, "target": to, "supervision": lifecycle.supervision()},
+        {"auth": None, "target": target, "supervision": lifecycle.supervision()},
     )
     lifecycle.request_stop("setup wizard finished")
     return resp
