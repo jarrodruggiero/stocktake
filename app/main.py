@@ -2629,7 +2629,7 @@ def _require_owner(ctx):
     """Who is in the portfolio: members and invitations. Portfolio settings are
     an app admin's (`_require_admin`), and a key anyone may make for
     themselves."""
-    if ctx is None or not ctx.is_owner:
+    if not ctx.is_owner:
         raise HTTPException(403, "Only the portfolio owner can do that")
 
 
