@@ -4110,7 +4110,7 @@ async def plan_preview(
             return JSONResponse({"rows": [], "why": queries.held_twice(twice)})
 
         ambiguous = queries.ambiguous_tickers(db)
-        rows = plans.preview(db, [queries.listing_ref(i.ticker, i.exchange, ambiguous)
+        rows = plans.preview(db, [(i.id, queries.listing_ref(i.ticker, i.exchange, ambiguous))
                                   for i in chosen], interval_days, start)
         return JSONResponse(
             {"rows": [{"date": due.isoformat(), "ticker": ticker} for due, ticker in rows],

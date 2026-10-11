@@ -116,10 +116,111 @@ def test_with_history_the_schedule_steps_from_the_last_recorded_buy(pf):
 
 
 @freeze_time(TODAY)
-def test_a_due_buy_is_marked_as_due(pf):
-    make_plan(pf, ["ALPHA"], interval_days=28, start_date="2026-07-01")
+def test_with_no_start_date_and_nothing_recorded_the_first_buy_is_today(pf):
+    make_plan(pf, ["ALPHA"], interval_days=28)
 
-    assert plans.schedule(pf, upcoming=1)["next"][0].is_due is True
+    assert plans.schedule(pf)["next"][0].due_date == dt.date(2026, 8, 2)
+
+
+@freeze_time(TODAY)
+def test_the_schedule_lists_three_buys_unless_asked_for_more(pf):
+    make_plan(pf, ["ALPHA"], interval_days=28, start_date="2026-08-03")
+
+    assert len(plans.schedule(pf)["next"]) == 3
+
+
+@freeze_time(TODAY)
+def test_each_upcoming_buy_points_at_its_own_slot(pf):
+    """The ticker comes from the projection and the slot from the rotation;
+    they have to be the same slot, or a link or a prefill goes to the wrong
+    holding."""
+    plan = make_plan(pf, ["ALPHA", "BETAX", "GAMMA"], start_date="2026-01-05")
+    record(pf, plan, 0, "2026-07-06")
+    slots = {e.id: e for e in plan.entries}
+
+    upcoming = plans.schedule(pf, upcoming=3)["next"]
+
+    assert [(b.ticker, slots[b.entry_id].instrument.ticker,
+             pf.get(fac.Instrument, b.instrument_id).ticker) for b in upcoming] == [
+        ("BETAX", "BETAX", "BETAX"), ("GAMMA", "GAMMA", "GAMMA"), ("ALPHA", "ALPHA", "ALPHA")]
+
+
+@freeze_time(TODAY)
+def test_the_last_buy_is_the_latest_recorded_whatever_order_it_was_written(pf):
+    """By due date: the July buy, written first, is the last one, so GAMMA is
+    next, from 6 July."""
+    plan = make_plan(pf, ["ALPHA", "BETAX", "GAMMA"], start_date="2026-01-05")
+    record(pf, plan, 1, "2026-07-06")
+    record(pf, plan, 0, "2026-06-08")
+
+    nxt = plans.next_buy(pf)
+
+    assert (nxt.ticker, nxt.due_date) == ("GAMMA", dt.date(2026, 8, 3))
+
+
+@freeze_time(TODAY)
+def test_the_last_done_is_the_latest_bought_not_skipped(pf):
+    plan = make_plan(pf, ["ALPHA", "BETAX", "GAMMA"], start_date="2026-01-05")
+    assert plans.schedule(pf)["last_done"] is None
+    record(pf, plan, 0, "2026-05-11")
+    record(pf, plan, 1, "2026-06-08")
+    record(pf, plan, 2, "2026-07-06", status="skipped")
+
+    assert plans.schedule(pf)["last_done"].due_date == dt.date(2026, 6, 8)
+
+
+def test_no_rotation_or_no_interval_projects_nothing():
+    """`project` is pure, and both the schedule and the editor's preview go
+    through it: an empty draft, or an interval of 0, is no dates rather than a
+    crash or a column of the same day."""
+    day = dt.date(2026, 8, 3)
+
+    assert plans.project([], 28, position=0, last_due=day, upcoming=3) == []
+    assert plans.project(["ALPHA"], 0, position=0, last_due=day, upcoming=3) == []
+    assert plans.project(["ALPHA"], 1, position=0, last_due=day, upcoming=2) == [
+        (dt.date(2026, 8, 4), "ALPHA"), (dt.date(2026, 8, 5), "ALPHA")]
+
+
+@freeze_time(TODAY)
+def test_with_no_plan_a_draft_starts_at_its_first_slot(pf):
+    alpha, betax = (fac.make_instrument(pf, t) for t in ("ALPHA", "BETAX"))
+
+    rows = plans.preview(pf, [(alpha.id, "ALPHA"), (betax.id, "BETAX")], 28,
+                         fac.d("2026-08-10"), upcoming=2)
+
+    assert rows == [(dt.date(2026, 8, 10), "ALPHA"), (dt.date(2026, 9, 7), "BETAX")]
+
+
+@freeze_time(TODAY)
+def test_a_plan_whose_rotation_was_emptied_can_still_preview_a_draft(pf):
+    """Removing the last holding in a rotation leaves a plan with no slots and
+    a buy recorded against one of them."""
+    plan = make_plan(pf, ["ALPHA"], start_date="2026-01-05")
+    record(pf, plan, 0, "2026-07-06")
+    alpha = plan.entries[0].instrument
+    assert plans.remove_instrument(pf, alpha.id) is True
+    betax = fac.make_instrument(pf, "BETAX")
+
+    rows = plans.preview(pf, [(betax.id, "BETAX")], 28, None, upcoming=1)
+
+    assert rows == [(dt.date(2026, 8, 3), "BETAX")]
+
+
+@freeze_time(TODAY)
+def test_a_draft_with_every_slot_taken_out_previews_nothing(pf):
+    """What the editor asks for when the last chip is pulled out, with buys
+    already recorded."""
+    plan = make_plan(pf, ["ALPHA"], start_date="2026-01-05")
+    record(pf, plan, 0, "2026-07-06")
+
+    assert plans.preview(pf, [], 28, None) == []
+
+
+def test_removing_an_instrument_no_plan_has_says_so(pf):
+    make_plan(pf, ["ALPHA"])
+    other = fac.make_instrument(pf, "OTHER")
+
+    assert plans.remove_instrument(pf, other.id) is False
 
 
 # --------------------------------------------------------------------------- #
