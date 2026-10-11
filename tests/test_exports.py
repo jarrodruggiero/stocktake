@@ -736,3 +736,42 @@ def test_a_closed_positions_dividend_with_no_rate_is_blank_not_one_to_one(pf):
     assert row[headers.index("Gross capital gain (AUD)")] == Decimal("40.00")
     assert row[headers.index("Dividends (AUD)")] == ""
     assert row[headers.index("Total return incl. dividends (AUD)")] == ""
+
+
+@freeze_time("2026-07-15")
+def test_a_closed_position_discounts_only_its_long_held_gain(pf):
+    """Forty cents of gain on a parcel held over a year halves to twenty; the
+    same on a parcel bought three months before is not discounted."""
+    inst = make_instrument(pf, "ACME", asset_class="share")
+    add_trade(pf, inst, "2023-01-02", "buy", 10, "10.00")
+    add_trade(pf, inst, "2025-06-01", "buy", 10, "10.00")
+    add_trade(pf, inst, "2025-09-01", "sell", 20, "10.04")
+
+    headers, rows = exports.build(pf, ["closed_positions"])[exports.TITLES["closed_positions"]]
+
+    [row] = rows
+    cells = {h: row[headers.index(h)] for h in (
+        "Gross capital gain (AUD)", "CGT discount (AUD)", "Capital gain after discount (AUD)",
+        "Total return incl. dividends (AUD)")}
+    assert cells == {"Gross capital gain (AUD)": Decimal("0.80"),
+                     "CGT discount (AUD)": Decimal("0.20"),
+                     "Capital gain after discount (AUD)": Decimal("0.60"),
+                     "Total return incl. dividends (AUD)": Decimal("0.80")}
+
+
+@freeze_time("2026-07-15")
+def test_a_closed_position_bought_with_no_rate_has_no_gain_to_show(pf):
+    """The sale and the dividend carried their rates; the purchase had none,
+    so every figure built on the cost is blank rather than one-to-one."""
+    inst = make_instrument(pf, "NOVA", exchange="LSE", currency="GBP", asset_class="share")
+    add_trade(pf, inst, "2023-01-02", "buy", 10, "10.00")
+    add_dividend(pf, inst, "2024-06-01", "5.00", fx_rate="2.00")
+    add_trade(pf, inst, "2025-09-01", "sell", 10, "12.00", fx_rate="2.00")
+
+    headers, rows = exports.build(pf, ["closed_positions"])[exports.TITLES["closed_positions"]]
+
+    [row] = rows
+    assert row[headers.index("Dividends (AUD)")] == Decimal("10.00")
+    assert [row[headers.index(h)] for h in (
+        "Outlay incl. brokerage (AUD)", "Gross capital gain (AUD)", "CGT discount (AUD)",
+        "Capital gain after discount (AUD)", "Total return incl. dividends (AUD)")] == [""] * 5

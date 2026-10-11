@@ -681,6 +681,7 @@ def test_a_dividend_with_no_rate_leaves_its_holding_out_of_income(pf):
     assert {r.instrument.ticker: r.cash for r in report["income"]} == {
         "ACME": Decimal("30.00"), "NOVA": None}
     assert (report["income_cash"], report["withheld"]) == (Decimal("30.00"), ["NOVA"])
+    assert [r.grossed_up for r in report["income"] if r.cash is None] == [None]
 
 
 @freeze_time("2026-07-15")
@@ -710,3 +711,65 @@ def test_a_purchase_with_no_rate_leaves_the_amount_invested_unknown(pf):
         None, None, None, True)                      # unknown, not "nothing invested"
     assert (report["activity"].buys, report["activity"].invested) == (2, Decimal("150.00"))
     assert (report["total_invested"], report["withheld"]) == (0, ["NOVA"])
+
+
+def test_without_an_fx_book_aud_needs_no_rate_and_a_foreign_row_is_withheld(pf):
+    """The direct call, as a test makes it: only the rates on the rows are
+    known, and an AUD row needs none (decisions.md #6)."""
+    aud = make_instrument(pf, "ACME", asset_class="share")
+    add_trade(pf, aud, "2025-08-01", "buy", 10, "10.00", fx_rate=None)
+    add_trade(pf, aud, "2025-09-01", "sell", 10, "12.00", fx_rate=None)
+    usd = _usd(pf)
+    add_trade(pf, usd, "2025-08-01", "buy", 10, "10.00")
+    add_trade(pf, usd, "2025-09-01", "sell", 10, "12.00")
+
+    [aud_sale] = fyreport.instrument_disposals(aud)
+    [usd_sale] = fyreport.instrument_disposals(usd)
+
+    assert (aud_sale.known, aud_sale.gain) == (True, Decimal("20.00"))
+    assert (usd_sale.known, usd_sale.proceeds) == (False, None)
+
+
+def test_a_sale_spanning_a_rated_parcel_and_a_rateless_one_is_withheld(pf):
+    inst = _usd(pf)
+    add_trade(pf, inst, "2025-08-01", "buy", 10, "10.00", fx_rate="1.50")
+    add_trade(pf, inst, "2025-08-02", "buy", 10, "10.00")
+    add_trade(pf, inst, "2025-09-01", "sell", 20, "12.00", fx_rate="1.60")
+
+    [sale] = fyreport.fy_cgt(pf, 2026).disposals
+
+    assert (sale.known, sale.cost_base, sale.gain) == (False, None, None)
+    assert [p.cost_base for p in sale.parcels] == [Decimal("150.00"), None]
+
+
+def test_each_holding_withheld_is_named_once_in_ticker_order(pf):
+    for ticker in ("ZETA", "NOVA"):
+        inst = _usd(pf, ticker)
+        add_trade(pf, inst, "2025-08-01", "buy", 20, "10.00")
+        add_trade(pf, inst, "2025-09-01", "sell", 10, "12.00")
+        add_trade(pf, inst, "2025-10-01", "sell", 10, "12.00")
+
+    assert fyreport.fy_cgt(pf, 2026).withheld == ["NOVA", "ZETA"]
+
+
+@freeze_time("2026-07-15")
+def test_income_reads_in_ticker_order_whatever_order_the_holdings_came_in(pf):
+    for ticker in ("ZETA", "ALFA"):
+        inst = make_instrument(pf, ticker, asset_class="share")
+        add_trade(pf, inst, "2025-08-01", "buy", 10, "10.00")
+        add_dividend(pf, inst, "2025-12-01", "5.00")
+
+    assert [r.instrument.ticker for r in fyreport.fy_report(pf, 2026)["income"]] == [
+        "ALFA", "ZETA"]
+
+
+@freeze_time("2026-07-15")
+def test_a_priced_holding_with_no_rate_to_value_it_is_named(pf):
+    """Its purchases carried their rates; today's value needs one too."""
+    inst = _usd(pf)
+    add_trade(pf, inst, "2025-08-01", "buy", 10, "10.00", fx_rate="1.50")
+    add_prices(pf, inst, [("2025-12-31", "11.00")])
+
+    report = fyreport.fy_report(pf, 2026)
+
+    assert (report["snapshot"][0].value_aud, report["withheld"]) == (None, ["NOVA"])
