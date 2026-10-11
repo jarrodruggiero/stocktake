@@ -39,6 +39,9 @@ if BACKEND not in ("sqlite", "postgres"):
     raise RuntimeError(f"STOCKTAKE_TEST_DB must be sqlite or postgres, got {BACKEND!r}")
 
 os.environ["APP_CONFIG_FILE"] = str(TESTS_DIR / "config.test.yaml")
+# A broker CSV waiting for its commit goes under /scratch, which is the
+# container's: a laptop has no such folder to write to.
+os.environ["APP_IMPORTS__STAGING_DIR"] = str(_TMP_ROOT / "staged")
 if BACKEND == "sqlite":
     os.environ["APP_DATABASE__PATH"] = str(_TMP_ROOT / "app.db")
     os.environ.pop("APP_DATABASE__TYPE", None)

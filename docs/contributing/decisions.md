@@ -140,7 +140,10 @@ tell you to back up, so a retention policy would keep exactly what the page
 promises to throw away, and a backup mover that drops capabilities loses
 `DAC_OVERRIDE` and cannot traverse a 0700 directory it does not own. `/scratch`
 exists in the image, so this needs no volume; mount an `emptyDir` for a size
-limit. Losing a mapping session on restart is intended.
+limit. Losing a mapping session on restart is intended. A broker CSV's parsed
+rows wait there too, between the preview and the commit (`imports.staging_dir`),
+swept after a day.
+
 **23. `user.public_id` exists ahead of need, and must never be reissued.** An
 auto-increment `id` cannot be an OIDC `sub`: it leaks how many accounts exist
 and when this one was made, and every app's "user 1" collides. Adding it later

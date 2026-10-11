@@ -48,6 +48,9 @@ for name in [k for k in os.environ if k.startswith("APP_")]:
     del os.environ[name]
 os.environ.pop("STOCKTAKE_TEST_DB", None)
 os.environ["APP_CONFIG_FILE"] = str(WORK / "config" / "config.yaml")
+# A broker CSV waiting for its commit goes under /scratch in the image; this
+# run has a folder of its own for it.
+os.environ["APP_IMPORTS__STAGING_DIR"] = str(WORK / "staged")
 sys.path.insert(0, str(APP_ROOT))
 
 import pyotp  # noqa: E402

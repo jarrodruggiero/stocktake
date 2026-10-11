@@ -16,7 +16,6 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import time
-from pathlib import Path
 
 from sqlalchemy import delete, select
 
@@ -78,13 +77,14 @@ def sweep_staged_uploads(session, settings) -> int:
     commit. When they don't, the file stays — holding the trades they were
     about to import, which is personal data with no owner watching it.
     """
-    from .imports_web import STAGING
+    from .imports_web import staging
 
-    if not STAGING.exists():
+    folder = staging(settings)
+    if not folder.exists():
         return 0
     cutoff = time.time() - settings.maintenance.staged_upload_hours * 3600
     removed = 0
-    for path in STAGING.glob("*.json"):
+    for path in folder.glob("*.json"):
         try:
             if path.stat().st_mtime < cutoff:
                 path.unlink()
@@ -142,8 +142,3 @@ def expired_session_count(session) -> int:
     now = dt.datetime.now(dt.timezone.utc)
     return len(session.scalars(select(UserSession).where(UserSession.expires_at < now)).all())
 
-
-def staging_dir() -> Path:
-    from .imports_web import STAGING
-
-    return STAGING

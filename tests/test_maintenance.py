@@ -124,7 +124,7 @@ def test_stale_staged_uploads_are_swept(db, settings, monkeypatch, tmp_path):
     old = time.time() - 48 * 3600
     import os
     os.utime(stale, (old, old))
-    monkeypatch.setattr("app.imports_web.STAGING", staging)
+    monkeypatch.setattr(settings.imports, "staging_dir", str(staging))
 
     removed = maintenance.sweep_staged_uploads(db, settings)
 
@@ -134,7 +134,7 @@ def test_stale_staged_uploads_are_swept(db, settings, monkeypatch, tmp_path):
 
 
 def test_a_missing_staging_directory_is_not_an_error(db, settings, monkeypatch, tmp_path):
-    monkeypatch.setattr("app.imports_web.STAGING", tmp_path / "never-created")
+    monkeypatch.setattr(settings.imports, "staging_dir", str(tmp_path / "never-created"))
 
     assert maintenance.sweep_staged_uploads(db, settings) == 0
 
@@ -145,7 +145,7 @@ def test_a_missing_staging_directory_is_not_an_error(db, settings, monkeypatch, 
 
 def test_a_run_reports_what_each_step_did(session_factory, settings, monkeypatch,
                                           tmp_path):
-    monkeypatch.setattr("app.imports_web.STAGING", tmp_path / "staged")
+    monkeypatch.setattr(settings.imports, "staging_dir", str(tmp_path / "staged"))
     monkeypatch.setattr(settings.imports, "visual_dir", str(tmp_path / "visual"))
 
     counts = maintenance.run(session_factory, settings)
@@ -160,7 +160,7 @@ def test_a_run_reports_what_each_step_did(session_factory, settings, monkeypatch
 def test_one_failing_step_does_not_stop_the_others(session_factory, settings,
                                                    monkeypatch, tmp_path):
     """A stuck staging directory is no reason to stop expiring sessions."""
-    monkeypatch.setattr("app.imports_web.STAGING", tmp_path / "staged")
+    monkeypatch.setattr(settings.imports, "staging_dir", str(tmp_path / "staged"))
 
     def explode(session, settings):
         raise RuntimeError("disk on fire")

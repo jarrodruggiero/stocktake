@@ -111,7 +111,7 @@ def contained(monkeypatch, tmp_path):
     from test_hostile_input import YAHOO_SAYS
     from test_pricefeed import stub_yf
 
-    from app import configfile, imports_web, lifecycle, statements
+    from app import configfile, lifecycle, statements
     from app import main as main_mod
 
     stub_yf(monkeypatch, info=dict(YAHOO_SAYS))
@@ -122,7 +122,7 @@ def contained(monkeypatch, tmp_path):
     config.write_text(real.read_text(encoding="utf-8"), encoding="utf-8")
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(config))
     monkeypatch.setattr(main_mod.settings.imports, "templates_dir", str(tmp_path / "formats"))
-    monkeypatch.setattr(imports_web, "STAGING", tmp_path / "staged")
+    monkeypatch.setattr(main_mod.settings.imports, "staging_dir", str(tmp_path / "staged"))
 
 
 def _everything(session_factory) -> dict:

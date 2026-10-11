@@ -21,7 +21,6 @@ from sqlalchemy import select
 
 import factories as fac
 from app import auth as auth_mod
-from app.imports_web import STAGING
 from app.models import Dividend, Instrument, PortfolioMember, Trade
 from test_routes import PASSWORD, bind_to_only_portfolio, make_login, reading, session_csrf
 
@@ -56,14 +55,11 @@ def _holding_acme(client, session_factory):
 
 
 @pytest.fixture
-def staging_dir(monkeypatch, tmp_path):
-    """A staging directory of this test's own. The real one is shared by every
-    process on the machine, so a test that looks at all of it can see another
-    run's uploads."""
-    from app import imports_web
-
+def staging_dir(monkeypatch, tmp_path, app_module):
+    """A staging directory of this test's own, so a test that looks at all of
+    it sees only its own uploads."""
     path = tmp_path / "staged"
-    monkeypatch.setattr(imports_web, "STAGING", path)
+    monkeypatch.setattr(app_module.settings.imports, "staging_dir", str(path))
     return path
 
 
@@ -195,17 +191,18 @@ def test_committing_writes_the_previewed_trades(client, session_factory, with_ac
     assert {t.quantity for t in trades} == {100, 50}
 
 
-def test_the_staged_file_is_cleared_after_committing(client, session_factory, with_acme):
+def test_the_staged_file_is_cleared_after_committing(client, session_factory, with_acme,
+                                                     staging_dir):
     """It holds parsed trade data, so it must not linger once it is no longer
     needed."""
     make_login(client, session_factory)
     uid = staged_id(upload_csv(client, session_factory))
-    assert (STAGING / f"{uid}.json").exists()
+    assert (staging_dir / f"{uid}.json").exists()
 
     client.post(f"/imports-exports/csv/{uid}/commit", data={"_csrf": session_csrf(session_factory)},
                 headers=HTML)
 
-    assert not (STAGING / f"{uid}.json").exists()
+    assert not (staging_dir / f"{uid}.json").exists()
 
 
 def test_a_file_with_a_bad_row_stages_nothing_to_commit(client, session_factory, with_acme,
@@ -387,13 +384,14 @@ def test_a_file_selling_more_than_is_held_cannot_be_committed(client, session_fa
         assert s.scalars(select(Trade)).all() == []
 
 
-def test_the_staged_rows_survive_the_round_trip_exactly(client, session_factory, with_acme):
+def test_the_staged_rows_survive_the_round_trip_exactly(client, session_factory, with_acme,
+                                                        staging_dir):
     """The preview writes JSON and the commit reads it back; a lossy trip here
     would silently alter what gets imported."""
     make_login(client, session_factory)
     uid = staged_id(upload_csv(client, session_factory))
 
-    staged = json.loads((STAGING / f"{uid}.json").read_text(encoding="utf-8"))
+    staged = json.loads((staging_dir / f"{uid}.json").read_text(encoding="utf-8"))
 
     assert staged["broker"] == "testbroker"
     assert [row["quantity"] for row in staged["rows"]] == ["100", "50"]
@@ -788,7 +786,8 @@ def test_a_corrected_ticker_moves_every_row_of_it_and_then_commits(client, sessi
     assert [t.quantity for t in trades] == [100, 50] and tickers == {"ACME"}
 
 
-def test_a_corrected_exchange_finds_the_listing_there(client, session_factory, with_acme):
+def test_a_corrected_exchange_finds_the_listing_there(client, session_factory, with_acme,
+                                                      staging_dir):
     """The same code on two exchanges: ACME is listed on the NASDAQ too. The
     exchange is a text box, so it is typed as it comes: lower case, spaced."""
     _holding_acme(client, session_factory)
@@ -801,7 +800,7 @@ def test_a_corrected_exchange_finds_the_listing_there(client, session_factory, w
                     **{"ticker__ACMEE__ASX": "ACMEE", "exchange__ACMEE__ASX": " nasdaq "})
 
     assert staged_id(page) == uid
-    staged = json.loads((STAGING / f"{uid}.json").read_text(encoding="utf-8"))
+    staged = json.loads((staging_dir / f"{uid}.json").read_text(encoding="utf-8"))
     assert {(r["ticker"], r["exchange"]) for r in staged["rows"]} == {("ACMEE", "NASDAQ")}
 
 
@@ -811,7 +810,7 @@ def test_a_corrected_exchange_finds_the_listing_there(client, session_factory, w
     {"ticker__NOPE__ASX": "ACME", "exchange__NOPE__ASX": "ASX"},
 ])
 def test_a_correction_without_both_halves_moves_nothing(client, session_factory, with_acme,
-                                                        fields):
+                                                        fields, staging_dir):
     _holding_acme(client, session_factory)
     uid = resolve_id(upload_csv(client, session_factory, payload=TYPO_CSV))
 
@@ -819,11 +818,12 @@ def test_a_correction_without_both_halves_moves_nothing(client, session_factory,
 
     assert resolve_id(page) == uid                     # still to be fixed
     assert "Rechecked against your instruments." in page.text
-    staged = json.loads((STAGING / f"{uid}.json").read_text(encoding="utf-8"))
+    staged = json.loads((staging_dir / f"{uid}.json").read_text(encoding="utf-8"))
     assert {r["ticker"] for r in staged["rows"]} == {"ACMEE"}
 
 
-def test_only_the_uploader_can_correct_their_upload(client, session_factory, with_acme):
+def test_only_the_uploader_can_correct_their_upload(client, session_factory, with_acme,
+                                                    staging_dir):
     make_login(client, session_factory, email="first@example.test", admin=True)
     uid = resolve_id(upload_csv(client, session_factory, payload=TYPO_CSV))
     with session_factory() as s:
@@ -841,7 +841,7 @@ def test_only_the_uploader_can_correct_their_upload(client, session_factory, wit
                     **{"ticker__ACMEE__ASX": "ACME", "exchange__ACMEE__ASX": "ASX"})
 
     assert resp.status_code == 403
-    staged = json.loads((STAGING / f"{uid}.json").read_text(encoding="utf-8"))
+    staged = json.loads((staging_dir / f"{uid}.json").read_text(encoding="utf-8"))
     assert {r["ticker"] for r in staged["rows"]} == {"ACMEE"}
 
 

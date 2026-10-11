@@ -570,40 +570,48 @@ def test_no_text_layer_and_no_tesseract_is_an_empty_page_not_a_crash(monkeypatch
 # Where these files live
 # --------------------------------------------------------------------------- #
 
-def test_the_default_scratch_directory_is_not_on_the_data_volume():
+# The two kinds of scratch file: page renders of a statement being mapped, and
+# a broker CSV's parsed rows between its preview and its commit.
+SCRATCH = [("visual_dir", "/scratch/visual"), ("staging_dir", "/scratch/staged")]
+
+
+@pytest.mark.parametrize("name,expected", SCRATCH)
+def test_the_default_scratch_directory_is_not_on_the_data_volume(name, expected):
     """One assertion for the whole rule — decisions.md #22.
 
     Page renders under the backed-up data volume would survive in a snapshot
     repository against the promise the page itself makes. 0700 happens to deny
     the backup mover as surely as it denies another user — but that is luck
     standing in for design, and it stops being luck the moment permissions or
-    capabilities change.
+    capabilities change. The staged CSV rows were in the system's temporary
+    folder, on the container's own layer, outside `/scratch` and its size limit.
     """
     from app.settings import ImportSettings
 
-    default = ImportSettings().visual_dir
+    default = getattr(ImportSettings(), name)
 
     assert not default.startswith("/data"), (
-        f"visual_dir defaults to {default!r}, which is on the volume the deploy "
-        "docs say to back up. These renders are ephemeral by design."
+        f"{name} defaults to {default!r}, which is on the volume the deploy "
+        "docs say to back up. These files are ephemeral by design."
     )
-    assert default == "/scratch/visual"
+    assert default == expected
 
 
-def test_the_shipped_manifests_mount_the_directory_the_app_writes_to():
+@pytest.mark.parametrize("name", [name for name, _ in SCRATCH])
+def test_the_shipped_manifests_mount_the_directory_the_app_writes_to(name):
     """A default nobody provides a home for is a broken install.
 
-    Changing `visual_dir` to a top-level path means every shipped manifest has
-    to mount something there — and the container has to own it, since the app
-    runs as uid 1000 and cannot create a directory at `/`. This checks all
-    three places that have to agree.
+    Changing a scratch directory to a top-level path means every shipped
+    manifest has to mount something there — and the container has to own it,
+    since the app runs as uid 1000 and cannot create a directory at `/`. This
+    checks all three places that have to agree.
     """
     from pathlib import Path
 
     from app.settings import ImportSettings
 
     root = Path(__file__).resolve().parent.parent
-    mount = "/" + ImportSettings().visual_dir.strip("/").split("/")[0]
+    mount = "/" + getattr(ImportSettings(), name).strip("/").split("/")[0]
 
     dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
     assert "mkdir -p" in dockerfile and mount in dockerfile, (
