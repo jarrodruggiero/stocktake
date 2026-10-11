@@ -2608,13 +2608,13 @@ COUNTRIES = [
 
 def _require_admin(ctx):
     """App-wide account administration."""
-    if ctx is None or not ctx.is_admin:
+    if not ctx.is_admin:
         raise HTTPException(403, "Admins only")
 
 
 def _require_write(ctx):
     """Anything that changes this portfolio. Viewers are read-only."""
-    if ctx is None or not ctx.can_write:
+    if not ctx.can_write:
         raise HTTPException(403, "You have read-only access to this portfolio")
 
 
