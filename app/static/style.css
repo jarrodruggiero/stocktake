@@ -378,20 +378,12 @@ body.hide-values .notecell { filter: blur(7px); user-select: none; }
 
 /* The idle warning itself. Sits above the blurred page rather than blurring
    with it, so the one thing still readable is the way out. */
-.idleoverlay {
-  position: fixed; inset: 0; z-index: 100;
-  display: flex; align-items: center; justify-content: center;
+#idlewarn { max-width: min(26rem, 92vw); text-align: center; }
+#idlewarn::backdrop {
   background: color-mix(in srgb, var(--bg) 70%, transparent);
   backdrop-filter: blur(2px);
 }
-.idleoverlay[hidden] { display: none; }
-.idlecard {
-  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-  padding: 1.5rem 1.8rem; max-width: 26rem; text-align: center;
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.35);
-}
-.idlecard h2 { margin-top: 0; }
-.idlecard .commitbar { justify-content: center; margin-bottom: 0; }
+#idlewarn .commitbar { justify-content: center; margin-bottom: 0; }
 #idlewarn-countdown { font-variant-numeric: tabular-nums; }
 
 /* feed status strip + manual refresh (dashboard) */
