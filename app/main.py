@@ -4027,7 +4027,9 @@ async def chart_preview(request: Request):
     spec = await request.json()
     with scoped(request) as (ctx, db):
         try:
-            return charts_build.run(db, spec)
+            # In a thread, as the charts page runs it: this is the whole
+            # engine, asked again every time the builder is dragged.
+            return await asyncio.to_thread(charts_build.run, db, spec)
         except ValueError as exc:
             raise HTTPException(400, str(exc))
 

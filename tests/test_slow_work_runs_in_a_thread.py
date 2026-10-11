@@ -86,3 +86,19 @@ def test_a_statement_is_drawn_for_the_visual_mapper_in_a_thread(client, session_
 
     assert took >= SLOW
     assert health_took < 0.6, "the health check waited for the pages to be drawn"
+
+
+def test_a_chart_preview_is_worked_out_in_a_thread(client, session_factory, app_module,
+                                                   monkeypatch):
+    """The preview runs the whole chart engine, as often as the builder is
+    dragged; the charts page, which runs the same engine, never held the loop."""
+    monkeypatch.setattr(app_module.charts_build, "run", _slowly({"series": []}))
+    make_login(client, session_factory)
+
+    async def preview(http):
+        await http.post("/charts/preview", json={"kind": "line"})
+
+    took, health_took = health_during(app_module.app, preview, cookies=client.cookies)
+
+    assert took >= SLOW
+    assert health_took < 0.6, "the health check waited for the chart"
