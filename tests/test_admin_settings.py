@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
+from formdata import as_sent
 
 from app import configfile, lifecycle
 from app.settings import PortfolioSettings
@@ -504,45 +505,7 @@ def test_restart_is_offered_even_when_the_config_is_read_only(client, session_fa
 def _as_sent(page: str) -> dict:
     """What a browser submits for the settings form as drawn: every field,
     a checkbox only when ticked, a list as its text."""
-    from html.parser import HTMLParser
-
-    class Form(HTMLParser):
-        def __init__(self):
-            super().__init__()
-            self.fields, self.inside, self.text_of, self.select = {}, False, None, None
-
-        def handle_starttag(self, tag, attrs):
-            a = dict(attrs)
-            if tag == "form":
-                self.inside = a.get("action") == "/admin/settings"
-            if not self.inside or "disabled" in a:
-                return
-            if tag == "input" and a.get("name"):
-                if a.get("type") != "checkbox" or "checked" in a:
-                    self.fields[a["name"]] = a.get("value", "")
-            elif tag == "textarea":
-                self.text_of = a["name"]
-                self.fields[a["name"]] = ""
-            elif tag == "select":
-                self.select = a["name"]
-            elif tag == "option" and self.select and "selected" in a:
-                self.fields[self.select] = a["value"]
-
-        def handle_endtag(self, tag):
-            if tag == "form":
-                self.inside = False
-            elif tag == "textarea":
-                self.text_of = None
-            elif tag == "select":
-                self.select = None
-
-        def handle_data(self, data):
-            if self.text_of:
-                self.fields[self.text_of] += data
-
-    form = Form()
-    form.feed(page)
-    return form.fields
+    return as_sent(page, "/admin/settings")
 
 
 @pytest.fixture

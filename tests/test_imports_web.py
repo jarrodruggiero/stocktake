@@ -14,9 +14,11 @@ trades into their own portfolio — so the staged file records who uploaded it.
 from __future__ import annotations
 
 import json
+import re
 from decimal import Decimal
 
 import pytest
+from formdata import as_sent
 from sqlalchemy import select
 
 import factories as fac
@@ -72,8 +74,6 @@ def upload_csv(client, session_factory, payload=GOOD_CSV, broker="testbroker"):
 
 def staged_id(response) -> str:
     """Pull the staging id out of the rendered commit form."""
-    import re
-
     match = re.search(r"/imports-exports/csv/([0-9a-f-]{36})/commit", response.text)
     assert match, "no commit form on the preview page"
     return match.group(1)
@@ -472,6 +472,33 @@ def test_a_reinvested_statement_creates_the_drp_trade_too(client, session_factor
     assert dividend.reinvest_trade_id == trade.id
 
 
+def test_a_refused_statement_comes_back_with_what_was_typed(client, session_factory,
+                                                            with_acme, monkeypatch):
+    """The preview is the answer to an upload, so Back cannot bring it back: a
+    refusal answered with JSON lost every figure, and the PDF went up again."""
+    from app import statements
+
+    monkeypatch.setattr(statements, "extract", lambda data, ocr_enabled=True:
+                        statements.Extracted(text=SINGLE_STATEMENT, used_ocr=True))
+    _holding_acme(client, session_factory)
+    preview = client.post("/imports-exports/statement", headers=HTML,
+                          files={"file": ("march.pdf", b"%PDF-fake", "application/pdf")},
+                          data={"_csrf": session_csrf(session_factory)})
+    sent = {**as_sent(preview.text, "/imports-exports/statement/commit"),
+            "net_amount": "-5.00"}
+
+    resp = client.post("/imports-exports/statement/commit", data=sent, headers=HTML)
+
+    assert resp.status_code == 400
+    assert '<p class="panel error">Net amount has to be more than zero.</p>' in resp.text
+    again = as_sent(resp.text, "/imports-exports/statement/commit")
+    assert again == sent, "everything as it was sent"
+    assert "<small>march.pdf</small>" in resp.text
+    assert "Read with OCR" in resp.text       # the warning stays with the figures
+    with reading(session_factory) as s:
+        assert s.scalars(select(Dividend)).all() == []
+
+
 def test_a_duplicate_statement_is_refused(client, session_factory, with_acme):
     _holding_acme(client, session_factory)
     payload = {"ticker": "ACME", "payment_date": "2026-03-15", "net_amount": "123.45",
@@ -763,7 +790,6 @@ TYPO_CSV = ("Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
 
 
 def resolve_id(response) -> str:
-    import re
 
     match = re.search(r"/imports-exports/csv/([0-9a-f-]{36})/resolve", response.text)
     assert match, "no correction form on the preview page"
@@ -867,7 +893,6 @@ def test_a_correction_to_an_unknown_or_expired_upload_is_refused(client, session
 
 def _way_back(page: str) -> tuple[str, str]:
     """The back button's address and its words."""
-    import re
 
     found = re.search(r'class="backlink" href="([^"]*)">\s*<button[^>]*>\s*&larr;\s*([^<]*?)\s*<',
                       page)
@@ -943,7 +968,6 @@ def test_a_file_with_nothing_to_import_stages_nothing(client, session_factory, w
 
 
 def test_the_export_filter_lists_instruments_by_class_then_ticker(client, session_factory):
-    import re
 
     make_login(client, session_factory)
     with session_factory() as s:
