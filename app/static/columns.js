@@ -70,6 +70,9 @@
     list.querySelectorAll("li").forEach((li, index) => {
       const input = li.querySelector('input[name="order"]');
       if (input) input.value = li.dataset.key;
+      /* The position shown moves with the column, or the list reads 3, 1, 2. */
+      const position = li.querySelector(".colpos");
+      if (position) position.textContent = index + 1;
       /* The end buttons are the ones that cannot do anything. */
       const [up, down] = li.querySelectorAll("button");
       if (up) up.disabled = index === 0;

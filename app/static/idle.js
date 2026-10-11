@@ -93,7 +93,7 @@
   function show() {
     if (warning) return;
     warning = true;
-    overlay.hidden = false;
+    if (!overlay.open) overlay.showModal();
     /* The same class the money-blur has always used, so charts, tables and
        notes all obscure themselves the way they already know how. */
     body.classList.add("hide-values");
@@ -105,7 +105,7 @@
   function hide() {
     if (!warning) return;
     warning = false;
-    overlay.hidden = true;
+    if (overlay.open) overlay.close();
     body.classList.remove("hide-values");
     window.dispatchEvent(new Event("values-visibility-changed"));
     schedule(POLL_IDLE);
@@ -181,6 +181,8 @@
     if (!document.hidden) poll();
   });
 
+  /* Escape would close the warning and answer nothing; only the buttons do. */
+  overlay.addEventListener("cancel", (e) => e.preventDefault());
   stayBtn.addEventListener("click", keepalive);
   outBtn.addEventListener("click", () => logoutForm.submit());
 

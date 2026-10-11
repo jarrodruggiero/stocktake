@@ -131,19 +131,24 @@
      it blurs the page behind it — the same "glass brick" treatment that used
      to sit behind a manual Hide $ button. The button is gone: blurring is no
      longer something you ask for, it is what happens when you have stopped
-     being there. #}
-  <div id="idlewarn" class="idleoverlay" hidden role="alertdialog"
-       aria-labelledby="idlewarn-title" aria-describedby="idlewarn-body">
-    <div class="idlecard">
-      <h2 id="idlewarn-title">Still there?</h2>
-      <p id="idlewarn-body">You'll be signed out in
-        <strong id="idlewarn-countdown" aria-live="polite">0:00</strong>.</p>
-      <div class="commitbar">
-        <button type="button" id="idlewarn-stay">Stay signed in</button>
-        <button type="button" id="idlewarn-out" class="secondary">Log out now</button>
-      </div>
+     being there.
+
+     A modal <dialog>, because it can arrive while another one is open — half
+     way through Record trade, say. A modal sits in the top layer and makes
+     the rest of the page inert, so a warning that was an ordinary element
+     under it could not be pressed, and the trade went with the session.
+     The countdown is a timer, not a live region: the warning is read out
+     once as it opens, rather than every second. #}
+  <dialog id="idlewarn" role="alertdialog"
+          aria-labelledby="idlewarn-title" aria-describedby="idlewarn-body">
+    <h2 id="idlewarn-title">Still there?</h2>
+    <p id="idlewarn-body">You'll be signed out in
+      <strong id="idlewarn-countdown" role="timer">0:00</strong>.</p>
+    <div class="commitbar">
+      <button type="button" id="idlewarn-stay">Stay signed in</button>
+      <button type="button" id="idlewarn-out" class="secondary">Log out now</button>
     </div>
-  </div>
+  </dialog>
   <form id="idlewarn-logout" method="post" action="/logout" hidden>
     <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
   </form>
