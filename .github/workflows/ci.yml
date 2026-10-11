@@ -45,10 +45,25 @@ jobs:
   appcore:
     runs-on: ubuntu-latest
     steps:
+      # The revision is read from pyproject.toml, not copied here: without a
+      # `ref` this tested appcore's main, which says nothing about the pin.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: pyproject.toml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: The revision this app pins
+        id: pin
+        run: >-
+          python3 -c 'import tomllib;
+          print("rev=" + tomllib.load(open("pyproject.toml", "rb"))["tool"]["uv"]["sources"]["appcore"]["rev"])'
+          >> "$GITHUB_OUTPUT"
+
       - name: Check out appcore at the revision this app pins
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: jarrodruggiero/appcore
+          ref: ${{ steps.pin.outputs.rev }}
           path: appcore
           persist-credentials: false
 
@@ -265,7 +280,7 @@ jobs:
   # always names something that passed the full suite.
   dev:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [lint, test, image, visual, hostile]
+    needs: [lint, appcore, test, image, visual, hostile]
     runs-on: ubuntu-latest
     permissions:
       contents: read
