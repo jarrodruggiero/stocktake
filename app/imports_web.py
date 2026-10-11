@@ -868,8 +868,8 @@ def _visual_context(request, ctx, settings, token, session, *, filename,
         "editing_markers": "\n".join(chosen.match_any) if chosen else "",
         # The mapping as the page's JavaScript holds it, so opening a template
         # shows where every field currently points rather than a blank slate.
-        "editing_mapping": json.dumps(
-            docformats.mapping_of(chosen) if chosen else {}),
+        # A dict, for the template's `tojson`, which escapes < > &.
+        "editing_mapping": docformats.mapping_of(chosen) if chosen else {},
     }
 
 
@@ -1075,6 +1075,13 @@ def _validate(kind: str, body: bytes) -> str | None:
                 if not template.fields and not template.rows:
                     return ("That template has no fields and no rows, so it "
                             "would never read anything.")
+                # Words printed before a value never need markup, and refused
+                # here a template stays inert wherever its labels are shown
+                # (decisions.md #38).
+                for spec in template.fields.values():
+                    for label in spec.after:
+                        if "<" in label or ">" in label:
+                            return f"A label can't contain < or >: {label}"
             else:
                 loaded = docformats.load_broker_formats(extra_dir=Path(tmp))
                 if "probe" not in loaded:

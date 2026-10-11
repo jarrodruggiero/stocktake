@@ -156,6 +156,18 @@ def test_a_file_that_is_not_a_template_is_refused(client, session_factory, admin
         (tmp_path / "statements").glob("*.yaml"))
 
 
+def test_a_label_with_markup_in_it_is_refused(client, session_factory, admin, tmp_path):
+    """A label is words printed before a value on a statement, which never
+    need a < or >. Refused at the door, a template stays inert wherever its
+    labels are shown (decisions.md #38)."""
+    resp = _upload(client, session_factory, body=GOOD_STATEMENT.replace(
+        b'after: ["Net amount"]', b'after: ["</script><script>x()</script>"]'))
+
+    assert _installed_or_error(resp).endswith(
+        "error=example-registry.yaml: A label can't contain < or >: </script><script>x()</script>")
+    assert not list(tmp_path.glob("statements/*.yaml"))
+
+
 def test_malformed_yaml_is_refused_without_a_traceback(client, session_factory, admin, tmp_path):
     resp = _upload(client, session_factory, body=b"fields: [this is not\n  valid: yaml\n")
 
