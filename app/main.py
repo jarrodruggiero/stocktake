@@ -5323,6 +5323,11 @@ def instruments_page(request: Request, error: str = "", added: str = "",
                 "removed": removed,
                 "unplanned": unplanned,
                 "editable": _catalogue_editable(ctx, [i.id for i in instruments]),
+                # Only an instance admin can edit one another portfolio has
+                # too, and a new currency then resets that portfolio's rates.
+                "shared": (_shared_elsewhere([i.id for i in instruments],
+                                             ctx.active_portfolio_id)
+                           if ctx.user.is_admin else set()),
             },
         )
 
@@ -5608,6 +5613,16 @@ async def instruments_add(
     return _redirect(f"/holdings?added={ticker}")
 
 
+def _reach(reset: dict[tuple[int, str], int]) -> str:
+    """'portfolio 1 (2 trades), portfolio 4 (1 trade, 1 distribution)'."""
+    parts = []
+    for pid in sorted({pid for pid, _kind in reset}):
+        counts = [f"{n} {kind}{'' if n == 1 else 's'}" for kind in ("trade", "distribution")
+                  if (n := reset.get((pid, kind)))]
+        parts.append(f"portfolio {pid} ({', '.join(counts)})")
+    return ", ".join(parts) or "nothing recorded"
+
+
 @app.post("/holdings/{instrument_id}/pref")
 async def instrument_pref(
     request: Request,
@@ -5653,9 +5668,16 @@ async def instrument_pref(
                 # would book US dollars as Australian ones. AUD needs none, and
                 # the feed fills a foreign one from the stored series.
                 rate = Decimal(1) if code == money.REPORTING else None
-                for model in (Trade, Dividend):
-                    db.execute(update(model).where(model.instrument_id == inst.id)
-                               .values(fx_rate=rate))
+                reset: dict[tuple[int, str], int] = {}
+                for model, kind in ((Trade, "trade"), (Dividend, "distribution")):
+                    for pid in db.scalars(update(model).where(model.instrument_id == inst.id)
+                                          .values(fx_rate=rate).returning(model.portfolio_id)):
+                        reset[(pid, kind)] = reset.get((pid, kind), 0) + 1
+                # Every portfolio's rows, not only this one's (#143): the one
+                # bulk update on a request path to cross portfolios says so.
+                log.info("%s on %s: currency %s to %s by user %d, resetting the rates of %s",
+                         inst.ticker, inst.exchange, inst.currency, code, ctx.user.id,
+                         _reach(reset))
                 fetch = fetch or rate is None
             inst.name = textfield.fit(name, Instrument.name)
             inst.asset_class = asset_class

@@ -68,6 +68,7 @@
           </select></td>
       <td><input class="cellfield codefield" name="currency" form="pref-{{ i.id }}"
                  value="{{ i.currency }}" maxlength="3" aria-label="Currency"
+                 {% if i.id in shared %}data-reach="{{ i.ticker }} is in other portfolios too: a new currency resets the exchange rates on its trades and distributions in all of them."{% endif %}
                  onchange="savePref(this.form)"></td>
       {% else %}
       <td>{{ i.name or '' }}</td>
@@ -232,6 +233,15 @@
      also navigate; without JavaScript the button posts normally. */
   function savePref(form, event) {
     if (event) event.preventDefault();
+    /* A new currency resets the rates in every portfolio that has the holding
+       (decisions.md #143). Where that is more than this one, ask first. */
+    const currency = document.querySelector('[name="currency"][form="' + form.id + '"]');
+    if (currency && currency.dataset.reach
+        && currency.value.trim().toUpperCase() !== currency.defaultValue
+        && !confirm(currency.dataset.reach)) {
+      currency.value = currency.defaultValue;
+      return false;
+    }
     /* The mark lives in a table cell now, not inside the form, so it is found
        by the form's id rather than by descending into it. */
     const mark = document.querySelector('.savemark[data-for="' + form.id + '"]');
@@ -250,6 +260,7 @@
         mark.textContent = text;
         /* "saved" goes; a refusal says why, and stays until the next save. */
         if (text === "saved") setTimeout(() => { mark.textContent = ""; }, 2000);
+        if (text === "saved" && currency) currency.defaultValue = currency.value.trim().toUpperCase();
       });
     return false;
   }

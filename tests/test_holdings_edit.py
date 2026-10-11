@@ -12,6 +12,7 @@ and opens the list of them, with Delete all trades, instead of removing.
 
 from __future__ import annotations
 
+import logging
 import re
 from decimal import Decimal
 
@@ -280,6 +281,42 @@ def test_a_new_currency_forgets_the_rates_recorded_under_the_old_one(
     assert rates() == [Decimal(1), Decimal(1)] and kicked == [1], "AUD needs no rate"
     _save(client, session_factory, writer["zulu"], currency="AUD", yahoo_symbol="ZULU.AX")
     assert rates() == [Decimal(1), Decimal(1)] and kicked == [1]
+
+
+def test_an_admins_new_currency_is_logged_with_every_portfolio_it_reached(
+        client, session_factory, admin, caplog):
+    """The one bulk update on a request path that crosses portfolios, and it
+    left nothing behind: no log line, and no history to restore from (#143)."""
+    from app.models import Dividend
+
+    with session_factory() as s:
+        tenancy.allow_unscoped(s)
+        mine, theirs = s.scalars(select(fac.Portfolio.id).order_by(fac.Portfolio.id)).all()
+        user = s.scalar(select(User.id).where(User.email == "user@example.test"))
+        fac.add_dividend(s, s.get(Instrument, admin["acme"]), "2026-02-05", "1.00",
+                         portfolio_id=theirs)
+        fac.add_dividend(s, s.get(Instrument, admin["acme"]), "2026-03-05", "1.00",
+                         portfolio_id=theirs)
+        s.commit()
+        assert s.scalar(select(Dividend.id).where(Dividend.portfolio_id == theirs))
+
+    with caplog.at_level(logging.INFO, logger="app.main"):
+        _save(client, session_factory, admin["acme"], name="Acme", currency="USD",
+              yahoo_symbol="ACME.AX")
+
+    assert [r.getMessage() for r in caplog.records if "currency" in r.getMessage()] == [
+        f"ACME on ASX: currency AUD to USD by user {user}, resetting the rates of "
+        f"portfolio {mine} (1 trade), portfolio {theirs} (1 trade, 2 distributions)"]
+
+
+def test_an_admin_is_asked_first_when_a_new_currency_reaches_other_portfolios(
+        client, session_factory, admin):
+    page = client.get("/holdings", headers=HTML).text
+
+    assert ('data-reach="ACME is in other portfolios too: a new currency resets the '
+            'exchange rates on its trades and distributions in all of them."'
+            in _row(page, "ACME"))
+    assert "data-reach" not in _row(page, "ZULU")
 
 
 def test_an_admins_new_currency_reaches_every_portfolios_rates(client, session_factory, admin):
