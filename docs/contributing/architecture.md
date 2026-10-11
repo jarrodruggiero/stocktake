@@ -19,9 +19,12 @@ Two consequences worth internalising:
   wanting `holding.current_value`, the answer is a function, and if it is slow
   the answer is the cache described below.
 - **The cache is fingerprinted, not invalidated.** `queries` keeps the daily
-  series against a fingerprint of its inputs (max price date; per table the
-  row count, max id and max `updated_at`). Nothing has to remember to clear
-  it. If you add a table that feeds the series, add it to the fingerprint —
+  series against a fingerprint of its inputs: for prices and FX rates the row
+  count, the latest date and the latest `updated_at`; for trades,
+  distributions, instruments and holding settings the row count, max id and
+  max `updated_at`. Nothing has to remember to clear it. If you add a table
+  that feeds the series, add it to the fingerprint, and give it an
+  `updated_at` if its rows are ever rewritten in place (decisions.md #91) —
   see `_series_fingerprint`.
 
 ## The modules

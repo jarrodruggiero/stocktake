@@ -259,6 +259,47 @@ def test_an_existing_key_keeps_its_portfolio_through_0010(tmp_path: Path):
     conn.close()
 
 
+def test_0013_keeps_every_row_on_the_way_up_and_down(tmp_path: Path):
+    """0013 adds a column to four tables. Dropping one again, on SQLite,
+    rebuilds the table, and a holding setting cascades from its instrument:
+    a rebuild that dropped `instrument` with its rows would take them along."""
+    path = tmp_path / "rows.db"
+    cfg = _config(path)
+    command.upgrade(cfg, "0012")
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        INSERT INTO user (id, email, name, password_hash, public_id, created_at)
+        VALUES (1, 'a@example.com', 'A', 'x', 'pub-1', '2026-01-01');
+        INSERT INTO portfolio (id, name, created_at) VALUES (1, 'Main', '2026-01-01');
+        INSERT INTO instrument (id, ticker, exchange, currency, asset_class, drp, active)
+        VALUES (1, 'ALPHA', 'ASX', 'AUD', 'etf', 1, 1);
+        INSERT INTO holding_pref (id, portfolio_id, instrument_id, drp, note)
+        VALUES (1, 1, 1, 1, 'kept');
+        INSERT INTO trade (id, instrument_id, date, type, quantity, unit_price,
+                           brokerage, fx_rate, user_id, portfolio_id)
+        VALUES (1, 1, '2026-01-02', 'buy', 10, 100.5, 9.5, 1.0, 1, 1);
+        INSERT INTO price (instrument_id, date, close, source, provisional)
+        VALUES (1, '2026-01-02', 101.25, 'test', 0);
+        INSERT INTO fx_rate (pair, date, rate, source)
+        VALUES ('USDAUD', '2026-01-02', 1.52, 'test');
+    """)
+    conn.commit()
+    conn.close()
+    tables = ("instrument", "holding_pref", "trade", "price", "fx_rate")
+
+    def counts() -> list[int]:
+        conn = sqlite3.connect(path)
+        try:
+            return [conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in tables]
+        finally:
+            conn.close()
+
+    command.upgrade(cfg, "0013")
+    assert counts() == [1, 1, 1, 1, 1]
+    command.downgrade(cfg, "0012")
+    assert counts() == [1, 1, 1, 1, 1]
+
+
 def _tables(path: Path) -> set[str]:
     conn = sqlite3.connect(path)
     try:

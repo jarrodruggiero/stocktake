@@ -667,7 +667,12 @@ remain the source of truth for anything historical.
 The series cache fingerprints on it; without that an edit changes no row count
 and every chart goes on serving pre-edit numbers. A DRP trade is not editable
 directly — its units and its dividend's cash are one statement event, so it is
-edited through the dividend or not at all.
+edited through the dividend or not at all. The same holds for every table the
+series reads that is rewritten in place: prices (a second quote, or the
+settled close replacing a provisional one, #13), FX rates, instruments and
+holding settings carry `updated_at` too. The feed's upserts set it
+themselves, because `onupdate` does not fire on an insert that becomes an
+update.
 
 **92. Every /setup route opens with `_wizard_step()`.** The prefix is public,
 because the early steps run before there is a database to hold a session, so

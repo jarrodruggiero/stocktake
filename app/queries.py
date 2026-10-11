@@ -658,7 +658,7 @@ def _table_fingerprint(session: Session, model) -> tuple:
 
 
 def _series_fingerprint(session: Session) -> tuple:
-    from .models import Dividend
+    from .models import Dividend, HoldingPref
 
     return (
         # Count AND max date, for the reason the FX line below already gives:
@@ -666,17 +666,23 @@ def _series_fingerprint(session: Session) -> tuple:
         # reached, so the maximum does not move. That is not hypothetical — it
         # is what happens every time an instrument is added to a portfolio that
         # is already priced to today, and it served a chart showing a −83%
-        # cliff against a +214% Gain tile until the count went in.
-        session.execute(select(func.count(), func.max(Price.date))
+        # cliff against a +214% Gain tile until the count went in. And the
+        # latest `updated_at`: a second quote on a day, or the settled close
+        # replacing a provisional one, rewrites a row in place, which moves
+        # neither (decisions.md #91, carried over).
+        session.execute(select(func.count(), func.max(Price.date), func.max(Price.updated_at))
                         .select_from(Price)).one(),
         # FX gets its own terms rather than riding on the price date. A holding
         # excluded for want of a rate comes back the moment one is stored, and
         # a feed run that fetches only FX — or backfills an old pair — moves no
         # price date at all, so the charts would keep serving the gap.
-        session.execute(select(func.count(), func.max(FxRate.date))
+        session.execute(select(func.count(), func.max(FxRate.date), func.max(FxRate.updated_at))
                         .select_from(FxRate)).one(),
         *_table_fingerprint(session, Trade),
         *_table_fingerprint(session, Dividend),
+        # A class or currency corrected, and a holding's reinvest flag or note.
+        *_table_fingerprint(session, Instrument),
+        *_table_fingerprint(session, HoldingPref),
     )
 
 

@@ -21,8 +21,10 @@ each test an empty cache to start from.
 
 from __future__ import annotations
 
+import datetime as dt
 from decimal import Decimal
 
+from freezegun import freeze_time
 from sqlalchemy import func, select, update
 
 import factories as fac
@@ -234,4 +236,108 @@ def test_reordering_the_holdings_handed_out_leaves_the_cache_alone(pf):
     queries.cached_holdings(pf).reverse()        # and one served from it
 
     assert [h.instrument.ticker for h in queries.cached_holdings(pf)] == ["ALPHA", "BETAX"]
+
+
+# --------------------------------------------------------------------------- #
+# Rows rewritten in place: prices, rates, instruments and holding settings
+# --------------------------------------------------------------------------- #
+# The fingerprint counted price and FX rows and took their latest date, and a
+# second quote on a day, or the settled close replacing a provisional one, is
+# the same row rewritten: the tiles read the new price and the chart the old
+# one, all weekend after a Friday close. Instrument and holding-setting edits
+# were not in it at all. Each is written here through the code that really
+# writes it.
+
+def _quoted(session, monkeypatch, price: str) -> None:
+    """A live quote through the real refresh, at noon in Sydney with the ASX
+    open, so the date is one the market has not settled."""
+    from test_pricefeed import SETTINGS
+
+    from app import pricefeed, providers
+
+    noon = dt.datetime(2026, 3, 4, 1, 0, tzinfo=dt.timezone.utc)
+    monkeypatch.setattr(providers, "yahoo_quotes",
+                        lambda symbols: {"ALPHA.AX": (noon, Decimal(price))})
+    pricefeed.refresh_quotes(session, SETTINGS)
+    _commit(session)
+
+
+@freeze_time("2026-03-04 01:00:00", tick=True)      # two writes, two moments
+def test_a_price_quoted_again_the_same_day_reaches_the_chart(pf, monkeypatch):
+    inst, _ = _setup(pf)
+    inst.yahoo_symbol = "ALPHA.AX"
+    _commit(pf)
+
+    _quoted(pf, monkeypatch, "11.50")
+    assert _series_value(pf) == Decimal("1150")
+    _quoted(pf, monkeypatch, "12.00")                # the same row, rewritten
+
+    assert _series_value(pf) == Decimal("1200")
+
+
+def test_the_settled_close_replacing_a_live_price_reaches_the_chart(pf, monkeypatch):
+    from test_pricefeed import SETTINGS, stub_closes, stub_no_fx, stub_yf
+
+    from app import pricefeed
+
+    # One timeline, moving forward as a real one does: rows written on the
+    # real clock would carry today's date, later than either write below.
+    with freeze_time("2026-03-04 01:00:00", tick=True):
+        inst, _ = _setup(pf)
+        inst.yahoo_symbol = "ALPHA.AX"
+        _quoted(pf, monkeypatch, "11.50")
+        assert _series_value(pf) == Decimal("1150")
+    stub_closes(monkeypatch, {"ALPHA.AX": [("2026-03-04", "12.25")]})
+    stub_yf(monkeypatch)
+    stub_no_fx(monkeypatch)
+
+    with freeze_time("2026-03-05 01:00:00"):          # the 4th has closed
+        pricefeed.run_feed(pf, SETTINGS)
+        _commit(pf)
+        assert _series_value(pf) == Decimal("1225")
+
+
+@freeze_time("2026-03-05 01:00:00", tick=True)
+def test_an_exchange_rate_rewritten_in_place_reaches_the_chart(pf, monkeypatch):
+    from test_pricefeed import SETTINGS, stub_closes, stub_yf
+
+    from app import pricefeed, providers
+
+    inst = fac.make_instrument(pf, "NOVA", exchange="NASDAQ", currency="USD")
+    fac.add_trade(pf, inst, "2026-03-02", "buy", 100, "5.00", fx_rate="1.50")
+    fac.add_prices(pf, inst, [("2026-03-02", "5.00"), ("2026-03-03", "6.00")])
+    fac.add_fx(pf, "USDAUD", "2026-03-03", "1.50")
+    _commit(pf)
+    assert _series_value(pf) == Decimal("900")       # 600 USD at 1.50
+    stub_closes(monkeypatch, {})
+    stub_yf(monkeypatch)
+    monkeypatch.setattr(providers, "fetch_fx", lambda *_a, **_k: providers.Fetch(
+        rows=[(dt.date(2026, 3, 3), Decimal("1.60"))], source="test"))
+
+    pricefeed.run_feed(pf, SETTINGS)                # the same row, at 1.60
+    _commit(pf)
+
+    assert _series_value(pf) == Decimal("960")
+
+
+def test_an_instruments_class_edited_reaches_the_split_chart(pf):
+    inst, _ = _setup(pf)
+    assert set(queries.cached_grouped_series(pf, "asset_class")["groups"]) == {"etf"}
+
+    inst.asset_class = "share"
+    _commit(pf)
+
+    assert set(queries.cached_grouped_series(pf, "asset_class")["groups"]) == {"share"}
+
+
+def test_a_holding_setting_edited_reaches_the_cached_holdings(pf):
+    inst, _ = _setup(pf)
+    pref = fac.hold(pf, inst)
+    _commit(pf)
+    assert [h.drp for h in queries.cached_holdings(pf)] == [False]
+
+    pref.drp = True
+    _commit(pf)
+
+    assert [h.drp for h in queries.cached_holdings(pf)] == [True]
 

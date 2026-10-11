@@ -358,13 +358,20 @@ def refresh_quotes(session: Session, settings: PortfolioSettings) -> int:
                     source="yahoo-live", provisional=True)
             .on_conflict_do_update(
                 index_elements=["instrument_id", "date"],
-                set_={"close": price, "source": "yahoo-live", "provisional": True},
+                set_={"close": price, "source": "yahoo-live", "provisional": True,
+                      "updated_at": _now()},
             )
         )
         written += 1
     session.commit()
     log.info("quote refresh: %s live prices", written)
     return written
+
+
+def _now() -> dt.datetime:
+    """For `updated_at` in an upsert's update half, which `onupdate` never
+    reaches: the series cache fingerprints on it (models.Price)."""
+    return dt.datetime.now(dt.timezone.utc)
 
 
 def _backfill_rates(session: Session, model) -> int:
@@ -443,7 +450,8 @@ def run_feed(session: Session, settings: PortfolioSettings) -> dict[str, int]:
                         provisional=False)
                 .on_conflict_do_update(
                     index_elements=["instrument_id", "date"],
-                    set_={"close": close, "source": source, "provisional": False},
+                    set_={"close": close, "source": source, "provisional": False,
+                          "updated_at": _now()},
                 )
             )
         counts["prices"] += len(rows)
@@ -481,7 +489,8 @@ def run_feed(session: Session, settings: PortfolioSettings) -> dict[str, int]:
                 dialect_insert(session, FxRate)
                 .values(pair=pair, date=date, rate=rate, source=source)
                 .on_conflict_do_update(
-                    index_elements=["pair", "date"], set_={"rate": rate, "source": source}
+                    index_elements=["pair", "date"],
+                    set_={"rate": rate, "source": source, "updated_at": _now()},
                 )
             )
         counts["fx"] += len(result.rows)
