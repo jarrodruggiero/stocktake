@@ -297,7 +297,6 @@ class RealisedPosition:
     instrument: Instrument
     proceeds: Decimal | None  # native ccy; None when sale not yet recorded
     outlay: Decimal
-    profit: Decimal | None
     note: str | None = None  # the holder's own note (sale details etc.)
 
 
@@ -316,13 +315,11 @@ def split_positions(
                 if sells
                 else None
             )
-            profit = (proceeds + h.dividends_cash - h.cost) if proceeds is not None else None
             closed.append(
                 RealisedPosition(
                     instrument=h.instrument,
                     proceeds=proceeds,
                     outlay=h.cost,
-                    profit=profit,
                     note=h.note,
                 )
             )
@@ -698,10 +695,10 @@ def cached_holdings(session: Session) -> list[Holding]:
     fingerprint = _series_fingerprint(session)
     hit = _holdings_cache.get(key)
     if hit is not None and hit[0] == fingerprint:
-        return hit[1]
+        return list(hit[1])     # a copy: a caller sorting its own must not reorder ours
     holdings = all_holdings(session)
     _holdings_cache[key] = (fingerprint, holdings)
-    return holdings
+    return list(holdings)
 
 
 _grouped_cache: dict[tuple, tuple[tuple, dict]] = {}
