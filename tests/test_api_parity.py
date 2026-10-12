@@ -56,6 +56,7 @@ PUBLISHED: dict[str, str] = {
     "dividend.fx_rate": "dividends[].fx_rate",
     "dividend.note": "dividends[].note",
     "dividend.period_end": "dividends[].period_end",
+    "dividend.withholding_tax": "dividends[].withholding_tax",
     "price.close": "holdings[].last_price",
     "price.date": "holdings[].price_date",
 }

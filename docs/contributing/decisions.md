@@ -1429,3 +1429,14 @@ a June-quarter fund goes ex on the first business day of July, which is the
 wrong year too. The cash is still converted at its payment date's rate, and
 the charts still place it on that date, because they show money moving. A
 period end comes on or before the payment, and within a year of it.
+
+**145. Foreign tax withheld is income, and recorded beside the cash.** A US
+dividend arrives net of the tax the US kept. The assessable income is the whole
+of it, and the tax kept is a foreign income tax offset (ITAA97 Div 770), so
+recording only the cash understated the income and lost the offset.
+`dividend.withholding_tax` holds what was kept, in the distribution's own
+currency: `cash_amount` stays the cash received, because that is what the
+portfolio's total return and every chart count. The FY report converts the two
+at the same rate and shows the tax in its own column where any was withheld;
+the grossed-up figure in the export and the API is cash plus franking plus the
+tax withheld.

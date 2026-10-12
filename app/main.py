@@ -5315,6 +5315,7 @@ async def dividend_edit(
     div_date: str = Form(...),
     cash_amount: str = Form(...),
     franking_credits: str = Form(""),
+    withholding_tax: str = Form(""),
     period_end: str = Form(""),
     quantity: str = Form(""),
     unit_price: str = Form(""),
@@ -5336,6 +5337,9 @@ async def dividend_edit(
             franking = (money.parse(franking_credits, Dividend.franking_credits,
                                     "Franking credits")
                         if franking_credits.strip() else None)
+            withheld = (money.parse(withholding_tax, Dividend.withholding_tax,
+                                    "Foreign tax withheld")
+                        if withholding_tax.strip() else None)
             ended = dt.date.fromisoformat(period_end.strip()) if period_end.strip() else None
         except money.FigureError as exc:
             return _reject(f"{exc}.")
@@ -5348,6 +5352,8 @@ async def dividend_edit(
             return _reject("A distribution has to be more than zero.")
         if franking is not None and franking < 0:
             return _reject("Franking credits can't be negative.")
+        if withheld is not None and withheld < 0:
+            return _reject("Foreign tax withheld can't be negative.")
         try:
             note_text = textfield.fit(note, Dividend.note, "Note")
         except textfield.TextError as exc:
@@ -5388,12 +5394,14 @@ async def dividend_edit(
             "date": dividend.date,
             "cash_amount": dividend.cash_amount,
             "franking_credits": dividend.franking_credits,
+            "withholding_tax": dividend.withholding_tax,
             "period_end": dividend.period_end,
             "note": dividend.note,
         }
         dividend.date = date
         dividend.cash_amount = cash
         dividend.franking_credits = franking
+        dividend.withholding_tax = withheld
         dividend.period_end = ended
         dividend.note = note_text
         if drp is not None:
@@ -5408,6 +5416,7 @@ async def dividend_edit(
                 "date": dividend.date,
                 "cash_amount": dividend.cash_amount,
                 "franking_credits": dividend.franking_credits,
+                "withholding_tax": dividend.withholding_tax,
                 "period_end": dividend.period_end,
                 "note": dividend.note,
             },

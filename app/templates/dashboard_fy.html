@@ -121,12 +121,15 @@ units than were held. Correct it or record the missing buy.</p>
       <thead><tr>
         {{ sorth(sorts, 'income', 'ticker', 'Ticker', numeric=False) }}
         {{ sorth(sorts, 'income', 'cash', 'Cash (' ~ reporting_ccy ~ ')') }}
+        {# Only where some was withheld: income as well as cash (#145). #}
+        {% if r.income_withholding %}{{ sorth(sorts, 'income', 'withholding', 'Foreign tax (' ~ reporting_ccy ~ ')') }}{% endif %}
       </tr></thead>
       <tbody>
         {% for row in r.income %}
         <tr>
           <td class="tick"><a href="{{ holding_href(row.instrument.ticker, row.instrument.exchange, return=back) }}">{{ row.instrument.ticker }}</a></td>
           <td class="num">{{ row.cash | money }}</td>
+          {% if r.income_withholding %}<td class="num">{{ row.withholding | money }}</td>{% endif %}
         </tr>
         {% endfor %}
       </tbody>

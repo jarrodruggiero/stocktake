@@ -123,7 +123,8 @@ def dividends(session: Session, fy: int | None = None, **_) -> Report:
     headers = [
         "Payment date", "Period ended", "Ticker", "Name", "Cash (native)", "Currency",
         "FX rate to AUD", "Cash (AUD)", "Franking credits (AUD)",
-        "Grossed up (AUD)", "Reinvested", "Financial year", "Note",
+        "Foreign tax withheld (native)", "Grossed up (AUD)", "Reinvested",
+        "Financial year", "Note",
     ]
     stmt = (
         select(Dividend)
@@ -136,7 +137,9 @@ def dividends(session: Session, fy: int | None = None, **_) -> Report:
         year = fyreport.current_fy(fyreport.income_date(d))
         if fy and year != fy:
             continue
-        cash_aud = _aud(d.cash_amount, fxbook.of(d, d.instrument.currency))
+        rate = fxbook.of(d, d.instrument.currency)
+        cash_aud = _aud(d.cash_amount, rate)
+        withheld_aud = _aud(d.withholding_tax or ZERO, rate)
         # NOT `or ZERO`. `franking_credits` is None when no statement has ever
         # supplied one and 0 when the distribution was unfranked, and ABOUT
         # (below) promises the reader those are different cells. Flattening
@@ -148,11 +151,13 @@ def dividends(session: Session, fy: int | None = None, **_) -> Report:
             d.instrument.ticker, d.instrument.name or "",
             _d(d.cash_amount, "0.0001"), d.instrument.currency,
             _d(d.fx_rate, "0.000001"), _d(cash_aud), _d(franking),
+            _d(d.withholding_tax, "0.0001"),
             # No AUD cash figure means no honest total — and neither does an
             # unrecorded credit, for the same reason: the grossed-up amount IS
-            # cash + franking, so it cannot be known while half of it is not.
+            # cash + franking + tax withheld, so it cannot be known while part
+            # of it is not.
             _d(None if cash_aud is None or franking is None
-               else cash_aud + franking),
+               else cash_aud + franking + withheld_aud),
             "yes" if d.reinvest_trade_id else "no",
             fyreport.fy_label(year), d.note or "",
         ])
@@ -408,8 +413,10 @@ which the FY report in the app does — use the FY report's net figure when
 lodging, and these rows as the working.
 
 Dividends: franking credits are only present where a statement supplied them;
-blank means not recorded, not zero. The grossed-up column is cash plus franking,
-so it is blank on those rows too rather than repeating the cash figure.
+blank means not recorded, not zero. The grossed-up column is cash plus franking
+plus any foreign tax withheld, so it is blank on those rows too rather than
+repeating the cash figure. Foreign tax withheld is income as well as cash, and
+a foreign income tax offset.
 """
 
 

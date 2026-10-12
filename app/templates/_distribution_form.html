@@ -29,6 +29,7 @@
   <label>Net amount ($) <input name="net_amount" value="{{ p.net_amount or '' }}" required></label>
   <label>Franked amount ($) <input name="franked_amount" value="{{ p.franked_amount or '' }}"></label>
   <label>Franking credits ($) <input name="franking_credits" value="{{ p.franking_credits or '' }}"></label>
+  <label>Foreign tax withheld ($) <input name="withholding_tax" value="{{ p.withholding_tax or '' }}"></label>
   <fieldset>
     <legend>DRP reinvestment (if units were allotted)</legend>
     <label>Units allotted <input name="drp_units" value="{{ p.drp_units or '' }}"></label>

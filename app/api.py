@@ -185,6 +185,7 @@ def get_dividends(request: Request, since: str | None = None) -> dict:
                     "fx_rate": _num(d.fx_rate),
                     "franking_credits": _num(d.franking_credits),
                     "period_end": d.period_end.isoformat() if d.period_end else None,
+                    "withholding_tax": _num(d.withholding_tax),
                     "reinvested": d.reinvest_trade_id is not None,
                     "note": d.note,
                 }
@@ -226,7 +227,10 @@ def get_fy(request: Request, year: int) -> dict:
             "income": {
                 "cash": _num(r["income_cash"]),
                 "franking_credits": _num(r["income_franking"]),
-                "grossed_up": _num(r["income_cash"] + r["income_franking"]),
+                # Income as well as cash, and a foreign income tax offset (#145).
+                "foreign_tax_withheld": _num(r["income_withholding"]),
+                "grossed_up": _num(r["income_cash"] + r["income_franking"]
+                                   + r["income_withholding"]),
                 "dividends_missing_franking": r["franking_missing"],
             },
             "cgt": {
@@ -332,6 +336,9 @@ class DividendIn(NewInstrument):
     fx_rate: Decimal | None = Field(default=None, gt=0, lt=money.limit(Dividend.fx_rate))
     # A trust's: the financial year holding it is the one the income is for.
     period_end: dt.date | None = None
+    # Foreign tax kept back before `cash_amount` was paid, in the same currency.
+    withholding_tax: Decimal | None = Field(
+        default=None, ge=0, lt=money.limit(Dividend.withholding_tax))
     note: str | None = Field(default=None, max_length=Dividend.note.type.length)
 
 
@@ -432,6 +439,7 @@ def create_dividend(request: Request, body: DividendIn) -> dict:
                 fx_rate=Decimal(1) if inst.currency == "AUD" else body.fx_rate,
                 franking_credits=body.franking_credits,
                 period_end=body.period_end,
+                withholding_tax=body.withholding_tax,
                 note=body.note or "via API",
             ),
         )
