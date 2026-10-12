@@ -288,6 +288,125 @@ def test_the_fy_report_uses_the_series_rate_for_a_trade_that_has_none(pf, usd):
     assert disposal.parcels[0].cost_base == Decimal("1500.00")
 
 
+# --------------------------------------------------------------------------- #
+# How far from its date a rate may be (decisions.md #124)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("on, far", [
+    ("2026-03-08", False),   # a week after the only rate
+    ("2026-03-09", True),    # eight days after it
+    ("2026-02-22", False),   # a week before: the earliest rate, reached forward
+    ("2026-02-21", True),
+])
+def test_a_rate_more_than_a_week_from_its_date_is_named(pf, on, far):
+    fac.add_fx(pf, "USDAUD", "2026-03-01", "1.50")
+    book = queries.FxBook(pf)
+
+    assert book.rate("USD", fac.d(on), "VERTEX") == Decimal("1.50")
+    assert book.far == ({"VERTEX"} if far else set())
+
+
+def test_a_rate_asked_for_with_no_holding_named_is_not_recorded(pf):
+    """The charts walk every day and name nothing: only a figure for a holding
+    says which holding it is."""
+    fac.add_fx(pf, "USDAUD", "2026-03-01", "1.50")
+    book = queries.FxBook(pf)
+
+    book.rate("USD", dt.date(2020, 1, 1))
+
+    assert book.far == set()
+
+
+def test_a_rate_captured_on_the_row_is_never_named(pf, usd):
+    fac.add_fx(pf, "USDAUD", "2026-03-01", "1.50")
+    trade = fac.add_trade(pf, usd, "2020-01-06", "buy", 1, "10.00", fx_rate="1.45")
+    book = queries.FxBook(pf)
+
+    assert book.of(trade, "USD", "VERTEX") == Decimal("1.45")
+    assert book.far == set()
+
+
+@freeze_time(TODAY)
+@pytest.mark.parametrize("first_rate, named", [("2018-03-01", []), ("2020-01-02", ["VERTEX"])],
+                         ids=["days-off", "years-off"])
+def test_the_fy_report_names_a_holding_converted_at_a_distant_rate(pf, usd, first_rate,
+                                                                   named):
+    """A 2018 purchase with no rate took the first stored rate, from 2020, as
+    its cost base, and nothing said so (TAX-7)."""
+    fac.add_trade(pf, usd, "2018-03-05", "buy", 10, "20.00", fx_rate=None)
+    fac.add_fx(pf, "USDAUD", first_rate, "1.43")
+
+    assert fyreport.fy_report(pf, 2018)["far"] == named
+
+
+@pytest.mark.parametrize("on, offered", [("2026-03-08", True), ("2026-03-09", False)],
+                         ids=["a-week-after", "eight-days-after"])
+def test_the_trade_form_offers_no_rate_from_more_than_a_week_before(pf, on, offered):
+    """What the form fills in is stored with the trade and never re-derived
+    (#124), so the same week as the repair pass: an empty box can still be
+    filled, a stale rate in it cannot be told from a right one."""
+    fac.add_fx(pf, "USDAUD", "2026-03-01", "1.50")
+
+    found = queries.fx_on_or_before(pf, "USD", fac.d(on))
+
+    assert found == ((Decimal("1.50"), dt.date(2026, 3, 1)) if offered else None)
+
+
+@freeze_time(TODAY)
+def test_a_year_end_value_at_a_rate_from_months_before_it_is_named(pf, usd):
+    """The series stops in March, so 30 June's value takes March's rate."""
+    fac.add_trade(pf, usd, "2018-03-05", "buy", 10, "20.00", fx_rate="1.30")
+    fac.add_fx(pf, "USDAUD", "2018-03-05", "1.30")
+    fac.add_prices(pf, usd, [("2018-06-29", "25.00")])
+
+    assert fyreport.fy_report(pf, 2018)["far"] == ["VERTEX"]
+
+
+@freeze_time(TODAY)
+def test_a_sale_converted_at_a_distant_rate_is_named_for_its_year(pf, usd):
+    fac.add_trade(pf, usd, "2024-02-01", "buy", 10, "100.00", fx_rate="1.50")
+    fac.add_trade(pf, usd, "2026-02-02", "sell", 10, "120.00", fx_rate=None)
+    fac.add_fx(pf, "USDAUD", "2024-02-01", "1.50")
+
+    report = fyreport.fy_report(pf, 2026)
+
+    assert report["far"] == ["VERTEX"] and report["cgt"].disposals
+
+
+@freeze_time(TODAY)
+def test_a_distribution_converted_at_a_distant_rate_is_named_for_its_year(pf, usd):
+    fac.add_dividend(pf, usd, "2026-02-02", "12.00", fx_rate=None)
+    fac.add_fx(pf, "USDAUD", "2024-02-01", "1.50")
+
+    report = fyreport.fy_report(pf, 2026)
+
+    assert report["far"] == ["VERTEX"] and report["income"][0].cash == Decimal("18.0000")
+
+
+@freeze_time(TODAY)
+def test_the_fy_page_and_the_api_name_it(client, session_factory):
+    from test_api import bearer, issue_key
+
+    from test_routes import bind_to_only_portfolio, make_login
+
+    make_login(client, session_factory)
+    with session_factory() as s:
+        portfolio = bind_to_only_portfolio(s)
+        usd = fac.make_instrument(s, "VERTEX", exchange="NASDAQ", currency="USD")
+        fac.add_trade(s, usd, "2018-03-05", "buy", 10, "20.00", fx_rate=None)
+        fac.add_fx(s, "USDAUD", "2020-01-02", "1.43")
+        user_id = portfolio.members[0].user_id
+        s.commit()
+        portfolio_id = portfolio.id
+
+    page = client.get("/?fy=2018", headers={"accept": "text/html"}).text
+    raw = issue_key(session_factory, portfolio_id, created_by=user_id)
+    api = client.get("/api/v1/fy/2018", headers=bearer(raw)).json()
+
+    assert "Converted at an exchange rate more than a week from the day: VERTEX." in page
+    assert api["distant_rates"] == ["VERTEX"]
+
+
 @freeze_time(TODAY)
 def test_unrealised_cgt_blanks_the_aud_columns_it_cannot_fill(pf, usd):
     """A blank cell is a question; a 1:1 number is a wrong answer that a

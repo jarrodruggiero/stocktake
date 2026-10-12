@@ -256,6 +256,111 @@ def test_a_distribution_with_no_rate_takes_the_one_on_or_before_its_date(
         int(recorded is None), repaired)
 
 
+@pytest.mark.parametrize("stored_on, repaired", [("2026-03-08", Decimal("1.400000")),
+                                                 ("2026-03-07", None)],
+                         ids=["a-week-before", "eight-days-before"])
+def test_a_rate_more_than_a_week_before_is_not_stored_on_a_row(feed_session, monkeypatch,
+                                                                stored_on, repaired):
+    """A rate stored on a row is never re-derived (#124), so one from weeks
+    before its date, across a hole in the series, would be wrong for good.
+    The row keeps no rate, which the next run can still fill."""
+    portfolio = fac.make_portfolio(feed_session, "Owner portfolio")
+    nova = fac.make_instrument(feed_session, "NOVA", exchange="NASDAQ", currency="USD",
+                               name="Nova")
+    trade = fac.add_trade(feed_session, nova, "2026-03-15", "buy", 10, "20.00",
+                          fx_rate=None, portfolio_id=portfolio.id)
+    dividend = fac.add_dividend(feed_session, nova, "2026-03-15", "12.00", fx_rate=None,
+                                portfolio_id=portfolio.id)
+    fac.add_fx(feed_session, "USDAUD", stored_on, "1.40")
+    feed_session.commit()
+    stub_closes(monkeypatch, {})
+    stub_yf(monkeypatch)
+    stub_no_fx(monkeypatch)
+
+    pricefeed.run_feed(feed_session, SETTINGS)
+
+    feed_session.refresh(trade)
+    feed_session.refresh(dividend)
+    assert (trade.fx_rate, dividend.fx_rate) == (repaired, repaired)
+
+
+def _asked_for(monkeypatch) -> list:
+    asked = []
+
+    def fetch_fx(pair, symbol, start, end):
+        asked.append((pair, start, end))
+        return providers.Fetch()
+
+    monkeypatch.setattr(providers, "fetch_fx", fetch_fx)
+    return asked
+
+
+@freeze_time("2026-08-05 09:00", tz_offset=0)
+def test_rates_are_fetched_from_a_week_before_the_first_trade(feed_session, monkeypatch):
+    """From `backfill_start` alone, a 2018 purchase took a 2019 rate as its
+    cost base, years from its date (decisions.md #124). A week before the
+    first trade, so one on a Monday has the Friday's rate."""
+    portfolio = fac.make_portfolio(feed_session, "Owner portfolio")
+    nova = fac.make_instrument(feed_session, "NOVA", exchange="NASDAQ", currency="USD")
+    fac.add_trade(feed_session, nova, "2018-03-05", "buy", 10, "20.00", portfolio_id=portfolio.id)
+    fac.add_trade(feed_session, nova, "2018-06-01", "buy", 10, "20.00", portfolio_id=portfolio.id)
+    feed_session.commit()
+    stub_closes(monkeypatch, {})
+    stub_yf(monkeypatch)
+    asked = _asked_for(monkeypatch)
+
+    pricefeed.run_feed(feed_session, SETTINGS)
+
+    assert asked == [("USDAUD", dt.date(2018, 2, 26), dt.date(2026, 8, 4))]
+
+
+@freeze_time("2026-08-05 09:00", tz_offset=0)
+def test_a_series_that_starts_after_the_first_trade_gets_its_beginning(feed_session,
+                                                                       monkeypatch):
+    """A series already fetched from `backfill_start` does not reach a trade
+    recorded from before it, so the part before is fetched as well. A
+    distribution counts as much as a trade, from any portfolio."""
+    portfolio = fac.make_portfolio(feed_session, "Owner portfolio")
+    other = fac.make_portfolio(feed_session, "Another portfolio")
+    nova = fac.make_instrument(feed_session, "NOVA", exchange="NASDAQ", currency="USD")
+    fac.add_trade(feed_session, nova, "2019-02-04", "buy", 10, "20.00", portfolio_id=portfolio.id)
+    fac.add_dividend(feed_session, nova, "2018-11-15", "3.00", portfolio_id=other.id)
+    start = dt.date(2019, 1, 1)
+    fac.add_fx_series(feed_session, "USDAUD", [
+        (start + dt.timedelta(days=i), "1.40") for i in range(0, 3000)
+        if (start + dt.timedelta(days=i)).weekday() < 5
+        and start + dt.timedelta(days=i) <= dt.date(2026, 7, 31)])
+    feed_session.commit()
+    stub_closes(monkeypatch, {})
+    stub_yf(monkeypatch)
+    asked = _asked_for(monkeypatch)
+
+    pricefeed.run_feed(feed_session, SETTINGS)
+
+    assert asked == [("USDAUD", dt.date(2018, 11, 8), dt.date(2018, 12, 31)),
+                     ("USDAUD", dt.date(2026, 8, 1), dt.date(2026, 8, 4))]
+
+
+@freeze_time("2026-08-05 09:00", tz_offset=0)
+def test_a_series_that_reaches_the_first_trade_is_only_continued(feed_session, monkeypatch):
+    portfolio = fac.make_portfolio(feed_session, "Owner portfolio")
+    nova = fac.make_instrument(feed_session, "NOVA", exchange="NASDAQ", currency="USD")
+    fac.add_trade(feed_session, nova, "2019-02-04", "buy", 10, "20.00", portfolio_id=portfolio.id)
+    start = dt.date(2019, 1, 1)
+    fac.add_fx_series(feed_session, "USDAUD", [
+        (start + dt.timedelta(days=i), "1.40") for i in range(0, 3000)
+        if (start + dt.timedelta(days=i)).weekday() < 5
+        and start + dt.timedelta(days=i) <= dt.date(2026, 7, 31)])
+    feed_session.commit()
+    stub_closes(monkeypatch, {})
+    stub_yf(monkeypatch)
+    asked = _asked_for(monkeypatch)
+
+    pricefeed.run_feed(feed_session, SETTINGS)
+
+    assert asked == [("USDAUD", dt.date(2026, 8, 1), dt.date(2026, 8, 4))]
+
+
 def test_a_trade_that_already_has_a_rate_is_left_alone(feed_session, monkeypatch):
     portfolio = fac.make_portfolio(feed_session, "Owner portfolio")
     nova = fac.make_instrument(feed_session, "NOVA", exchange="NASDAQ", currency="USD",

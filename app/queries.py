@@ -119,8 +119,8 @@ def close_on_or_before(
 def fx_on_or_before(
     session: Session, currency: str, on: dt.date
 ) -> tuple[Decimal, dt.date] | None:
-    """The rate for `on`, or the last one before it. None for AUD, and None
-    when the stored series starts later than `on`.
+    """The rate for `on`, or the last one before it within FX_REACH_DAYS.
+    None for AUD, and None when the stored series has nothing that close.
 
     Same query the price feed's repair pass uses, and the same backwards-only
     rule as `close_on_or_before`: an empty rate is one the feed can still fix,
@@ -133,7 +133,8 @@ def fx_on_or_before(
         return None
     row = session.execute(
         select(FxRate.rate, FxRate.date)
-        .where(FxRate.pair == f"{currency}{REPORTING_CURRENCY}", FxRate.date <= on)
+        .where(FxRate.pair == f"{currency}{REPORTING_CURRENCY}", FxRate.date <= on,
+               FxRate.date >= on - dt.timedelta(days=FX_REACH_DAYS))
         .order_by(FxRate.date.desc())
         .limit(1)
     ).first()
@@ -595,6 +596,11 @@ class _Stepper:
         return self.current
 
 
+# How far from its date a rate may be and still be taken as that date's
+# without saying so: a weekend, a public holiday or two (decisions.md #124).
+FX_REACH_DAYS = 7
+
+
 class FxBook:
     """Every stored exchange rate, and an honest answer for any date.
 
@@ -612,12 +618,18 @@ class FxBook:
     def __init__(self, session: Session):
         self._rows = _fx_series(session)
         self._dates = {pair: [d for d, _ in rows] for pair, rows in self._rows.items()}
+        # Holdings a figure was converted for at a rate more than
+        # FX_REACH_DAYS from its date, for the page to name.
+        self.far: set[str] = set()
 
     def known(self, currency: str) -> bool:
         """Whether an AUD figure can be produced for this currency at all."""
         return currency == "AUD" or bool(self._rows.get(f"{currency}AUD"))
 
-    def rate(self, currency: str, on: dt.date) -> Decimal | None:
+    def rate(self, currency: str, on: dt.date, ticker: str | None = None) -> Decimal | None:
+        """The rate for `on`. With `ticker`, the holding it converts a figure
+        for, which is noted in `far` when the rate is from more than a week
+        away."""
         if currency == "AUD":
             return ONE
         pair = f"{currency}AUD"
@@ -626,9 +638,12 @@ class FxBook:
             return None
         i = bisect.bisect_right(self._dates[pair], on)
         # i == 0 means every stored rate is later than `on`: use the earliest.
-        return rows[i - 1][1] if i else rows[0][1]
+        found, rate = rows[i - 1] if i else rows[0]
+        if ticker is not None and abs((found - on).days) > FX_REACH_DAYS:
+            self.far.add(ticker)
+        return rate
 
-    def of(self, obj, currency: str) -> Decimal | None:
+    def of(self, obj, currency: str, ticker: str | None = None) -> Decimal | None:
         """The rate to book a trade or dividend at.
 
         Its own captured `fx_rate` wins — that is the rate that actually
@@ -638,7 +653,7 @@ class FxBook:
         """
         if obj.fx_rate is not None:
             return obj.fx_rate
-        return self.rate(currency, obj.date)
+        return self.rate(currency, obj.date, ticker)
 
 
 # The daily series walks every instrument across every priced day (~1s on a

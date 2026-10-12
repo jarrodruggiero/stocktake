@@ -3,9 +3,11 @@
 Only ticker symbols are sent — never quantities or holdings.
 
 One run: daily closes per instrument from the later of (last stored date + 1)
-and `price_feed.backfill_start`; the same for one FX pair per non-AUD currency;
-distribution history per instrument; then a repair pass giving any trade with a
-null `fx_rate` the stored rate nearest on-or-before its date.
+and `price_feed.backfill_start`; the same for one FX pair per non-AUD currency,
+reaching back to a week before the first trade or distribution in it;
+distribution history per instrument; then a repair pass giving any trade or
+distribution with a null `fx_rate` the stored rate nearest on-or-before its
+date, if that is within a week of it.
 
 Run ad hoc with `python -m app.pricefeed`; the app also runs it daily and at
 startup. Writes commit per instrument rather than once at the end —
@@ -28,9 +30,12 @@ from appcore import dialect_insert, load_config, make_session_factory
 
 from . import clock, memory, providers, tenancy
 from .models import Dividend, FxRate, Instrument, MarketDividend, Price, Trade
+from .queries import FX_REACH_DAYS
 from .settings import PortfolioSettings
 
 log = logging.getLogger(__name__)
+
+REACH = dt.timedelta(days=FX_REACH_DAYS)
 
 # What served each symbol on the most recent run, keyed "kind:symbol". Module
 # state rather than a return value because the status page reads it out of band
@@ -377,14 +382,18 @@ def _now() -> dt.datetime:
 def _backfill_rates(session: Session, model) -> int:
     """Fill each `model` row's missing rate from the stored series, on or
     before its date, never after: a rate published later could not have
-    applied on the day the money moved. How many were filled."""
+    applied on the day the money moved. Nor from more than a week before: a
+    stored rate is never re-derived (#124), so one from across a hole in the
+    series would be wrong for good, where an empty one can still be filled.
+    How many were filled."""
     filled = 0
     for row in session.scalars(
         select(model).join(Instrument).where(model.fx_rate.is_(None))
     ).all():
         rate = session.execute(
             select(FxRate.rate)
-            .where(FxRate.pair == f"{row.instrument.currency}AUD", FxRate.date <= row.date)
+            .where(FxRate.pair == f"{row.instrument.currency}AUD", FxRate.date <= row.date,
+                   FxRate.date >= row.date - REACH)
             .order_by(FxRate.date.desc())
             .limit(1)
         ).scalar()
@@ -392,6 +401,22 @@ def _backfill_rates(session: Session, model) -> int:
             session.execute(update(model).where(model.id == row.id).values(fx_rate=rate))
             filled += 1
     return filled
+
+
+def _first_dates(session: Session) -> dict[str, dt.date]:
+    """The first trade or distribution in each foreign currency, from every
+    portfolio: where that currency's rates have to start."""
+    first: dict[str, dt.date] = {}
+    for model in (Trade, Dividend):
+        for currency, earliest in session.execute(
+            select(Instrument.currency, func.min(model.date))
+            .join(Instrument, model.instrument_id == Instrument.id)
+            .where(Instrument.currency != "AUD")
+            .group_by(Instrument.currency)
+        ).all():
+            if earliest is not None and (currency not in first or earliest < first[currency]):
+                first[currency] = earliest
+    return first
 
 
 def run_feed(session: Session, settings: PortfolioSettings) -> dict[str, int]:
@@ -467,6 +492,7 @@ def run_feed(session: Session, settings: PortfolioSettings) -> dict[str, int]:
             select(Instrument.currency).where(Instrument.currency != "AUD").distinct()
         ).all()
     }
+    needed = _first_dates(session)
     for pair, symbol in pairs.items():
         first, last, count = _series_shape(session, FxRate, FxRate.pair == pair)
         start = _fetch_start(first, last, count, settings.price_feed.backfill_start)
@@ -474,27 +500,39 @@ def run_feed(session: Session, settings: PortfolioSettings) -> dict[str, int]:
         # Asking up to `today` meant the first run of each day requested a day
         # with no close yet — see `fx_settled_through`.
         end = fx_settled_through(today)
-        if start > end:
-            continue
-        # Frankfurter takes the 6-letter pair, Yahoo takes USDAUD=X; the
-        # provider layer is handed both and each uses the one it understands.
-        result = providers.fetch_fx(pair, symbol, start, end)
-        sources[f"fx:{pair}"] = result.summary()
-        if not result.ok:
-            log.warning("fx fetch failed for %s: %s", pair, result.summary())
-            continue
-        source = result.source
-        for date, rate in result.rows:
-            session.execute(
-                dialect_insert(session, FxRate)
-                .values(pair=pair, date=date, rate=rate, source=source)
-                .on_conflict_do_update(
-                    index_elements=["pair", "date"],
-                    set_={"rate": rate, "source": source, "updated_at": _now()},
+        spans = [(start, end)]
+        # Back to a week before the first trade in the currency, so the rate it
+        # takes is days from its date, not a rate from `backfill_start`, years
+        # later (decisions.md #124). A week, so a Monday has the Friday's rate.
+        trade_first = needed.get(pair[:3])
+        if trade_first is not None and (first is None or first > trade_first):
+            head = trade_first - REACH
+            if first is None or head >= start:
+                spans = [(min(start, head), end)]
+            else:
+                spans = [(head, first - dt.timedelta(days=1)), (start, end)]
+        for span_start, span_end in spans:
+            if span_start > span_end:
+                continue
+            # Frankfurter takes the 6-letter pair, Yahoo takes USDAUD=X; the
+            # provider layer is handed both and each uses the one it understands.
+            result = providers.fetch_fx(pair, symbol, span_start, span_end)
+            sources[f"fx:{pair}"] = result.summary()
+            if not result.ok:
+                log.warning("fx fetch failed for %s: %s", pair, result.summary())
+                continue
+            source = result.source
+            for date, rate in result.rows:
+                session.execute(
+                    dialect_insert(session, FxRate)
+                    .values(pair=pair, date=date, rate=rate, source=source)
+                    .on_conflict_do_update(
+                        index_elements=["pair", "date"],
+                        set_={"rate": rate, "source": source, "updated_at": _now()},
+                    )
                 )
-            )
-        counts["fx"] += len(result.rows)
-        session.commit()
+            counts["fx"] += len(result.rows)
+            session.commit()
 
     counts["names_filled"] = backfill_names(session)
     session.commit()

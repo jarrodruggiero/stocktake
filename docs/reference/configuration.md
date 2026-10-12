@@ -134,7 +134,8 @@ price_feed:
   minute: 30
 
   # How far back to fetch when an instrument is first seen. Earlier means a
-  # longer first run and a longer chart. Defaults to 2020-01-01.
+  # longer first run and a longer chart. Defaults to 2020-01-01. Exchange
+  # rates also reach back to your first trade in each currency.
   # backfill_start: 2020-01-01
 
   # ── Live prices ──────────────────────────────────────────────────────────

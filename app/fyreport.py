@@ -84,7 +84,7 @@ def _rate(obj, inst: Instrument, fx_book) -> Decimal | None:
         return obj.fx_rate
     if inst.currency == queries.REPORTING_CURRENCY:
         return Decimal(1)
-    return fx_book.rate(inst.currency, obj.date) if fx_book is not None else None
+    return fx_book.rate(inst.currency, obj.date, inst.ticker) if fx_book is not None else None
 
 
 def _one_year_after(d: dt.date) -> dt.date:
@@ -310,7 +310,7 @@ class CgtSummary:
     oversold: list[Oversold] = field(default_factory=list)
 
 
-def fy_cgt(session: Session, fy_end_year: int) -> CgtSummary:
+def fy_cgt(session: Session, fy_end_year: int, fx_book=None) -> CgtSummary:
     start, end = fy_bounds(fy_end_year)
     out = CgtSummary()
     # A year under rules this version does not implement returns an empty
@@ -322,7 +322,7 @@ def fy_cgt(session: Session, fy_end_year: int) -> CgtSummary:
     instruments = session.scalars(
         select(Instrument).options(selectinload(Instrument.trades))
     ).unique().all()
-    fx_book = queries.FxBook(session)
+    fx_book = fx_book or queries.FxBook(session)
     for inst in instruments:
         if not any(t.type == "sell" and start <= t.date <= end for t in inst.trades):
             continue
@@ -382,13 +382,13 @@ class IncomeRow:
         return None if self.cash is None else self.cash + self.franking
 
 
-def fy_income(session: Session, fy_end_year: int) -> list[IncomeRow]:
+def fy_income(session: Session, fy_end_year: int, fx_book=None) -> list[IncomeRow]:
     start, end = fy_bounds(fy_end_year)
     rows: list[IncomeRow] = []
     instruments = session.scalars(
         select(Instrument).options(selectinload(Instrument.dividends))
     ).unique().all()
-    fx_book = queries.FxBook(session)
+    fx_book = fx_book or queries.FxBook(session)
     for inst in instruments:
         divs = [d for d in inst.dividends if start <= d.date <= end]
         if not divs:
@@ -516,7 +516,8 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
         price, price_date = (price_row.close, price_row.date) if price_row else (None, None)
         # The stored rate nearest the date, and no value at all for a currency
         # with none: never 1:1 (decisions.md #5).
-        rate = fx_book.rate(inst.currency, asof)
+        # Named only for a value it converts: with no price there is none.
+        rate = fx_book.rate(inst.currency, asof, inst.ticker if price is not None else None)
         if invested is None or (price is not None and rate is None):
             withheld.add(inst.ticker)
         value = gain = None
@@ -538,8 +539,8 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
             )
         )
 
-    income = fy_income(session, fy_end_year)
-    cgt = fy_cgt(session, fy_end_year)
+    income = fy_income(session, fy_end_year, fx_book)
+    cgt = fy_cgt(session, fy_end_year, fx_book)
     withheld.update(r.instrument.ticker for r in income if r.cash is None)
     withheld.update(cgt.withheld)
     return {
@@ -560,6 +561,9 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
         "franking_missing": sum(r.franking_missing for r in income),
         "cgt": cgt,
         "withheld": sorted(withheld),
+        # Converted at a rate more than a week from the day: a hole in the
+        # stored series, or one that does not reach back that far (#124).
+        "far": sorted(fx_book.far),
     }
 
 
