@@ -6,7 +6,8 @@ is not.
 ## 1. Run the setup wizard
 
 The first visit goes to `/setup`, and there is nothing to prepare before it:
-if the app has no configuration it will ask, then write one.
+if the app has no configuration it will ask, then write one. Whoever gets there
+first becomes the administrator, so run it before anyone else can reach the app.
 
 The wizard walks through nine steps, and skips the ones your deployment has
 already answered:
