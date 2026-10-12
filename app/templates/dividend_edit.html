@@ -32,6 +32,10 @@ it bought. Both save together or not at all.</p>
       <input name="franking_credits" inputmode="decimal"
              value="{% if dividend.franking_credits is not none %}{{ dividend.franking_credits | qty }}{% endif %}">
     </label>
+    <label>Foreign tax withheld <span class="sub">optional</span>
+      <input name="withholding_tax" inputmode="decimal"
+             value="{% if dividend.withholding_tax is not none %}{{ dividend.withholding_tax | qty }}{% endif %}">
+    </label>
     <label>Period ended <span class="sub">optional</span>
       {% set period_tip %}
       <p>For a trust, as most ETFs are: the end of the period this distribution

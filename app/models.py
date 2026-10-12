@@ -828,6 +828,10 @@ class Dividend(Base):
     cash_amount: Mapped[Decimal] = mapped_column(Numeric(14, 4))  # native ccy
     fx_rate: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))  # see Trade.fx_rate
     franking_credits: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))  # v2
+    # Foreign tax kept back before `cash_amount` was paid, in the same
+    # currency: the income is the cash and this together, and this is a
+    # foreign income tax offset (decisions.md #145). NULL means none recorded.
+    withholding_tax: Mapped[Decimal | None] = mapped_column(Numeric(14, 4))
     # What the registry kept because it allots whole units only, carried into
     # the next distribution. Native currency, balance AFTER this one. NULL means
     # unknown and 0 means it kept nothing; a balance, never income.

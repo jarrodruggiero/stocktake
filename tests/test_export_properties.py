@@ -155,6 +155,7 @@ def _dividends(history: History, names: dict) -> list:
             # No period end in a generated history: the payment date decides.
             rows.append([d.date.isoformat(), "", h.ticker, names[h.ticker], _d(d.cash, "0.0001"),
                          h.currency, _d(d.fx_rate, "0.000001"), _d(cash), _d(d.franking),
+                         "",        # nothing withheld in a generated history
                          _d(None if cash is None or d.franking is None else cash + d.franking),
                          "no", _label(d.date)])
     return sorted(rows, key=lambda r: r[0])
@@ -188,7 +189,7 @@ def test_every_report_agrees_with_the_working_out(session_factory, portfolio, hi
         # note columns are left out (no user, no note here).
         assert _unordered(r[:11] for r in got["transactions"]) == _unordered(
             _transactions(history, names))
-        assert _unordered(r[:12] for r in got["dividends"]) == _unordered(
+        assert _unordered(r[:13] for r in got["dividends"]) == _unordered(
             _dividends(history, names))
         for fy in {fyreport.current_fy(d["date"]) for d in worked_disposals(history)}:
             with freeze_time(TODAY):

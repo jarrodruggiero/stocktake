@@ -71,6 +71,8 @@ class ParsedStatement:
     drp_price: str | None = None
     # A trust's period end, typed in: no statement template reads one yet.
     period_end: str | None = None
+    # Foreign tax withheld, typed in, for the same reason.
+    withholding_tax: str | None = None
     rows: list[StatementRow] | None = None  # combined multi-fund advice
     # This document was read from pixels, not from a text layer. Carried all
     # the way to the preview because OCR misreads digits and these are money —

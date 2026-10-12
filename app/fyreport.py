@@ -455,10 +455,15 @@ class IncomeRow:
     cash: Decimal | None  # None when a dividend this FY has no exchange rate
     franking: Decimal
     franking_missing: int  # dividends this FY with no franking data yet
+    # AUD foreign tax withheld, which is income as well (decisions.md #145).
+    # None, as `cash` is, when a dividend this FY has no exchange rate.
+    withholding: Decimal | None = ZERO
 
     @property
     def grossed_up(self) -> Decimal | None:
-        return None if self.cash is None else self.cash + self.franking
+        if self.cash is None or self.withholding is None:
+            return None
+        return self.cash + self.franking + self.withholding
 
 
 def fy_income(session: Session, fy_end_year: int, fx_book=None) -> list[IncomeRow]:
@@ -475,6 +480,9 @@ def fy_income(session: Session, fy_end_year: int, fx_book=None) -> list[IncomeRo
         rates = [_rate(d, inst, fx_book) for d in divs]
         cash = (None if None in rates else
                 sum((d.cash_amount * rate for d, rate in zip(divs, rates)), ZERO))
+        withheld = (None if None in rates else
+                    sum(((d.withholding_tax or ZERO) * rate for d, rate in zip(divs, rates)),
+                        ZERO))
         franking = sum((d.franking_credits or ZERO for d in divs), ZERO)
         rows.append(
             IncomeRow(
@@ -482,6 +490,7 @@ def fy_income(session: Session, fy_end_year: int, fx_book=None) -> list[IncomeRo
                 cash=cash,
                 franking=franking,
                 franking_missing=sum(1 for d in divs if d.franking_credits is None),
+                withholding=withheld,
             )
         )
     rows.sort(key=lambda r: r.instrument.ticker)
@@ -652,6 +661,8 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
         "income": income,
         "income_cash": sum((r.cash for r in income if r.cash is not None), ZERO),
         "income_franking": sum((r.franking for r in income), ZERO),
+        "income_withholding": sum((r.withholding for r in income
+                                   if r.withholding is not None), ZERO),
         "franking_missing": sum(r.franking_missing for r in income),
         "cgt": cgt,
         "withheld": sorted(withheld),
@@ -689,6 +700,7 @@ SORTABLE: dict[str, dict[str, object]] = {
     "income": {
         "ticker": lambda r: r.instrument.ticker,
         "cash": lambda r: r.cash,
+        "withholding": lambda r: r.withholding,
     },
     "disposals": {
         "date": lambda d: d.date,

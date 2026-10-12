@@ -358,11 +358,12 @@ class _Distribution:
     price: Decimal | None
     note: str
     period_end: dt.date | None = None
+    withheld: Decimal | None = None
 
 
 def _distribution(s, *, ticker: str, payment_date: str, net_amount: str,
                   franked_amount: str = "", franking_credits: str = "", drp_units: str = "",
-                  drp_price: str = "", period_end: str = "",
+                  drp_price: str = "", period_end: str = "", withholding_tax: str = "",
                   note_extra: str = "") -> _Distribution:
     """A statement's figures, checked by the rules the dividend edit form
     uses, so a statement cannot save what that form would refuse."""
@@ -399,6 +400,9 @@ def _distribution(s, *, ticker: str, payment_date: str, net_amount: str,
     franking = _dec(franking_credits, Dividend.franking_credits, "Franking credits")
     if franking is not None and franking < 0:
         raise _Refused("Franking credits can't be negative.")
+    withheld = _dec(withholding_tax, Dividend.withholding_tax, "Foreign tax withheld")
+    if withheld is not None and withheld < 0:
+        raise _Refused("Foreign tax withheld can't be negative.")
     units = _dec(drp_units, Trade.quantity, "DRP units")
     price = _dec(drp_price, Trade.unit_price, "DRP price")
     if units is not None and units <= 0:
@@ -428,7 +432,7 @@ def _distribution(s, *, ticker: str, payment_date: str, net_amount: str,
         textfield.fit(note, Dividend.note, "Note")      # the trade's note is the same
     except textfield.TextError as exc:
         raise _Refused(str(exc)) from None
-    return _Distribution(inst, date, amount, franking, units, price, note, ended)
+    return _Distribution(inst, date, amount, franking, units, price, note, ended, withheld)
 
 
 def _record(s, d: _Distribution) -> None:
@@ -443,7 +447,7 @@ def _record(s, d: _Distribution) -> None:
     s.add(tenancy.owned(s, Dividend(
         instrument=d.instrument, date=d.date, cash_amount=d.amount, fx_rate=rate,
         franking_credits=d.franking, reinvest_trade=reinvest, note=d.note,
-        period_end=d.period_end)))
+        period_end=d.period_end, withholding_tax=d.withheld)))
 
 
 def _picked(s, ticker: str) -> tuple[str, str, str]:
@@ -494,6 +498,7 @@ async def statement_commit(
     drp_units: str = Form(""),
     drp_price: str = Form(""),
     period_end: str = Form(""),
+    withholding_tax: str = Form(""),
     note_extra: str = Form(""),
     filename: str = Form(""),
     used_ocr: str = Form(""),
@@ -502,7 +507,8 @@ async def statement_commit(
     templates, settings, _ = _ctx(request)
     typed = {"ticker": ticker, "payment_date": payment_date, "net_amount": net_amount,
              "franked_amount": franked_amount, "franking_credits": franking_credits,
-             "drp_units": drp_units, "drp_price": drp_price, "period_end": period_end}
+             "drp_units": drp_units, "drp_price": drp_price, "period_end": period_end,
+             "withholding_tax": withholding_tax}
     with auth.scoped_session(request) as (ctx, s):
         await auth.verify_csrf(request, s)
         _require_write(ctx)

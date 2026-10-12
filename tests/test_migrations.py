@@ -338,8 +338,8 @@ def test_0014_gives_each_mode_the_colours_that_served_both(tmp_path: Path):
     assert stored()[1] == {"up": "#111111"}
 
 
-def test_0015_keeps_every_distribution_on_the_way_up_and_down(tmp_path: Path):
-    """0015 adds a column to `dividend`, which SQLite rebuilds to drop again:
+def test_0015_and_0016_keep_every_distribution_on_the_way_up_and_down(tmp_path: Path):
+    """0015 and 0016 add columns to `dividend`, which SQLite rebuilds to drop again:
     a rebuild that lost the rows, or the trade a DRP points at, would lose
     income."""
     path = tmp_path / "period.db"
@@ -368,6 +368,8 @@ def test_0015_keeps_every_distribution_on_the_way_up_and_down(tmp_path: Path):
             conn.close()
 
     command.upgrade(cfg, "0015")
+    assert rows() == [(1, "2026-07-16", 1)]
+    command.upgrade(cfg, "0016")                # the tax withheld: the same rebuild
     assert rows() == [(1, "2026-07-16", 1)]
     command.downgrade(cfg, "0014")
     assert rows() == [(1, "2026-07-16", 1)]
