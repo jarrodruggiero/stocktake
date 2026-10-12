@@ -107,20 +107,166 @@ def test_a_trade_cannot_be_recorded_against_another_portfolios_instrument(
     assert "Omega Holdings" not in client.get("/holdings", headers=HTML).text
 
 
-@pytest.mark.parametrize("ticker, expected", [("ACME", 201), ("OMEGA", 404)])
-def test_the_api_takes_only_this_portfolios_instruments(client, session_factory, ticker,
-                                                        expected):
+def _writer(session_factory, ids) -> dict:
+    with session_factory() as s:
+        owner = s.scalar(select(Portfolio).where(Portfolio.id == ids["mine"])).members[0].user_id
+    return bearer(issue_key(session_factory, ids["mine"], created_by=owner,
+                            scopes="read,write"))
+
+
+@pytest.fixture
+def new_allowed(monkeypatch):
+    """The suite's config has new instruments off, as an install may."""
+    from app import main
+
+    monkeypatch.setattr(main.settings.imports, "allow_new_instruments", True)
+
+
+def _catalogue(session_factory, ticker: str) -> list:
+    with session_factory() as s:
+        return list(s.scalars(select(Instrument).where(Instrument.ticker == ticker)))
+
+
+def test_the_api_records_against_this_portfolios_instruments(client, session_factory):
+    make_login(client, session_factory)
+    ids = _theirs(session_factory)
+    resp = client.post("/api/v1/trades", headers=_writer(session_factory, ids), json={
+        "ticker": "ACME", "date": "2026-07-01", "type": "buy", "units": "1",
+        "unit_price": "1"})
+    assert resp.status_code == 201, resp.text
+    assert len(_trades_of(session_factory, ids["acme"])) == 2
+
+
+# OMEGA is in the shared catalogue because another portfolio added it; NOVEL is
+# in no portfolio at all. The API must answer the two the same way, or it tells
+# this portfolio what another one holds (#139).
+@pytest.mark.parametrize("given", [{}, {"exchange": "ASX"}, {"currency": "AUD"}],
+                         ids=["neither", "exchange", "currency"])
+@pytest.mark.parametrize("ticker", ["OMEGA", "NOVEL"])
+def test_the_api_asks_where_an_instrument_new_here_trades(client, session_factory, new_allowed,
+                                                          ticker, given):
+    make_login(client, session_factory)
+    ids = _theirs(session_factory)
+    resp = client.post("/api/v1/trades", headers=_writer(session_factory, ids), json={
+        "ticker": ticker, "date": "2026-07-01", "type": "buy", "units": "1",
+        "unit_price": "1", **given})
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == (
+        f"{ticker} isn't in this portfolio. To add it, give its exchange and currency.")
+    assert [t.portfolio_id for t in _trades_of(session_factory, ids["omega"])] == [ids["theirs"]]
+    assert len(_catalogue(session_factory, ticker)) == (1 if ticker == "OMEGA" else 0)
+
+
+@pytest.mark.parametrize("ticker", ["OMEGA", "NOVEL"])
+def test_the_api_adds_an_instrument_as_the_add_form_does(client, session_factory, new_allowed, ticker):
+    """Given where it trades, the API adds the instrument to this portfolio:
+    the catalogue's entry if there is one, a new one if not, and the same
+    answer either way."""
+    make_login(client, session_factory)
+    ids = _theirs(session_factory)
+    resp = client.post("/api/v1/trades", headers=_writer(session_factory, ids), json={
+        "ticker": ticker.lower(), "exchange": "asx", "currency": "aud", "date": "2026-07-01",
+        "type": "buy", "units": "2", "unit_price": "3"})
+
+    assert resp.status_code == 201, resp.text
+    assert {k: v for k, v in resp.json().items() if k != "id"} == {
+        "ticker": ticker, "exchange": "ASX", "date": "2026-07-01"}
+    [inst] = _catalogue(session_factory, ticker)
+    assert sorted(t.portfolio_id for t in _trades_of(session_factory, inst.id)) == sorted(
+        [ids["mine"]] + ([ids["theirs"]] if ticker == "OMEGA" else []))
+    if ticker == "NOVEL":
+        assert inst.yahoo_symbol == "NOVEL.AX"
+    with session_factory() as s:
+        tenancy.bind(s, ids["mine"], None)
+        assert inst.id in queries.portfolio_instrument_ids(s)
+
+
+def test_an_instrument_every_portfolio_removed_comes_back(client, session_factory, new_allowed):
     make_login(client, session_factory)
     ids = _theirs(session_factory)
     with session_factory() as s:
-        owner = s.scalar(select(Portfolio).where(Portfolio.id == ids["mine"])).members[0].user_id
-    raw = issue_key(session_factory, ids["mine"], created_by=owner, scopes="read,write")
-    resp = client.post("/api/v1/trades", headers=bearer(raw), json={
-        "ticker": ticker, "date": "2026-07-01", "type": "buy", "units": "1",
-        "unit_price": "1"})
-    assert resp.status_code == expected, resp.text
-    portfolios = [t.portfolio_id for t in _trades_of(session_factory, ids["omega"])]
-    assert portfolios == [ids["theirs"]]
+        s.get(Instrument, ids["omega"]).active = False
+        s.commit()
+    resp = client.post("/api/v1/trades", headers=_writer(session_factory, ids), json={
+        "ticker": "OMEGA", "exchange": "ASX", "currency": "AUD", "date": "2026-07-01",
+        "type": "buy", "units": "1", "unit_price": "1"})
+
+    assert resp.status_code == 201, resp.text
+    with session_factory() as s:
+        assert s.get(Instrument, ids["omega"]).active is True
+
+
+def test_the_catalogues_details_win_over_the_apis(client, session_factory, new_allowed):
+    """As on the add form: an entry already in the catalogue is reused as it
+    is. Refusing a currency that disagrees with it would say it was there."""
+    make_login(client, session_factory)
+    ids = _theirs(session_factory)
+    resp = client.post("/api/v1/trades", headers=_writer(session_factory, ids), json={
+        "ticker": "OMEGA", "exchange": "ASX", "currency": "USD", "date": "2026-07-01",
+        "type": "buy", "units": "1", "unit_price": "1"})
+
+    assert resp.status_code == 201, resp.text
+    [inst] = _catalogue(session_factory, "OMEGA")
+    assert inst.currency == "AUD"
+
+
+def test_a_new_instrument_takes_the_currency_and_class_given(client, session_factory, new_allowed):
+    make_login(client, session_factory)
+    ids = _theirs(session_factory)
+    resp = client.post("/api/v1/trades", headers=_writer(session_factory, ids), json={
+        "ticker": "NOVEL", "exchange": "NASDAQ", "currency": "USD", "asset_class": "etf",
+        "date": "2026-07-01", "type": "buy", "units": "1", "unit_price": "1",
+        "fx_rate": "1.5"})
+
+    assert resp.status_code == 201, resp.text
+    [inst] = _catalogue(session_factory, "NOVEL")
+    assert (inst.exchange, inst.currency, inst.asset_class, inst.yahoo_symbol) == (
+        "NASDAQ", "USD", "etf", "NOVEL")
+
+
+@pytest.mark.parametrize("ticker", ["OMEGA", "NOVEL"])
+def test_with_new_instruments_off_the_api_refuses_both_alike(client, session_factory,
+                                                             monkeypatch, ticker):
+    from app import main
+
+    monkeypatch.setattr(main.settings.imports, "allow_new_instruments", False)
+    make_login(client, session_factory)
+    ids = _theirs(session_factory)
+    resp = client.post("/api/v1/trades", headers=_writer(session_factory, ids), json={
+        "ticker": ticker, "exchange": "ASX", "currency": "AUD", "date": "2026-07-01",
+        "type": "buy", "units": "1", "unit_price": "1"})
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == f"{ticker} isn't in this portfolio. Add it in the app first."
+    assert [t.portfolio_id for t in _trades_of(session_factory, ids["omega"])] == [ids["theirs"]]
+
+
+@pytest.mark.parametrize("field, value", [("exchange", "a b"), ("currency", "dollars"),
+                                          ("currency", "a1b"), ("asset_class", "bond")])
+def test_a_new_instrument_given_nonsense_is_refused(client, session_factory, new_allowed,
+                                                    field, value):
+    make_login(client, session_factory)
+    ids = _theirs(session_factory)
+    body = {"ticker": "NOVEL", "exchange": "ASX", "currency": "AUD", "date": "2026-07-01",
+            "type": "buy", "units": "1", "unit_price": "1", field: value}
+    resp = client.post("/api/v1/trades", headers=_writer(session_factory, ids), json=body)
+
+    assert resp.status_code in (400, 422)
+    assert _catalogue(session_factory, "NOVEL") == []
+
+
+def test_a_dividend_adds_its_instrument_too(client, session_factory, new_allowed):
+    make_login(client, session_factory)
+    ids = _theirs(session_factory)
+    resp = client.post("/api/v1/dividends", headers=_writer(session_factory, ids), json={
+        "ticker": "OMEGA", "exchange": "ASX", "currency": "AUD", "date": "2026-07-01",
+        "cash_amount": "4.50"})
+
+    assert resp.status_code == 201, resp.text
+    with session_factory() as s:
+        tenancy.bind(s, ids["mine"], None)
+        assert ids["omega"] in queries.portfolio_instrument_ids(s)
 
 
 @pytest.mark.parametrize("return_to", ["", "/holding/ZULU", "/holding/ZULU?sort=date"])

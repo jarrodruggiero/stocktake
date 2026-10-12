@@ -1320,7 +1320,11 @@ warning rather than a refusal; the rotation closes up and carries on from the
 last buy still in it, because the slots left keep their rows. A ticker another portfolio added is reused through
 "Something not listed", and the add form says "added" either way. "Delete all
 trades" clears this portfolio's trades and distributions for one instrument and
-leaves it listed, so removing it stays a step of its own.
+leaves it listed, so removing it stays a step of its own. The API adds an
+instrument as the add form does, given its exchange and currency, and answers
+alike whether or not the catalogue had it: refusing one another portfolio added
+would tell this portfolio it was there. A currency that disagrees with the
+catalogue's is not refused for the same reason; the catalogue's stands.
 
 **140. A password is 10 to 64 characters; how strong it is gets shown, never
 enforced.** The length is the only rule, at every form where a password is
