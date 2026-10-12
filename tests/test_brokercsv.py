@@ -407,7 +407,7 @@ def test_a_ticker_we_do_not_track_is_flagged(pf):
 
 def test_committing_inserts_new_rows_into_this_portfolio(pf, owner):
     _, portfolio = owner
-    fac.make_instrument(pf, "ACME")
+    fac.hold(pf, fac.make_instrument(pf, "ACME"))
     pf.commit()
     candidates = [_candidate()]
     brokercsv.annotate(pf, candidates, STRICT)
@@ -461,7 +461,7 @@ def test_with_creation_allowed_the_instrument_is_created(pf, exchange, symbol):
 def test_a_non_aud_trade_leaves_the_rate_for_the_feed_to_fill(pf):
     usd = BrokerFormat(kind="mapped", exchange="NASDAQ", currency="USD",
                        date_format="%d/%m/%Y", columns=MAPPED.columns)
-    fac.make_instrument(pf, "NOVA", exchange="NASDAQ", currency="USD")
+    fac.hold(pf, fac.make_instrument(pf, "NOVA", exchange="NASDAQ", currency="USD"))
     pf.commit()
     candidate = _candidate(ticker="NOVA")
     candidate.currency, candidate.exchange = usd.currency, usd.exchange
@@ -579,8 +579,9 @@ def test_an_action_word_mapped_to_no_trade_type_is_not_one():
 
 def test_a_row_is_committed_to_its_own_instrument(pf):
     """Every other commit test has one instrument, the first one there is."""
-    fac.make_instrument(pf, "ACME")
+    fac.hold(pf, fac.make_instrument(pf, "ACME"))
     beta = fac.make_instrument(pf, "BETA")
+    fac.hold(pf, beta)
     pf.commit()
     candidates = [_candidate(ticker="BETA")]
     brokercsv.annotate(pf, candidates, STRICT)
@@ -603,7 +604,7 @@ def test_a_date_with_no_time_is_not_converted_from_another_zone():
 
 def test_a_time_from_the_export_is_committed_with_the_trade(pf):
     """Unset means the open; a time the export carried orders the day."""
-    fac.make_instrument(pf, "ACME")
+    fac.hold(pf, fac.make_instrument(pf, "ACME"))
     pf.commit()
     candidate = _candidate()
     candidate.time = dt.time(14, 5)
@@ -735,7 +736,7 @@ def test_a_correction_that_matches_an_existing_instrument_stops_being_new(pf):
     """The point of rechecking: a corrected ticker that already exists must
     read as an existing holding before anything is written, not as a second
     instrument about to be created beside it."""
-    fac.make_instrument(pf, "ACME", exchange="NASDAQ", currency="USD")
+    fac.hold(pf, fac.make_instrument(pf, "ACME", exchange="NASDAQ", currency="USD"))
     pf.commit()
 
     result = _one(
@@ -882,7 +883,7 @@ def test_a_sale_of_more_than_is_held_is_refused_with_the_forms_words(pf):
 
 
 def test_a_sale_covered_by_an_earlier_row_of_the_file_is_new_whatever_its_order(pf):
-    fac.make_instrument(pf, "ACME")
+    fac.hold(pf, fac.make_instrument(pf, "ACME"))
     pf.commit()
     candidates = [_candidate(type="sell", date="2025-03-02"), _candidate(date="2025-01-06")]
 
@@ -1043,14 +1044,15 @@ def test_a_big_file_is_judged_in_one_walk():
 
 
 def test_importing_into_a_removed_instrument_brings_it_back(pf):
-    """Removed from every portfolio, an instrument is deactivated; trades
+    """Removed from every portfolio, an instrument is deactivated, and is no
+    longer this portfolio's: new here, so with new instruments allowed, trades
     imported for it make it a holding again, as recording one by hand does."""
     fac.make_instrument(pf, "ACME", active=False)
     pf.commit()
     candidates = [_candidate()]
-    brokercsv.annotate(pf, candidates, STRICT)
+    brokercsv.annotate(pf, candidates, PERMISSIVE)
 
-    brokercsv.commit(pf, candidates, STRICT, "testbroker")
+    brokercsv.commit(pf, candidates, PERMISSIVE, "testbroker")
 
     assert pf.scalars(select(Instrument)).one().active is True
 

@@ -314,7 +314,9 @@ def _signed_in(client, session_factory) -> World:
         s.commit()
     with world.bound() as s:
         acme = fac.make_instrument(s, "ACME", asset_class="share")
-        fac.make_instrument(s, "ALPHA", asset_class="share")
+        # On the list, as the broker file's ticker: an import takes rows for
+        # this portfolio's instruments, not the catalogue's.
+        fac.hold(s, fac.make_instrument(s, "ALPHA", asset_class="share"))
         fac.add_prices(s, acme, [(TODAY - dt.timedelta(days=d), "1.50") for d in range(40)])
         fac.add_trade(s, acme, TODAY - dt.timedelta(days=30), "buy", 100, "1.00")
         world.instrument_id = acme.id

@@ -784,9 +784,11 @@ def grouped_series(session: Session, by: str, filters: dict | None = None) -> di
     a chart can compare holdings over time rather than only in total. Groups
     with no history at all are dropped: an empty line in a legend is noise.
     """
+    # This portfolio's instruments, not the catalogue's, as in portfolio_series.
     instruments = (
         session.scalars(
             select(Instrument)
+            .where(Instrument.id.in_(portfolio_instrument_ids(session)))
             .options(selectinload(Instrument.trades), selectinload(Instrument.dividends))
         )
         .unique()
@@ -811,7 +813,9 @@ def grouped_series(session: Session, by: str, filters: dict | None = None) -> di
     excluded = sorted(
         {inst.ticker for inst in instruments if not fxbook.known(inst.currency)}
     )
-    instruments = [inst for inst in instruments if inst.ticker not in excluded]
+    # By instrument, not ticker: the same code on another exchange, in a
+    # currency that has a rate, is not the one that cannot be converted.
+    instruments = [inst for inst in instruments if fxbook.known(inst.currency)]
 
     events = []
     for inst in instruments:
@@ -912,11 +916,16 @@ def portfolio_series(session: Session) -> dict:
     return needs: `flow` is money in (buys) less money out (sale proceeds),
     `cash_div` is income that left the portfolio rather than buying more units.
     """
+    # This portfolio's instruments and their prices, not the catalogue's
+    # (#139): what another portfolio holds is not this one's to chart.
+    owned = portfolio_instrument_ids(session)
     instruments = session.scalars(
-        select(Instrument).options(selectinload(Instrument.trades), selectinload(Instrument.dividends))
+        select(Instrument).where(Instrument.id.in_(owned))
+        .options(selectinload(Instrument.trades), selectinload(Instrument.dividends))
     ).unique().all()
     price_rows = session.execute(
-        select(Price.instrument_id, Price.date, Price.close).order_by(Price.date)
+        select(Price.instrument_id, Price.date, Price.close)
+        .where(Price.instrument_id.in_(owned)).order_by(Price.date)
     ).all()
     prices: dict[int, list[tuple[dt.date, Decimal]]] = {}
     date_set: set[dt.date] = set()
@@ -933,12 +942,14 @@ def portfolio_series(session: Session) -> dict:
     excluded = sorted(
         {inst.ticker for inst in instruments if not fxbook.known(inst.currency)}
     )
-    priced = [inst for inst in instruments if inst.ticker not in excluded]
+    # By instrument, not ticker, as in grouped_series.
+    priced = [inst for inst in instruments if fxbook.known(inst.currency)]
     # When each of those was first traded or paid, so a year's figures name
     # only what they would otherwise have held.
     excluded_since = {
         inst.ticker: min(row.date for row in [*inst.trades, *inst.dividends]).isoformat()
-        for inst in instruments if inst.ticker in excluded and (inst.trades or inst.dividends)
+        for inst in instruments
+        if not fxbook.known(inst.currency) and (inst.trades or inst.dividends)
     }
 
     events = []  # (date, kind, inst, trade/dividend)
