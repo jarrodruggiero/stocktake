@@ -35,9 +35,11 @@ tracked pair; **withhold and name the holding** when the pair is unknown; never
 fall back to 1:1, which books a foreign holding as though the currency did not
 exist. `totals.excluded`, `dividends_excluded` and the FY report's `withheld`
 are how the withholding gets said out loud. A sale of more units than were held
-then is the same rule for capital gains: there is no parcel to match it to, so
-the holding is left out of each year whose gains depend on it and the sale is
-named (`CgtSummary.oversold`), and the CGT exports refuse until it is fixed.
+then is refused, never worked around: every way of writing a trade refuses one,
+and a ledger that holds one from before those checks has no capital gains for
+the years that depend on it. Gains without that holding would not be the year's
+gains, so the FY page and the API name the sale for somebody to fix
+(`CgtSummary.oversold`), and the CGT exports refuse until it is.
 
 **6. …but a same-currency row needs no rate at all.** AUD → AUD is 1 by
 arithmetic, so requiring a stored `fx_rate` on an AUD row turns a fact about
