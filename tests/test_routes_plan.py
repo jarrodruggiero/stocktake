@@ -633,7 +633,7 @@ def test_a_chart_at_an_end_stays_there(client, session_factory):
 @freeze_time(ref.TODAY)
 def test_the_dashboard_chart_says_what_it_shows(client, session_factory):
     """A canvas is nothing to a screen reader. The label says what is drawn
-    and where it ends, the figure the Gain tile shows."""
+    and where it ends: total return, which counts sales and income as well."""
     make_login(client, session_factory)
     with session_factory() as s:
         bind_to_only_portfolio(s)
@@ -643,7 +643,7 @@ def test_the_dashboard_chart_says_what_it_shows(client, session_factory):
 
     canvas = re.search(r'<canvas id="summarychart"([^>]*)>', page)
     assert canvas and 'role="img"' in canvas.group(1)
-    assert re.search(r'aria-label="Gain over time: -?[0-9]+\.[0-9]{2}% on 20[0-9]{2}-[0-9]{2}-[0-9]{2}"',
+    assert re.search(r'aria-label="Total return: -?[0-9]+\.[0-9]{2}% on 20[0-9]{2}-[0-9]{2}-[0-9]{2}"',
                      canvas.group(1)), canvas.group(1)
 
 
@@ -775,7 +775,7 @@ def test_a_holdings_tiles_say_what_currency_they_are_in(client, session_factory,
     tiles = re.sub(r"<[^>]+>", "", page[page.index('<section class="tiles">'):
                                         page.index("</section>")])
 
-    for label in ("Avg price", "Cost", "Value", "Dividends"):
+    for label in ("Avg price", "Cost base", "Value", "Dividends"):
         assert re.search(rf"{re.escape(label + labelled)}\s*\$[0-9]", tiles), label
 
 

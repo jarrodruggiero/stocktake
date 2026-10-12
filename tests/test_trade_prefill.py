@@ -108,12 +108,13 @@ def test_the_rate_on_the_exact_date_is_used(pf):
 
 
 def test_a_rate_falls_back_to_the_last_one_before_it(pf):
-    fac.add_fx(pf, "USDAUD", "2020-01-02", "1.40")
+    """Within a week: one from further back is not offered (decisions.md #124)."""
+    fac.add_fx(pf, "USDAUD", "2020-05-27", "1.40")
     fac.add_fx(pf, "USDAUD", "2026-09-22", "1.50")
 
     found = queries.fx_on_or_before(pf, "USD", dt.date(2020, 6, 1))
 
-    assert found == (Decimal("1.400000"), dt.date(2020, 1, 2))
+    assert found == (Decimal("1.400000"), dt.date(2020, 5, 27))
 
 
 def test_a_rate_is_never_taken_from_after_the_trade_date(pf):

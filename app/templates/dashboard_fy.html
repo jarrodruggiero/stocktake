@@ -27,7 +27,7 @@
 
 <section class="tiles">
   <div class="tile"><span class="label">Value at {{ r.asof }}</span><span class="big">{{ r.total_value | cash }}</span></div>
-  <div class="tile"><span class="label">Invested to date</span><span class="big">{{ r.total_invested | cash }}</span></div>
+  <div class="tile"><span class="label">Cost base</span><span class="big">{{ r.total_cost_base | cash }}</span></div>
   <div class="tile"><span class="label">Invested this year</span><span class="big">{{ r.activity.invested | cash }}</span></div>
   <div class="tile"><span class="label">Dividend income</span><span class="big">{{ r.income_cash | cash }}</span></div>
   {# Direction as a glyph as well as a colour — see the dashboard tiles. #}
@@ -42,6 +42,10 @@
 {% if r.withheld %}
 <p class="note">Totals exclude {{ r.withheld | join(', ') }} — no exchange rate stored.</p>
 {% endif %}
+{% if r.oversold_held %}
+<p class="note">Totals exclude {{ r.oversold_held | join(', ') }} — a sale of more
+units than were held. Correct it or record the missing buy.</p>
+{% endif %}
 {% if r.far %}
 <p class="note">Converted at an exchange rate more than a week from the day: {{ r.far | join(', ') }}.</p>
 {% endif %}
@@ -54,12 +58,12 @@
       {{ sorth(sorts, 'snapshot', 'ticker', 'Ticker', numeric=False) }}
       {{ sorth(sorts, 'snapshot', 'units', 'Units') }}
       {{ sorth(sorts, 'snapshot', 'price', 'Price (' ~ (native_ccy or 'native') ~ ')') }}
-      {{ sorth(sorts, 'snapshot', 'invested_cum', 'Invested (' ~ reporting_ccy ~ ')') }}
+      {{ sorth(sorts, 'snapshot', 'cost_base', 'Cost base (' ~ reporting_ccy ~ ')') }}
       {{ sorth(sorts, 'snapshot', 'value_aud', 'Value (' ~ reporting_ccy ~ ')') }}
       {# One header for one cell. The percentage sits INSIDE the gain cell, so
          a separate 'Gain %' header would describe a column that is not there —
          sorting by the percentage arrives with the four-state Gain header. #}
-      {{ sorth(sorts, 'snapshot', 'gain_aud', 'Gain (' ~ reporting_ccy ~ ')') }}
+      {{ sorth(sorts, 'snapshot', 'gain_aud', 'Unrealised gain (' ~ reporting_ccy ~ ')') }}
     </tr></thead>
     <tbody>
       {% for row in r.snapshot %}
@@ -67,7 +71,7 @@
         <td class="tick"><a href="{{ holding_href(row.instrument.ticker, row.instrument.exchange, return=back) }}">{{ row.instrument.ticker }}</a></td>
         <td class="num">{{ row.units | qty }}</td>
         <td class="num">{{ row.price | money }}{% if row.price_date %}<span class="sub">{{ row.price_date }}</span>{% endif %}</td>
-        <td class="num">{{ row.invested_cum | money }}</td>
+        <td class="num">{{ row.cost_base | money }}</td>
         <td class="num">{{ row.value_aud | money }}</td>
         {# Value and percentage in ONE cell, the same treatment the dashboard's
            gain column uses: a seventh column would be narrower for no gain, and

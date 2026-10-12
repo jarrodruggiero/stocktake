@@ -41,6 +41,7 @@ from histories import (
     load,
     stored_rate,
     worked_disposals,
+    worked_held,
 )
 
 EXACT = Decimal("0.00000001")
@@ -120,19 +121,23 @@ def _report(history: History, fy: int) -> dict:
         if units > 0:
             close = close_on_or_before(h, asof)
             rate = stored_rate(history, h.currency, asof)
-            if invested is None or (close and rate is None):
+            # What the units held then cost, the oldest sold first (#54).
+            held = worked_held(history, h, asof)
+            cost_base = (None if any(p["cost_held"] is None for p in held)
+                         else sum((p["cost_held"] for p in held), ZERO))
+            if cost_base is None or (close and rate is None):
                 withheld.add(h.ticker)
             # No rate stored for the currency is no AUD value: decisions.md #5.
             value = units * close[0] * rate if close and rate is not None else None
-            gain = None if value is None or invested is None else value - invested
+            gain = None if value is None or cost_base is None else value - cost_base
             snapshot[h.ticker] = {
-                "units": units, "invested": invested,
+                "units": units, "invested": invested, "cost_base": cost_base,
                 "price": close[0] if close else None, "price_date": close[1] if close else None,
                 "value": value, "gain": gain,
-                # A percentage of nothing invested does not exist (a DRP-only
-                # holding); one of an unknown amount exists but is not known.
-                "gain_pct": gain / invested if gain is not None and invested else None,
-                "applies": invested is None or bool(invested)}
+                # A percentage of a cost of nothing does not exist; one of an
+                # unknown amount exists but is not known.
+                "gain_pct": gain / cost_base if gain is not None and cost_base else None,
+                "applies": cost_base is None or bool(cost_base)}
     income = {}
     for h in history.holdings:
         paid = [d for d in h.dividends if start <= d.date <= end]
@@ -163,7 +168,8 @@ def _app(report: dict) -> dict:
     cgt = report["cgt"]
     return {
         "snapshot": {r.instrument.ticker: {
-            "units": _round(r.units), "invested": _round(r.invested_cum), "price": r.price,
+            "units": _round(r.units), "invested": _round(r.invested_cum),
+            "cost_base": _round(r.cost_base), "price": r.price,
             "price_date": r.price_date, "value": _round(r.value_aud), "gain": _round(r.gain_aud),
             "gain_pct": _round(r.gain_pct), "applies": r.percentage_applies}
             for r in report["snapshot"]},
@@ -188,7 +194,8 @@ def _app(report: dict) -> dict:
 
 def _rounded(expected: dict) -> dict:
     """The working-out in the comparison's shape (quantities and money to 1e-8)."""
-    snap = {t: {k: (_round(v) if k in ("units", "invested", "value", "gain", "gain_pct") else v)
+    snap = {t: {k: (_round(v) if k in ("units", "invested", "cost_base", "value", "gain",
+                                       "gain_pct") else v)
                 for k, v in row.items()} for t, row in expected["snapshot"].items()}
     act = {k: (_round(v) if isinstance(v, Decimal) else v)
            for k, v in expected["activity"].items()}

@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from . import clock, fyreport, queries
-from .models import Dividend, Instrument, Trade, trade_order
+from .models import Dividend, Instrument, Trade
 
 ZERO = Decimal(0)
 Report = tuple[list[str], list[list]]
@@ -101,8 +101,8 @@ def transactions(session: Session, ticker: str | None = None, **_) -> Report:
 def holdings(session: Session, **_) -> Report:
     headers = [
         "Ticker", "Name", "Class", "Currency", "Units", "Avg price (native)",
-        "Last price (native)", "Price date", "Cost (AUD)", "Value (AUD)",
-        "Capital gain (AUD)", "Gain %", "Dividends (native)", "DRP", "Note",
+        "Last price (native)", "Price date", "Cost base (AUD)", "Value (AUD)",
+        "Unrealised gain (AUD)", "Gain %", "Dividends (native)", "DRP", "Note",
     ]
     open_positions, _closed = queries.split_positions(queries.all_holdings(session))
     rows = []
@@ -222,45 +222,24 @@ def unrealised_cgt(session: Session, **_) -> Report:
         if latest is None:
             continue
         price, _date = latest
-        fx_now = queries.latest_fx(session, inst.currency)
-        # Walk the same FIFO the CGT engine uses, keeping what survives.
-        fifo: list[list] = []
-        for t in sorted(inst.trades, key=trade_order):  # same FIFO order as the CGT engine
-            # None here means no rate was captured on the trade and none is
-            # stored for the pair, so this parcel has no honest AUD cost base.
-            fx = fxbook.of(t, inst.currency)
-            if t.type in ("buy", "drp"):
-                unit_cost = (
-                    None if fx is None
-                    else (t.quantity * t.unit_price + t.brokerage) * fx / t.quantity
-                )
-                fifo.append([t.date, t.quantity, unit_cost])
-            else:
-                remaining = t.quantity
-                while remaining > 0 and fifo:
-                    take = min(fifo[0][1], remaining)
-                    remaining -= take
-                    if take == fifo[0][1]:
-                        fifo.pop(0)
-                    else:
-                        fifo[0][1] -= take
-                if remaining > 0:
-                    raise fyreport.OversoldError(
-                        fyreport.Oversold(inst, t, held=t.quantity - remaining))
-        for acquired, units, unit_cost in fifo:
+        fx_now = fxbook.rate(inst.currency, today)
+        # The same FIFO walk as the CGT engine and the holdings, so a holding's
+        # unrealised gain is the sum of these rows (decisions.md #54).
+        for parcel in fyreport.walk(inst, fxbook).held:
+            units = parcel.remaining
             # A spreadsheet will happily add a USD number to an AUD column, so
             # a figure we can't convert is left EMPTY rather than converted at
             # 1:1 — the same refusal the dashboard makes via `totals.excluded`.
-            cost = None if unit_cost is None else units * unit_cost
+            cost = parcel.cost_held
             value = None if fx_now is None else units * price * fx_now
             # `cost` is None only for a currency with no rate stored at all,
             # and then there is no rate for `value` either.
-            gain = None if value is None else value - cost
-            eligible = today > fyreport._one_year_after(acquired)
+            gain = None if value is None or cost is None else value - cost
+            eligible = today > fyreport._one_year_after(parcel.acquired)
             discount = (gain / 2) if (gain is not None and eligible and gain > 0) else ZERO
             rows.append([
-                inst.ticker, inst.name or "", acquired.isoformat(),
-                _d(units, "0.00000001"), (today - acquired).days,
+                inst.ticker, inst.name or "", parcel.acquired.isoformat(),
+                _d(units, "0.00000001"), (today - parcel.acquired).days,
                 _d(cost), _d(value), _d(gain),
                 "yes" if eligible else "no",
                 "" if gain is None else _d(gain - discount),
@@ -272,8 +251,8 @@ def unrealised_cgt(session: Session, **_) -> Report:
 def performance(session: Session, **_) -> Report:
     headers = [
         "Financial year", "Invested in year (AUD)", "Invested cumulative (AUD)",
-        "Value at year end (AUD)", "Net gain cumulative (AUD)", "Gain %",
-        "Gain in year (AUD)", "Year gain %", "Note",
+        "Value at year end (AUD)", "Total return cumulative (AUD)", "Return %",
+        "Return in year (AUD)", "Year return %", "Note",
     ]
     annual = queries.annual_series(session)
     rows = []

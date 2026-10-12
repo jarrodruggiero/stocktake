@@ -389,13 +389,13 @@ def test_chart_ranges_with_no_history_offers_only_all_and_this_fy():
 
 def test_the_snapshot_row_carries_a_gain_percentage():
     """Derived from the two numbers beside it rather than stored, so it cannot
-    drift from them."""
+    drift from them: the unrealised gain over what the units held cost."""
     from decimal import Decimal
 
     from app.fyreport import SnapshotRow
 
-    row = SnapshotRow(instrument=None, units=Decimal("10"),
-                      invested_cum=Decimal("1000"), price=Decimal("120"),
+    row = SnapshotRow(instrument=None, units=Decimal("10"), invested_cum=None,
+                      cost_base=Decimal("1000"), price=Decimal("120"),
                       price_date=None, value_aud=Decimal("1200"),
                       gain_aud=Decimal("200"))
 
@@ -409,8 +409,8 @@ def test_a_holding_with_no_outlay_has_no_percentage():
 
     from app.fyreport import SnapshotRow
 
-    row = SnapshotRow(instrument=None, units=Decimal("10"),
-                      invested_cum=Decimal("0"), price=None, price_date=None,
+    row = SnapshotRow(instrument=None, units=Decimal("10"), invested_cum=None,
+                      cost_base=Decimal("0"), price=None, price_date=None,
                       value_aud=None, gain_aud=Decimal("50"))
 
     assert row.gain_pct is None
@@ -420,14 +420,14 @@ def test_a_holding_with_no_outlay_has_no_percentage():
 
 def test_an_unpriced_holding_is_unknown_rather_than_not_applicable():
     """The distinction that matters: an em dash says "we do not know", N/A
-    says "there is nothing to know". A holding with an outlay and no price is
-    the first kind — the percentage is computable, just not yet."""
+    says "there is nothing to know". A holding with a cost base and no price
+    is the first kind — the percentage is computable, just not yet."""
     from decimal import Decimal
 
     from app.fyreport import SnapshotRow
 
-    row = SnapshotRow(instrument=None, units=Decimal("10"),
-                      invested_cum=Decimal("1000"), price=None, price_date=None,
+    row = SnapshotRow(instrument=None, units=Decimal("10"), invested_cum=None,
+                      cost_base=Decimal("1000"), price=None, price_date=None,
                       value_aud=None, gain_aud=None)
 
     assert row.gain_pct is None
@@ -439,8 +439,8 @@ def test_an_unpriced_holding_has_no_percentage():
 
     from app.fyreport import SnapshotRow
 
-    row = SnapshotRow(instrument=None, units=Decimal("10"),
-                      invested_cum=Decimal("1000"), price=None, price_date=None,
+    row = SnapshotRow(instrument=None, units=Decimal("10"), invested_cum=None,
+                      cost_base=Decimal("1000"), price=None, price_date=None,
                       value_aud=None, gain_aud=None)
 
     assert row.gain_pct is None
@@ -451,8 +451,8 @@ def test_a_loss_reads_as_a_negative_percentage():
 
     from app.fyreport import SnapshotRow
 
-    row = SnapshotRow(instrument=None, units=Decimal("10"),
-                      invested_cum=Decimal("1000"), price=Decimal("80"),
+    row = SnapshotRow(instrument=None, units=Decimal("10"), invested_cum=None,
+                      cost_base=Decimal("1000"), price=Decimal("80"),
                       price_date=None, value_aud=Decimal("800"),
                       gain_aud=Decimal("-200"))
 

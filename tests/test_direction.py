@@ -59,7 +59,7 @@ def test_no_change_is_neither_a_gain_nor_a_loss(client, session_factory):
         s.commit()
 
     page = client.get("/", headers=HTML).text
-    gain_tile = re.search(r'<div class="tile[^"]*">\s*<span class="label">Gain</span>.*?</div>',
+    gain_tile = re.search(r'<div class="tile[^"]*">\s*<span class="label">Unrealised gain</span>.*?</div>',
                           page, re.S).group(0)
 
     assert not re.search(r'class="tile (?:up|down)"', gain_tile), gain_tile

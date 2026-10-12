@@ -688,11 +688,11 @@ def test_performance_first_year_matches_the_hand_computed_series(portfolio):
     assert first["Invested in year (AUD)"] == Decimal("1010.00")
     assert first["Invested cumulative (AUD)"] == Decimal("1010.00")
     assert first["Value at year end (AUD)"] == Decimal("1000.00")   # 100 x 10.00
-    assert first["Net gain cumulative (AUD)"] == Decimal("-10.00")  # the brokerage
+    assert first["Total return cumulative (AUD)"] == Decimal("-10.00")  # the brokerage
     # -10.00 / 1010.00 = -0.00990099..., rounded to 4dp then shown as a percent
-    assert first["Gain %"] == Decimal("-0.99")
-    assert first["Gain in year (AUD)"] == Decimal("-10.00")
-    assert first["Year gain %"] == Decimal("-0.99")
+    assert first["Return %"] == Decimal("-0.99")
+    assert first["Return in year (AUD)"] == Decimal("-10.00")
+    assert first["Year return %"] == Decimal("-0.99")
 
 
 @freeze_time(ref.TODAY)
@@ -705,9 +705,9 @@ def test_performance_final_year_matches_the_hand_computed_series(portfolio):
     assert last["Invested in year (AUD)"] == Decimal("0.00")
     assert last["Invested cumulative (AUD)"] == ref.SERIES_INVESTED     # 7657.50
     assert last["Value at year end (AUD)"] == ref.SERIES_VALUE          # 4445.00
-    assert last["Net gain cumulative (AUD)"] == ref.SERIES_GAIN         # -172.50
+    assert last["Total return cumulative (AUD)"] == ref.SERIES_GAIN         # -172.50
     # -172.50 / 7657.50 = -0.0225269..., rounded to 4dp = -0.0225
-    assert last["Gain %"] == Decimal("-2.25")
+    assert last["Return %"] == Decimal("-2.25")
 
 
 @freeze_time(ref.TODAY)

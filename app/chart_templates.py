@@ -119,7 +119,7 @@ TEMPLATES: tuple[dict, ...] = (
     },
     {
         "key": "yearly",
-        "name": "Yearly invested & gain",
+        "name": "Yearly invested & return",
         "blurb": "What went in and what it made, per financial year",
         "width": "half",
         "spec": {
@@ -159,8 +159,8 @@ TEMPLATES: tuple[dict, ...] = (
     },
     {
         "key": "gain_by_ticker",
-        "name": "Gain % by holding",
-        "blurb": "How each position has performed against its cost",
+        "name": "Unrealised gain % by holding",
+        "blurb": "How each position's units held have done against their cost",
         "width": "half",
         "spec": {
             "grain": "positions",

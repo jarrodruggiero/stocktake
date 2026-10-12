@@ -59,6 +59,6 @@ def test_the_charts_label_follows_the_range_chosen(client, session_factory, tmp_
     out = json.loads(found.group(1).replace("&quot;", '"'))
 
     ending = re.escape(out["all"].split(": ", 1)[1])
-    assert re.fullmatch(r"Gain over time: -?[0-9]+\.[0-9]{2}% on [0-9-]{10}", out["all"])
+    assert re.fullmatch(r"Total return: -?[0-9]+\.[0-9]{2}% on [0-9-]{10}", out["all"])
     assert out["drawn"] == out["all"], "All is what the page draws first"
-    assert re.fullmatch(rf"Gain over time since [0-9-]{{10}}: {ending}", out["shortest"])
+    assert re.fullmatch(rf"Total return since [0-9-]{{10}}: {ending}", out["shortest"])

@@ -234,8 +234,45 @@ def _sum_aud(parts):
     return None if any(p is None for p in parts) else sum(parts, ZERO)
 
 
+def worked_held(history: History, h: Holding, until: dt.date | None = None) -> list[dict]:
+    """The parcels still holding units after every sale to `until`, oldest
+    first: FIFO, each parcel's AUD cost billed by running total as
+    `worked_disposals` bills it, so `cost_held` is what is left of it once
+    those bills are paid."""
+    parcels = []
+    for t in h.trades:
+        if until is not None and t.date > until:
+            break
+        rate = fx_of(history, h.currency, t)
+        outlay = t.quantity * t.unit_price + t.brokerage
+        if t.type != "sell":
+            parcels.append({"acquired": t.date, "remaining": t.quantity,
+                            "quantity": t.quantity, "native": outlay,
+                            "cost": None if rate is None else outlay * rate, "billed": ZERO})
+            continue
+        left = t.quantity
+        while left > 0:
+            p = parcels[0]
+            take = min(p["remaining"], left)
+            p["remaining"] -= take
+            if p["cost"] is not None:
+                p["billed"] = (p["cost"] * (p["quantity"] - p["remaining"])
+                               / p["quantity"]).quantize(CENTS)
+            left -= take
+            if p["remaining"] == 0:
+                parcels.pop(0)
+    for p in parcels:
+        p["native_held"] = p["native"] * p["remaining"] / p["quantity"]
+        p["cost_held"] = None if p["cost"] is None else p["cost"] - p["billed"]
+    return parcels
+
+
 def worked_holdings(history: History) -> dict:
-    """Each holding's figures by ticker, as queries.build_holding should give them."""
+    """Each holding's figures by ticker, as queries.build_holding should give them.
+
+    Cost is what the units still held cost, oldest sold first, so the gain is
+    unrealised (decisions.md #54). Every AUD figure books a row at its own
+    rate, else the stored series, as the FY report does."""
     latest_rate = history.usd[-1][1] if history.usd else None
     out = {}
     for h in history.holdings:
@@ -244,15 +281,15 @@ def worked_holdings(history: History) -> dict:
         acquired = [t for t in h.trades if t.type != "sell"]
         sells = [t for t in h.trades if t.type == "sell"]
         units = sum((t.quantity for t in acquired), ZERO) - sum((t.quantity for t in sells), ZERO)
-        cost = sum((t.quantity * t.unit_price + t.brokerage for t in buys), ZERO)
+        held = worked_held(history, h)
+        cost = sum((p["native_held"] for p in held), ZERO)
+        cost_aud = _sum_aud(p["cost_held"] for p in held)
         acquired_units = sum((t.quantity for t in acquired), ZERO)
         price = h.closes[-1][1] if h.closes else None
         value = units * price if price is not None and units else None
         value_aud = None if value is None or rate_now is None else value * rate_now
-        cost_aud = _sum_aud(_in_aud(t.quantity * t.unit_price + t.brokerage, h.currency,
-                                    t.fx_rate) for t in buys)
-        paid_aud = _sum_aud(_in_aud(t.quantity * t.unit_price, h.currency, t.fx_rate)
-                            for t in acquired)
+        paid_aud = _sum_aud(_in_aud(t.quantity * t.unit_price, h.currency,
+                                    fx_of(history, h.currency, t)) for t in acquired)
         closes = [c for _d, c in reversed(h.closes)][:2]
         day_pct = day_change = None
         if units and len(closes) == 2 and closes[1]:
@@ -262,6 +299,8 @@ def worked_holdings(history: History) -> dict:
         dividends = sum((d.cash for d in h.dividends), ZERO)
         out[h.ticker] = {
             "units": units, "cost": cost,
+            # Every buy with its brokerage: what a closed position cost.
+            "invested": sum((t.quantity * t.unit_price + t.brokerage for t in buys), ZERO),
             "avg_price": (sum((t.quantity * t.unit_price for t in acquired), ZERO)
                           / acquired_units) if acquired_units else None,
             "price": price, "value": value,
@@ -271,7 +310,7 @@ def worked_holdings(history: History) -> dict:
             "gain_aud": (value_aud - cost_aud
                          if value_aud is not None and cost_aud is not None else None),
             "dividends_cash": dividends,
-            "dividends_aud": _sum_aud(_in_aud(d.cash, h.currency, d.fx_rate)
+            "dividends_aud": _sum_aud(_in_aud(d.cash, h.currency, fx_of(history, h.currency, d))
                                       for d in h.dividends),
             "avg_price_aud": (paid_aud / acquired_units
                               if paid_aud is not None and acquired_units else None),

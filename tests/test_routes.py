@@ -231,7 +231,7 @@ def test_the_dashboard_shows_the_open_positions(client, session_factory):
     for ticker in ("ALPHA", "BETAX", "GAMMA", "OMEGA"):
         assert ticker in page.text
     # ZULU is fully sold — it belongs under closed positions, not the open table.
-    assert "5,647.50" in page.text or "5647.50" in page.text  # total cost
+    assert "4,882.50" in page.text or "4882.50" in page.text  # cost base
 
 
 def bind_to_only_portfolio(session):

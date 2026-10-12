@@ -32,6 +32,7 @@ from histories import (
     load,
     over_a_year,
     worked_disposals,
+    worked_held,
     worked_holdings,
 )
 
@@ -70,23 +71,9 @@ def _unrealised(history: History, names: dict) -> list:
             continue
         price = h.closes[-1][1]
         fx_now = Decimal(1) if h.currency == "AUD" else rate_now
-        left = []                       # [acquired, units, unit cost or None]
-        for t in h.trades:
-            if t.type != "sell":
-                fx = fx_of(history, h.currency, t)
-                unit = None if fx is None else (
-                    (t.quantity * t.unit_price + t.brokerage) * fx / t.quantity)
-                left.append([t.date, t.quantity, unit])
-                continue
-            sold = t.quantity
-            while sold > 0:
-                take = min(left[0][1], sold)
-                sold -= take
-                left[0][1] -= take
-                if left[0][1] == 0:
-                    left.pop(0)
-        for acquired, units, unit in left:
-            cost = None if unit is None else units * unit
+        # The parcels the holding's cost base is made of, so the rows add to it.
+        for p in worked_held(history, h):
+            units, acquired, cost = p["remaining"], p["acquired"], p["cost_held"]
             value = None if fx_now is None else units * price * fx_now
             gain = None if cost is None or value is None else value - cost
             eligible = over_a_year(acquired, TODAY)

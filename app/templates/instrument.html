@@ -24,7 +24,7 @@
 <section class="tiles">
   <div class="tile"><span class="label">Units held</span><span class="big">{{ holding.units | qty }}</span></div>
   <div class="tile"><span class="label">Avg price{{ ccy }}</span><span class="big">{{ holding.avg_price | cash(inst.currency) }}</span></div>
-  <div class="tile"><span class="label">Cost{{ ccy }}</span><span class="big">{{ holding.cost | cash(inst.currency) }}</span></div>
+  <div class="tile"><span class="label">Cost base{{ ccy }}</span><span class="big">{{ holding.cost | cash(inst.currency) }}</span></div>
   <div class="tile"><span class="label">Value{{ ccy }}</span><span class="big">{{ holding.value | cash(inst.currency) }}</span>
     {% if holding.price_date %}<span class="sub">@ {{ holding.price_date }}</span>{% endif %}</div>
   <div class="tile"><span class="label">Dividends{{ ccy }}</span><span class="big">{{ holding.dividends_cash | cash(inst.currency) }}</span></div>

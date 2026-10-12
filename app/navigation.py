@@ -115,7 +115,7 @@ CHARTS: tuple[ChartDef, ...] = (
     ChartDef("yrpct", "Yearly performance", "Gain in each FY as % of what was invested"),
     ChartDef("gainpct", "Overall performance by year", "Cumulative gain % at each FY end"),
     ChartDef("cum", "Year-end growth", "Cumulative invested vs cumulative value gain"),
-    ChartDef("yearly", "Yearly invested & gain", "Per-FY deltas"),
+    ChartDef("yearly", "Yearly invested & return", "Per-FY deltas"),
 )
 
 CHART_BY_KEY = {c.key: c for c in CHARTS}

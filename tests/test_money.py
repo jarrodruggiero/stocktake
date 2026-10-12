@@ -90,11 +90,11 @@ def test_a_native_column_says_native_when_the_portfolio_holds_several():
 
 def test_a_non_money_column_gets_no_currency():
     assert columns.BY_KEY["units"].heading("AUD") == "Units"
-    assert columns.BY_KEY["gain_pct"].heading("AUD") == "Gain %"
+    assert columns.BY_KEY["gain_pct"].heading("AUD") == "Unrealised gain %"
 
 
 def test_the_two_cost_columns_are_told_apart_only_by_their_currency():
-    """`cost` and `cost_reporting` share the label "Cost". If `heading` ever stopped
+    """`cost` and `cost_reporting` share the label "Cost base". If `heading` ever stopped
     adding the currency, the chooser would show two identical checkboxes and
     picking one would be a coin toss."""
     native = columns.BY_KEY["cost"].heading("USD")

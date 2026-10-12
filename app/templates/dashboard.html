@@ -135,7 +135,7 @@
   {# A canvas is nothing to a screen reader: the label says what is drawn and
      where it ends. summary.js rewrites it for the range chosen. #}
   <div class="plot summaryplot"><canvas id="summarychart" role="img"
-    aria-label="Gain over time: {{ '%.2f' | format(summary.gain[-1]) }}% on {{ summary.dates[-1] }}"></canvas></div>
+    aria-label="Total return: {{ '%.2f' | format(summary.gain[-1]) }}% on {{ summary.dates[-1] }}"></canvas></div>
 </section>
 <script type="application/json" id="summarydata">{{ summary | tojson }}</script>
 {% endif %}
@@ -161,13 +161,15 @@
 {% else %}
 
 <section class="tiles">
-  <div class="tile"><span class="label">Total cost</span><span class="big">{{ totals.cost | cash }}</span></div>
+  {# The cost of the units held and the gain on them: unrealised. The chart
+     above is total return, which counts sales and income too (#54). #}
+  <div class="tile"><span class="label">Cost base</span><span class="big">{{ totals.cost | cash }}</span></div>
   <div class="tile"><span class="label">Total value</span><span class="big">{{ totals.value | cash }}</span></div>
   {# The arrow carries direction alongside the colour, the same way the holdings
      table has. Red and green are one colour to ~8% of men, and to
      any printer — the tiles were the last place that was still true. #}
   <div class="tile {{ totals.gain | trend }}">
-    <span class="label">Gain</span>
+    <span class="label">Unrealised gain</span>
     <span class="big">{{ totals.gain | arrow }}{{ totals.gain | cash }}</span>
     <span class="sub">{{ totals.gain_pct | pct }}</span>
   </div>
@@ -181,6 +183,13 @@
 {% if totals.excluded %}
 <p class="note">Totals exclude {{ totals.excluded | join(', ') }} — no price or
 exchange rate stored.</p>
+{% endif %}
+{% if totals.oversold %}
+<p class="note">Totals exclude {{ totals.oversold | join(', ') }} — a sale of more
+units than were held. Correct it or record the missing buy.</p>
+{% endif %}
+{% if totals.far %}
+<p class="note">Converted at an exchange rate more than a week from the day: {{ totals.far | join(', ') }}.</p>
 {% endif %}
 {% if totals.dividends_excluded %}
 <p class="note">Dividends received leaves out {{ totals.dividends_excluded | join(', ') }} —
