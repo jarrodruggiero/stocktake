@@ -717,9 +717,8 @@ def _render(request: Request, ctx, name: str, extra: dict,
             # The idle overlay reads this off <body> so the warning lead time is
             # configurable without templating JavaScript.
             "idle_warning_seconds": settings.auth.idle_warning_seconds,
-            # Set here rather than per route: it belongs to every page, and an
-            # inline style outranks both `:root` and `body[data-theme=...]`.
-            "theme_style": theming.css_variables(ctx.user.theme_colors),
+            # Set here rather than per route: it belongs to every page.
+            "theme_css": theming.stylesheet(ctx.user.theme_colors),
             **extra,
         },
         status_code=status_code,
@@ -2072,6 +2071,7 @@ def _account_context(request: Request, ctx, db: DbSession, *, saved: str = "",
         # empty box still tells you what you would get), and any choice
         # that will be hard to see.
         "swatches": theming.SWATCHES,
+        "modes": theming.MODES,
         "colors": ctx.user.theme_colors or {},
         "defaults": theming.DEFAULTS,
         "color_warnings": theming.warnings(ctx.user.theme_colors),
@@ -3617,8 +3617,7 @@ async def account_colors(request: Request):
     """
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
-        form = await request.form()
-        chosen = theming.clean({s.token: form.get(s.token, "") for s in theming.SWATCHES})
+        chosen = theming.clean(await request.form())
         ctx.user.theme_colors = chosen or None
         db.commit()
         return _redirect("/profile")

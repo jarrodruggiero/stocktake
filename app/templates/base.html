@@ -13,6 +13,8 @@
   {# The portfolio's reporting currency, for the scripts that decide whether an
      instrument is foreign. One place, so no script hard-codes "AUD". #}
   <script>window.reportingCurrency = "{{ reporting_ccy }}";</script>
+  {# This person's colours, a rule per mode: theming.stylesheet. #}
+  {% if theme_css %}<style>{{ theme_css }}</style>{% endif %}
 </head>
 {# `data-feed-running` rather than an inline script on the dashboard: the state
    belongs on the document, and feedwatch.js reads it from here. #}
@@ -26,7 +28,7 @@
          that arrives a minute later. #}
       {% if feed is defined %}data-quoted="{{ feed.quoted.isoformat() if feed.quoted else '' }}"{% endif %}
       {% if auth %}data-idle-warning="{{ idle_warning_seconds }}"{% endif %}
-      {% if theme_style %}style="{{ theme_style }}"{% endif %}>
+      {% if theme_css %}data-colors{% endif %}>
   <header class="topbar">
     {# Brand mark links home; the Portfolio nav item does too — one is the
        identity, the other is a destination in the list. #}

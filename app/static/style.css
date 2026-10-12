@@ -133,7 +133,7 @@
     --muted: #98a0bb;
     --line: rgb(255 255 255 / 0.09);
     --up: #2ea043;
-    --down: #ef4444;
+    --down: #f25050;
     --danger: #dc2626;
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
     --shadow: 0 16px 44px rgb(0 0 0 / 0.5);
@@ -142,7 +142,7 @@
     --on-accent: #0d1018;
     --on-badge: #0d1018;
     --viz-1: #a37ecd; --viz-2: #2ea043; --viz-3: #c77f3e;
-    --viz-pos: #a37ecd; --viz-neg: #ef4444;
+    --viz-pos: #a37ecd; --viz-neg: #f25050;
     --viz-grid: #242a3c; --viz-axis: #3a4159; --viz-ink: #98a0bb;
   }
 }
@@ -157,7 +157,7 @@ body[data-theme="dark"] {
   --muted: #98a0bb;
   --line: rgb(255 255 255 / 0.09);
   --up: #2ea043;
-  --down: #ef4444;
+  --down: #f25050;
   --danger: #dc2626;
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
   --shadow: 0 16px 44px rgb(0 0 0 / 0.5);
@@ -166,7 +166,7 @@ body[data-theme="dark"] {
   --on-accent: #0d1018;
   --on-badge: #0d1018;
   --viz-1: #a37ecd; --viz-2: #2ea043; --viz-3: #c77f3e;
-  --viz-pos: #a37ecd; --viz-neg: #ef4444;
+  --viz-pos: #a37ecd; --viz-neg: #f25050;
   --viz-grid: #242a3c; --viz-axis: #3a4159; --viz-ink: #98a0bb;
 }
 
@@ -1839,6 +1839,16 @@ body.rotdragging .rotchip:hover { border-color: var(--line); color: var(--text);
 }
 
 /* --- the theme designer -------------------------------------------------- */
+/* The theme designer's two modes, drawn like the year tabs. Each list's own
+   name is the tab once the script has made them tabs. */
+.modetabs { display: flex; gap: 0.4rem; margin: 0 0 var(--sp-3); }
+.modetabs button { margin: 0; padding: 0.3rem 0.8rem; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--panel); color: var(--muted); font-size: 0.85rem;
+  font-weight: 400; box-shadow: none; }
+.modetabs button:hover { color: var(--text); filter: none; }
+.modetabs button[aria-selected="true"] { border-color: var(--accent); color: var(--accent); }
+.modename { font-size: var(--fs-body); margin: var(--sp-3) 0 var(--sp-2); }
+.tabbed .modename { display: none; }
 .swatchlist { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
 .swatchrow { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr) 7.5rem;
   gap: var(--sp-3); align-items: center; }

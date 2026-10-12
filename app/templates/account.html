@@ -116,43 +116,56 @@
      their background and then asking why the app is broken. #}
   <form class="panel" method="post" action="/profile/colors">
     <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
-    <p class="note">One value serves both light and dark, so the contrast shown
-    is whichever mode it reads worse in. Leave a box empty for the built-in
-    colour.</p>
-    <ul class="swatchlist">
-      {% for s in swatches %}
-      <li class="swatchrow">
-        <label class="swatchpick" for="hex-{{ s.token }}">
-          {# The wheel and the hex box are ONE control with two faces —
-             colourpicker.js keeps them in step. The text box is not a
-             convenience: it is how somebody pastes the colour they already use
-             everywhere else. #}
-          {# A button, not `<input type="color">`. The native control opens
-             whatever the platform supplies — the Windows picker on Windows,
-             the Android one on a phone — three different experiences of one
-             setting, none of them stylable. `colourwheel.js` draws ours. The
-             hex box beside it is still the field that submits, so with no
-             JavaScript this is a text input and nothing is lost. #}
-          <button type="button" class="swatchwheel" data-for="hex-{{ s.token }}"
-                  aria-label="Pick a colour for {{ s.label }}"
-                  style="background: {{ colors.get(s.token) or defaults.get(s.token, '#888888') }}"></button>
-        </label>
-        <div class="swatchmeta">
-          <strong>{{ s.label }}</strong>
-          <span class="sub">{{ s.blurb }}</span>
-          {% if color_warnings.get(s.token) %}
-          <span class="sub down">{{ color_warnings[s.token] }}</span>
-          {% endif %}
-        </div>
-        <input type="text" id="hex-{{ s.token }}" name="{{ s.token }}"
-               class="swatchhex" inputmode="text" spellcheck="false"
-               placeholder="{{ defaults.get(s.token, 'default') }}"
-               pattern="^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
-               value="{{ colors.get(s.token, '') }}"
-               aria-label="{{ s.label }} colour code">
-      </li>
+    {# A tab per mode, both in this one form, so either can be changed without
+       switching the page to it. colourtabs.js opens the one in use; with no
+       script both lists show, each under its name. #}
+    <div class="modetabs" role="tablist" aria-label="Mode" hidden>
+      {% for mode in modes %}
+      <button type="button" role="tab" id="tab-{{ mode }}" aria-controls="colours-{{ mode }}"
+              aria-selected="false" tabindex="-1">{{ mode | capitalize }}</button>
       {% endfor %}
-    </ul>
+    </div>
+    {% for mode in modes %}
+    <div class="modecolours" id="colours-{{ mode }}">
+      <h3 class="modename">{{ mode | capitalize }}</h3>
+      <ul class="swatchlist">
+        {% for s in swatches %}
+        {% set chosen = (colors.get(mode) or {}).get(s.token) %}
+        <li class="swatchrow">
+          <label class="swatchpick" for="hex-{{ mode }}-{{ s.token }}">
+            {# The wheel and the hex box are ONE control with two faces —
+               colourpicker.js keeps them in step. The text box is not a
+               convenience: it is how somebody pastes the colour they already
+               use everywhere else. #}
+            {# A button, not `<input type="color">`. The native control opens
+               whatever the platform supplies — the Windows picker on Windows,
+               the Android one on a phone — three different experiences of one
+               setting, none of them stylable. `colourwheel.js` draws ours. The
+               hex box beside it is still the field that submits, so with no
+               JavaScript this is a text input and nothing is lost. #}
+            <button type="button" class="swatchwheel" data-for="hex-{{ mode }}-{{ s.token }}"
+                    aria-label="Pick the {{ s.label }} colour for {{ mode }} mode"
+                    style="background: {{ chosen or defaults[mode][s.token] }}"></button>
+          </label>
+          <div class="swatchmeta">
+            <strong>{{ s.label }}</strong>
+            <span class="sub">{{ s.blurb }}</span>
+            {% if (color_warnings.get(mode) or {}).get(s.token) %}
+            <span class="sub down">{{ color_warnings[mode][s.token] }}</span>
+            {% endif %}
+          </div>
+          <input type="text" id="hex-{{ mode }}-{{ s.token }}" name="{{ mode }}-{{ s.token }}"
+                 class="swatchhex" inputmode="text" spellcheck="false"
+                 placeholder="{{ defaults[mode][s.token] }}"
+                 pattern="^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+                 value="{{ chosen or '' }}"
+                 aria-label="{{ s.label }} colour code for {{ mode }} mode">
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+    <p class="note">Leave a box empty for the built-in colour.</p>
     <div class="commitbar">
       <button type="submit">Save colours</button>
       <button type="submit" class="secondary" name="reset" value="1"
@@ -337,6 +350,7 @@ request: ?portfolio=&lt;id&gt;</pre>
 
 <script src="/static/colourpicker.js?v={{ asset_v }}" defer></script>
 <script src="/static/colourwheel.js?v={{ asset_v }}" defer></script>
+<script src="/static/colourtabs.js?v={{ asset_v }}" defer></script>
 
 
 {# The sign-in table is the way in, and each action opens its form here — the

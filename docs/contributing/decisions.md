@@ -669,13 +669,16 @@ three years". Corrections are a human sitting in front of the ledger.
 of them lets somebody set their page background to the colour of their text. The
 six are the ones carrying meaning rather than structure — the accent, the two
 directions money can go, and the three chart series — so a bad choice is ugly,
-never unusable. One value applies to both light and dark, because a colour
-legible on white rarely is on near-black, so contrast is reported against both
-surfaces and the weaker one shown. Advice, not a veto. The cost, measured: no
-one colour is 4.5:1 against both cards (the best is 3.9:1), so a chosen accent,
-gain or loss colour drawn as body text falls short of the text floor in one
-mode, and the warning holds it to the 3:1 graphical floor instead. Per-mode
-values would lift that.
+never unusable. Each mode has its own six, because a colour legible on white
+rarely is on near-black: one value for both had to be held to 3:1, since no
+colour is 4.5:1 against both cards (the best is 3.9:1). Per mode, each is
+measured on its own card against the floor for what it is drawn as, 4.5:1 for
+the accent, gain and loss, which are text, and 3:1 for a chart's lines. Advice,
+not a veto. The built-in colours meet the same floors, which is why dark loss
+is #f25050 and not the 4.31:1 #ef4444. The page's colours are a `<style>` with
+a rule per mode rather than an inline style, which cannot follow the device on
+`auto`; the profile page opens the tab for the mode in use, and the other is
+editable without switching.
 
 **90. The in-app log is WARNING and above, in memory, and never written to
 disk.** Error-only says something broke and nothing about what led there; INFO

@@ -48,17 +48,59 @@ def test_anything_that_is_not_a_hex_colour_is_refused(raw):
 
 def test_a_blank_field_stores_nothing_rather_than_an_empty_colour():
     """The difference between "use the default" and "use no colour"."""
-    assert theming.clean({"accent": "", "up": "#123456"}) == {"up": "#123456"}
+    assert theming.clean({"light-accent": "", "light-up": "#123456"}) == {
+        "light": {"up": "#123456"}}
 
 
-def test_an_unknown_token_is_dropped():
-    assert theming.clean({"accent": "#123456", "bg": "#000000"}) == {"accent": "#123456"}
+def test_an_unknown_token_or_mode_is_dropped():
+    assert theming.clean({"light-accent": "#123456", "light-bg": "#000000",
+                          "sepia-up": "#111111", "accent": "#222222"}) == {
+        "light": {"accent": "#123456"}}
 
 
-def test_the_overrides_render_as_css_custom_properties():
-    css = theming.css_variables({"up": "#112233"})
+def test_each_mode_keeps_its_own_colours():
+    """One colour per mode: a colour that reads on the light card rarely reads
+    on the dark one (decisions.md #89)."""
+    assert theming.clean({"light-up": "#111111", "dark-up": "#eeeeee"}) == {
+        "light": {"up": "#111111"}, "dark": {"up": "#eeeeee"}}
 
-    assert css == "--up:#112233"
+
+def _rules(css: str) -> dict[str, str]:
+    """{selector, with any @media wrapped round it: declarations}."""
+    found = {}
+    for media, selector, body in re.findall(
+            r"(?:(@media [^{]+)\{)?([^{}@]+)\{([^}]*)\}\}?", css):
+        found[(media.strip() + " " if media else "") + selector.strip()] = body
+    return found
+
+
+def test_a_light_colour_applies_only_where_the_page_is_light():
+    rules = _rules(theming.stylesheet({"light": {"up": "#112233"}}))
+
+    assert rules == {
+        "body[data-colors][data-theme=light]": "--up:#112233",
+        "@media (prefers-color-scheme: light) body[data-colors][data-theme=auto]": "--up:#112233",
+    }
+
+
+def test_a_dark_colour_applies_only_where_the_page_is_dark():
+    rules = _rules(theming.stylesheet({"dark": {"down": "#ff6666"}}))
+
+    assert rules == {
+        "body[data-colors][data-theme=dark]": "--down:#ff6666",
+        "@media (prefers-color-scheme: dark) body[data-colors][data-theme=auto]": "--down:#ff6666",
+    }
+
+
+def test_nothing_but_a_checked_colour_reaches_the_stylesheet():
+    """The rules are written into a <style> element, so a stored value is
+    checked again on the way out, as a colour or nothing."""
+    css = theming.stylesheet({"light": {"up": "#fff}</style><script>x()</script>",
+                                        "bg": "#000000", "down": "#abc"}})
+
+    assert css == ("body[data-colors][data-theme=light]{--down:#aabbcc}"
+                   "@media (prefers-color-scheme: light)"
+                   "{body[data-colors][data-theme=auto]{--down:#aabbcc}}")
 
 
 @pytest.mark.parametrize("accent", ["#0f766e", "#fbbf24", "#7c3aed", "#888888", "#ff8800"])
@@ -66,7 +108,8 @@ def test_a_chosen_accent_paints_the_buttons_in_words_that_read_on_it(accent):
     """Only `--accent` was set, but buttons paint `--accent-grad`, which kept
     the theme's own colours: the swatch promised "Buttons, links…" and moved
     no button. The words on them follow the colour too."""
-    style = dict(part.split(":", 1) for part in theming.css_variables({"accent": accent}).split(";"))
+    [body] = set(_rules(theming.stylesheet({"dark": {"accent": accent}})).values())
+    style = dict(part.split(":", 1) for part in body.split(";"))
     stops = re.findall(r"#[0-9a-f]{6}", style["--accent-grad"])
     words = style["--on-accent"]
 
@@ -81,98 +124,104 @@ def test_a_chosen_accent_paints_the_buttons_in_words_that_read_on_it(accent):
 def test_changing_the_first_series_moves_the_positive_pole_with_it():
     """`--viz-pos` IS series 1 in the built-in palette. If it did not follow,
     a chart would keep drawing gains in the colour that was replaced."""
-    css = theming.css_variables({"viz-1": "#445566"})
+    [body] = set(_rules(theming.stylesheet({"light": {"viz-1": "#445566"}})).values())
 
-    assert "--viz-1:#445566" in css
-    assert "--viz-pos:#445566" in css
+    assert body == "--viz-1:#445566;--viz-pos:#445566"
 
 
 def test_nothing_chosen_renders_no_style_at_all():
-    """An empty `style=""` on <body> is noise in every page's source."""
-    assert theming.css_variables(None) == ""
-    assert theming.css_variables({}) == ""
+    """An empty <style> is noise in every page's source."""
+    assert theming.stylesheet(None) == ""
+    assert theming.stylesheet({}) == ""
+    assert theming.stylesheet({"light": {}, "dark": {}}) == ""
 
 
-def test_no_one_colour_is_text_contrast_on_both_cards():
-    """Why the warning floor is 3:1 and not 4.5:1 (decisions.md #89): one
-    value serves both modes, and no colour reaches 4.5:1 against both the
-    light and the dark card. If the cards change so one can, the floor
-    should be revisited."""
-    steps = range(0, 256, 17)
-    best = max(min(theming.contrast(f"#{r:02x}{g:02x}{b:02x}", surface)
-                   for surface in theming.SURFACES.values())
-               for r in steps for g in steps for b in steps)
+def test_each_built_in_colour_meets_its_floor_on_its_own_card():
+    """One value had to serve both modes, and no colour is 4.5:1 on both
+    cards, so the floor was 3:1 for everything. Per mode, text is held to 4.5:1
+    and a chart's lines to 3:1 — the built-in colours included, or a person
+    choosing one back would be warned about the app's own."""
+    weak = {(mode, s.token): theming.contrast(theming.DEFAULTS[mode][s.token],
+                                              theming.SURFACES[mode])
+            for mode in theming.MODES for s in theming.SWATCHES
+            if theming.contrast(theming.DEFAULTS[mode][s.token],
+                                theming.SURFACES[mode]) < s.floor}
 
-    assert 3.0 < best < 4.5
+    assert weak == {}
+    assert {s.token: s.floor for s in theming.SWATCHES} == {
+        "accent": 4.5, "up": 4.5, "down": 4.5, "viz-1": 3.0, "viz-2": 3.0, "viz-3": 3.0}
 
 
 def test_a_colour_too_close_to_the_card_behind_it_is_flagged():
     """Advice, not a veto — but silence would be worse than either."""
-    warnings = theming.warnings({"accent": "#1b2030"})   # the dark panel itself
+    warnings = theming.warnings({"dark": {"accent": "#1b2030"}})   # the dark panel itself
 
-    assert "accent" in warnings
-    assert "dark" in warnings["accent"]
-
-
-def test_a_legible_colour_is_not_flagged():
-    """`#7a5af8` clears 3:1 on both cards (4.26 light, 3.58 dark).
-
-    Deliberately NOT the app's own default accent: `#2f5fd0` measures 2.83:1
-    on the dark card, which is precisely why the stylesheet ships a separate
-    dark accent. One value serving both modes is a real constraint, and a test
-    using the default here would be asserting that it isn't."""
-    assert theming.warnings({"accent": "#7a5af8"}) == {}
+    assert list(warnings) == ["dark"] and list(warnings["dark"]) == ["accent"]
 
 
-def test_the_worst_of_the_two_modes_is_what_gets_reported():
-    """One value serves both themes, so a colour that only fails on one ground
-    still has to be called out."""
-    # Near-white: fine on the dark card, invisible on the light one.
-    warnings = theming.warnings({"up": "#fdfdfd"})
+def test_text_is_held_to_the_text_floor_and_a_chart_to_the_graphic_one():
+    """#8a7f3f measures 3.81:1 on the light card: enough for a chart's line,
+    not for the words in a gain cell."""
+    assert theming.contrast("#8a7f3f", theming.SURFACES["light"]) == 3.81
+    warnings = theming.warnings({"light": {"up": "#8a7f3f", "viz-1": "#8a7f3f"}})
 
-    assert "light" in warnings["up"]
+    assert list(warnings["light"]) == ["up"]
+    assert "4.5:1" in warnings["light"]["up"]
+
+
+def test_each_mode_is_measured_on_its_own_card():
+    """Near-white is fine on the dark card and invisible on the light one."""
+    assert theming.warnings({"dark": {"up": "#fdfdfd"}}) == {}
+    assert list(theming.warnings({"light": {"up": "#fdfdfd"}})["light"]) == ["up"]
 
 
 def test_the_documented_defaults_are_the_ones_in_the_stylesheet():
     """The placeholder in each box claims to be the built-in colour. If these
     two lists drift, it claims something false."""
     css = CSS.read_text(encoding="utf-8")
-    root = css[css.index(":root {"):css.index("/* ── dark surfaces")]
+    blocks = {"light": css[css.index(":root {"):css.index("/* ── dark surfaces")],
+              "dark": re.search(r'\nbody\[data-theme="dark"\] \{([^}]*)\}', css).group(1)}
 
-    for token, value in theming.DEFAULTS.items():
-        found = re.search(rf"--{re.escape(token)}:\s*(#[0-9a-fA-F]{{6}})", root)
-        assert found, f"--{token} is not declared in :root"
-        assert found.group(1).lower() == value, (
-            f"--{token} is {found.group(1)} in style.css but {value} in theming.DEFAULTS")
+    for mode, block in blocks.items():
+        for token, value in theming.DEFAULTS[mode].items():
+            found = re.search(rf"--{re.escape(token)}:\s*(#[0-9a-fA-F]{{6}})", block)
+            assert found, f"--{token} is not declared for {mode}"
+            assert found.group(1).lower() == value, (
+                f"{mode} --{token} is {found.group(1)} in style.css but {value} here")
 
 
 # --------------------------------------------------------------------------- #
 # Through the route
 # --------------------------------------------------------------------------- #
 
+def _save(client, session_factory, **colours):
+    return client.post("/profile/colors",
+                       data={**colours, "_csrf": session_csrf(session_factory)},
+                       headers=HTML, follow_redirects=True)
+
+
 def test_a_saved_colour_reaches_the_page(client, session_factory):
-    """The end of the chain: form -> row -> the <body> style attribute."""
+    """The end of the chain: form -> row -> the page's <style>."""
     make_login(client, session_factory)
 
-    client.post("/profile/colors",
-                data={"accent": "#ff8800", "_csrf": session_csrf(session_factory)},
-                headers=HTML, follow_redirects=True)
+    _save(client, session_factory, **{"dark-accent": "#ff8800"})
     page = client.get("/", headers=HTML).text
 
-    assert "--accent:#ff8800" in page
-    assert "--accent-grad:linear-gradient(135deg, #ff8800, " in page
+    style = re.search(r"<style>(.*?)</style>", page, re.S).group(1)
+    assert "body[data-colors][data-theme=dark]{--accent:#ff8800;" in style
+    assert "--accent-grad:linear-gradient(135deg, #ff8800, " in style
+    assert re.search(r"<body [^>]*\bdata-colors\b", page)
 
 
 def test_saving_junk_leaves_the_palette_alone(client, session_factory):
     make_login(client, session_factory)
 
-    client.post("/profile/colors",
-                data={"accent": "octarine", "_csrf": session_csrf(session_factory)},
-                headers=HTML, follow_redirects=True)
+    _save(client, session_factory, **{"light-accent": "octarine"})
     page = client.get("/", headers=HTML).text
 
     assert "octarine" not in page
     assert "--accent:" not in page
+    assert not re.search(r"<body [^>]*\bdata-colors\b", page)
 
 
 def test_reset_stores_null_rather_than_a_copy_of_the_defaults(client, session_factory):
@@ -183,9 +232,7 @@ def test_reset_stores_null_rather_than_a_copy_of_the_defaults(client, session_fa
     from app.models import User
 
     email = make_login(client, session_factory)
-    client.post("/profile/colors",
-                data={"accent": "#ff8800", "_csrf": session_csrf(session_factory)},
-                headers=HTML, follow_redirects=True)
+    _save(client, session_factory, **{"light-accent": "#ff8800"})
     client.post("/profile/colors/reset",
                 data={"_csrf": session_csrf(session_factory)},
                 headers=HTML, follow_redirects=True)
@@ -196,13 +243,22 @@ def test_reset_stores_null_rather_than_a_copy_of_the_defaults(client, session_fa
     assert stored is None
 
 
-def test_the_account_page_offers_every_settable_colour(client, session_factory):
+def test_the_account_page_offers_every_colour_in_each_mode(client, session_factory):
     make_login(client, session_factory)
+    _save(client, session_factory, **{"dark-up": "#ffffff"})
 
     page = client.get("/profile", headers=HTML).text
 
-    for swatch in theming.SWATCHES:
-        assert f'name="{swatch.token}"' in page, f"{swatch.token} has no field"
+    for mode in theming.MODES:
+        for swatch in theming.SWATCHES:
+            assert f'name="{mode}-{swatch.token}"' in page, f"{mode} {swatch.token} has no field"
+            assert f'placeholder="{theming.DEFAULTS[mode][swatch.token]}"' in page
+            # Heard without the tab, so each names its mode: "a dark colour"
+            # reads as a shade.
+            assert f'aria-label="Pick the {swatch.label} colour for {mode} mode"' in page
+            assert f'aria-label="{swatch.label} colour code for {mode} mode"' in page
+    assert 'value="#ffffff"' in page
+    assert 'role="tab"' in page and "/static/colourtabs.js" in page
     assert "/static/colourpicker.js" in page
 
 

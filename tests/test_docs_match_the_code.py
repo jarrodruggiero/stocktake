@@ -32,10 +32,11 @@ def test_every_path_the_docs_lint_exists():
 def test_no_line_of_the_docs_starts_with_a_number_sign():
     """MkDocs reads `#12 safe rather than…` at the start of a line as a
     heading, so a paragraph that wrapped before a decision's number rendered
-    as a heading in the middle of it."""
+    as a heading in the middle of it. A colour does the same: `#f25050 and
+    not…` did, with no space needed after the sign."""
     found = [f"{doc.relative_to(ROOT)}:{number}" for doc in DOCS
              for number, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1)
-             if re.match(r"#\d", line)]
+             if re.match(r"#[^#\s]", line)]
 
     assert found == []
 
