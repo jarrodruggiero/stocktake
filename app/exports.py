@@ -121,7 +121,7 @@ def holdings(session: Session, **_) -> Report:
 
 def dividends(session: Session, fy: int | None = None, **_) -> Report:
     headers = [
-        "Payment date", "Ticker", "Name", "Cash (native)", "Currency",
+        "Payment date", "Period ended", "Ticker", "Name", "Cash (native)", "Currency",
         "FX rate to AUD", "Cash (AUD)", "Franking credits (AUD)",
         "Grossed up (AUD)", "Reinvested", "Financial year", "Note",
     ]
@@ -133,7 +133,7 @@ def dividends(session: Session, fy: int | None = None, **_) -> Report:
     fxbook = queries.FxBook(session)
     rows = []
     for d in session.scalars(stmt):
-        year = d.date.year + (0 if d.date.month <= 6 else 1)
+        year = fyreport.current_fy(fyreport.income_date(d))
         if fy and year != fy:
             continue
         cash_aud = _aud(d.cash_amount, fxbook.of(d, d.instrument.currency))
@@ -144,7 +144,8 @@ def dividends(session: Session, fy: int | None = None, **_) -> Report:
         # somebody would have taken at face value.
         franking = d.franking_credits
         rows.append([
-            d.date.isoformat(), d.instrument.ticker, d.instrument.name or "",
+            d.date.isoformat(), d.period_end.isoformat() if d.period_end else "",
+            d.instrument.ticker, d.instrument.name or "",
             _d(d.cash_amount, "0.0001"), d.instrument.currency,
             _d(d.fx_rate, "0.000001"), _d(cash_aud), _d(franking),
             # No AUD cash figure means no honest total — and neither does an

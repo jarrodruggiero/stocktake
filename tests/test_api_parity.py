@@ -55,6 +55,7 @@ PUBLISHED: dict[str, str] = {
     # asymmetry nobody chose. This test found it on its first run.
     "dividend.fx_rate": "dividends[].fx_rate",
     "dividend.note": "dividends[].note",
+    "dividend.period_end": "dividends[].period_end",
     "price.close": "holdings[].last_price",
     "price.date": "holdings[].price_date",
 }

@@ -184,6 +184,7 @@ def get_dividends(request: Request, since: str | None = None) -> dict:
                     "currency": d.instrument.currency,
                     "fx_rate": _num(d.fx_rate),
                     "franking_credits": _num(d.franking_credits),
+                    "period_end": d.period_end.isoformat() if d.period_end else None,
                     "reinvested": d.reinvest_trade_id is not None,
                     "note": d.note,
                 }
@@ -329,6 +330,8 @@ class DividendIn(NewInstrument):
     franking_credits: Decimal | None = Field(
         default=None, ge=0, lt=money.limit(Dividend.franking_credits))
     fx_rate: Decimal | None = Field(default=None, gt=0, lt=money.limit(Dividend.fx_rate))
+    # A trust's: the financial year holding it is the one the income is for.
+    period_end: dt.date | None = None
     note: str | None = Field(default=None, max_length=Dividend.note.type.length)
 
 
@@ -404,6 +407,9 @@ def create_trade(request: Request, body: TradeIn) -> dict:
 
 @router.post("/dividends", status_code=201)
 def create_dividend(request: Request, body: DividendIn) -> dict:
+    problem = fyreport.period_problem(body.period_end, body.date)
+    if problem:
+        raise HTTPException(400, problem)
     with auth.api_session(request, write=True) as (access, db):
         inst = _instrument(request, db, body)
         existing = db.scalar(
@@ -425,6 +431,7 @@ def create_dividend(request: Request, body: DividendIn) -> dict:
                 cash_amount=body.cash_amount,
                 fx_rate=Decimal(1) if inst.currency == "AUD" else body.fx_rate,
                 franking_credits=body.franking_credits,
+                period_end=body.period_end,
                 note=body.note or "via API",
             ),
         )

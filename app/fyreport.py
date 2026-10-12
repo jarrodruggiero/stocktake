@@ -73,6 +73,21 @@ def fy_label(fy_end_year: int) -> str:
     return f"FY{str(fy_end_year - 1)[-2:]}/{str(fy_end_year)[-2:]}"
 
 
+def income_date(dividend) -> dt.date:
+    """The date that decides a distribution's financial year: its period's
+    end where it has one, as a trust's income belongs to the trust's year
+    (decisions.md #144), else the day it was paid."""
+    return dividend.period_end or dividend.date
+
+
+def period_problem(period_end: dt.date | None, paid: dt.date) -> str | None:
+    """Why `period_end` cannot be the end of a distribution paid on `paid`."""
+    if period_end is not None and (period_end > paid or _one_year_after(period_end) < paid):
+        return ("A distribution's period ends on or before its payment date, and within "
+                "a year of it.")
+    return None
+
+
 def _rate(obj, inst: Instrument, fx_book) -> Decimal | None:
     """AUD per 1 unit for a trade or dividend, or None when none is known.
 
@@ -454,7 +469,7 @@ def fy_income(session: Session, fy_end_year: int, fx_book=None) -> list[IncomeRo
     ).unique().all()
     fx_book = fx_book or queries.FxBook(session)
     for inst in instruments:
-        divs = [d for d in inst.dividends if start <= d.date <= end]
+        divs = [d for d in inst.dividends if start <= income_date(d) <= end]
         if not divs:
             continue
         rates = [_rate(d, inst, fx_book) for d in divs]
