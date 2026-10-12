@@ -649,7 +649,8 @@ def test_the_fy_endpoint_names_what_its_totals_leave_out(client, session_factory
 @freeze_time(ref.TODAY)
 def test_the_fy_endpoint_names_a_sale_of_more_than_was_held(client, session_factory, furnished):
     """A ledger from before the forms and the importer refused such a sale. It
-    was a 500; now that holding's gain is left out and the sale named."""
+    was a 500; now the year's capital gains are null and the sale is named,
+    for somebody to fix."""
     portfolio_id, user_id = furnished
     with bound(session_factory, portfolio_id, user_id) as s:
         quark = fac.make_instrument(s, "QUARK", asset_class="share")
@@ -664,7 +665,7 @@ def test_the_fy_endpoint_names_a_sale_of_more_than_was_held(client, session_fact
     cgt = resp.json()["cgt"]
     assert cgt["oversold"] == [{"ticker": "QUARK", "exchange": "ASX", "date": "2023-09-01",
                                 "units": 150.0, "held": 100.0}]
-    assert Decimal(str(cgt["net_capital_gain"])) == ref.FY2024_NET_CAPITAL_GAIN
+    assert {key for key, value in cgt.items() if value is not None} == {"oversold"}
 
 
 @pytest.mark.parametrize("year", [1999, 2101])

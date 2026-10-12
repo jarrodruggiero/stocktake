@@ -139,24 +139,25 @@ def test_selling_more_than_is_held_raises_naming_the_ticker(pf):
         _disposals(pf, inst)
 
 
-def test_a_sale_of_more_than_was_held_is_named_and_its_holding_left_out(pf):
+def test_a_year_that_depends_on_a_sale_of_more_than_was_held_is_refused(pf):
+    """Every way of writing a trade refuses such a sale, but a ledger from
+    before they did can hold one. Its gain has no parcels to match, and a
+    year's gains without it are not the year's gains, so the year has none:
+    the sale is named for somebody to fix (decisions.md #5)."""
     quark = make_instrument(pf, "QUARK", asset_class="share")
     add_trade(pf, quark, "2023-01-01", "buy", 100, "1.00")
     add_trade(pf, quark, "2024-01-01", "sell", 150, "2.00")   # 50 more than held
     acme = make_instrument(pf, "ACME", asset_class="share")
     add_trade(pf, acme, "2022-01-01", "buy", 100, "10.00")
-    add_trade(pf, acme, "2024-03-01", "sell", 100, "15.00")   # 500.00 gain, held 2 years
+    add_trade(pf, acme, "2024-03-01", "sell", 100, "15.00")   # a gain of its own
 
     cgt = fyreport.fy_cgt(pf, 2024)
 
-    # The forms and the importer refuse such a sale, but a ledger from before
-    # they did can hold one. QUARK's gain has no parcels to match, so it is
-    # left out and named (decisions.md #5), and ACME's still counts.
     (sale,) = cgt.oversold
     assert (sale.instrument.ticker, sale.trade.date, sale.held) == (
         "QUARK", dt.date(2024, 1, 1), Decimal("100"))
-    assert [d.instrument.ticker for d in cgt.disposals] == ["ACME"]
-    assert cgt.net_capital_gain == Decimal("250.00")       # 500.00 less the discount
+    assert cgt.disposals == []
+    assert (cgt.net_capital_gain, cgt.gains_discountable, cgt.losses) == (0, 0, 0)
 
 
 def test_a_sale_of_more_than_was_held_is_named_in_the_years_that_depend_on_it(pf):

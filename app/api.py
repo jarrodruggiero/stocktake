@@ -206,15 +206,18 @@ def get_fy(request: Request, year: int) -> dict:
                 "dividends_missing_franking": r["franking_missing"],
             },
             "cgt": {
-                "disposals": len(cgt.disposals),
-                "gains_discountable": _num(cgt.gains_discountable),
-                "gains_other": _num(cgt.gains_other),
-                "losses": _num(cgt.losses),
-                "discount": _num(cgt.discount),
-                "net_capital_gain": _num(cgt.net_capital_gain),
-                "net_capital_loss": _num(cgt.net_capital_loss),
-                # A sale of more units than were held then leaves its holding
-                # out of every figure above; this names it, for a person to fix.
+                # A sale of more units than were held then, which this year's
+                # gains depend on, refuses them: every figure is null, and the
+                # sale is named below for a person to fix.
+                **{key: None if cgt.oversold else value for key, value in {
+                    "disposals": len(cgt.disposals),
+                    "gains_discountable": _num(cgt.gains_discountable),
+                    "gains_other": _num(cgt.gains_other),
+                    "losses": _num(cgt.losses),
+                    "discount": _num(cgt.discount),
+                    "net_capital_gain": _num(cgt.net_capital_gain),
+                    "net_capital_loss": _num(cgt.net_capital_loss),
+                }.items()},
                 "oversold": [
                     {
                         "ticker": sale.instrument.ticker,

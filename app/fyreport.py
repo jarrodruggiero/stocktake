@@ -304,8 +304,9 @@ class CgtSummary:
     # Holdings with a sale this year that has no exchange rate behind it: the
     # sale is listed, and every figure above leaves it out (decisions.md #5).
     withheld: list[str] = field(default_factory=list)
-    # Holdings sold this year whose parcels an `Oversold` sale leaves nothing
-    # to match: every figure above leaves them out, and the sale is named.
+    # A sale of more than was held, which this year's gains depend on. When
+    # there is one, every figure above is zero: the year's gains are refused,
+    # not worked out without it, and the sale is named for somebody to fix.
     oversold: list[Oversold] = field(default_factory=list)
 
 
@@ -357,9 +358,12 @@ def fy_cgt(session: Session, fy_end_year: int) -> CgtSummary:
         out.net_capital_loss = unapplied
     else:
         out.net_capital_gain = (out.gains_other - out.losses_applied_other) + disc_after - out.discount
+    if out.oversold:
+        # Refused, as a year under rules this version does not implement is:
+        # gains without the oversold holding are not the year's gains.
+        return CgtSummary(oversold=sorted(out.oversold, key=lambda sale: sale.trade.date))
     out.disposals.sort(key=lambda d: d.date)
     out.withheld.sort()
-    out.oversold.sort(key=lambda sale: sale.trade.date)
     return out
 
 

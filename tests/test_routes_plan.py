@@ -713,7 +713,8 @@ def test_the_fy_tab_names_what_its_totals_leave_out(client, session_factory):
 @freeze_time(ref.TODAY)
 def test_the_fy_tab_names_a_sale_of_more_than_was_held(client, session_factory):
     """A ledger from before the forms and the importer refused such a sale.
-    The whole tab was a 500; now only that holding's gain is left out."""
+    The whole tab was a 500; now the year's capital gains are refused, and
+    the sale is named with what to do."""
     make_login(client, session_factory)
     with session_factory() as s:
         bind_to_only_portfolio(s)
@@ -727,10 +728,11 @@ def test_the_fy_tab_names_a_sale_of_more_than_was_held(client, session_factory):
 
     assert page.status_code == 200
     text = re.sub(r"<[^>]+>", "", page.text)
-    assert ("Capital gains exclude QUARK: its sell of 150 units on 2023-09-01 is more "
-            "than the 100 units held then.") in text
-    # Every other holding's gain still counts.
-    assert f"Net capital gain{money.plain(ref.FY2024_NET_CAPITAL_GAIN)}" in text
+    assert ("Capital gains for FY23/24 can't be worked out: QUARK's sell of 150 units "
+            "on 2023-09-01 is more than the 100 units held then. Correct it or record "
+            "the missing buy.") in " ".join(text.split())
+    # No figure stands in for the year's gains, not even the other holdings'.
+    assert money.plain(ref.FY2024_NET_CAPITAL_GAIN) not in text
 
 
 @freeze_time(ref.TODAY)

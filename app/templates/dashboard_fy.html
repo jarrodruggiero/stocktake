@@ -31,16 +31,17 @@
   <div class="tile"><span class="label">Invested this year</span><span class="big">{{ r.activity.invested | cash }}</span></div>
   <div class="tile"><span class="label">Dividend income</span><span class="big">{{ r.income_cash | cash }}</span></div>
   {# Direction as a glyph as well as a colour — see the dashboard tiles. #}
+  {% if r.cgt.oversold %}
+  <div class="tile"><span class="label">Net capital gain</span><span class="big">–</span></div>
+  {% else %}
   <div class="tile {{ r.cgt.net_capital_gain | trend }}">
     <span class="label">Net capital gain</span><span class="big">{{ r.cgt.net_capital_gain | arrow }}{{ r.cgt.net_capital_gain | cash }}</span>
     {% if r.cgt.net_capital_loss %}<span class="sub">loss carried: {{ r.cgt.net_capital_loss | money_plain }}</span>{% endif %}</div>
+  {% endif %}
 </section>
 {% if r.withheld %}
 <p class="note">Totals exclude {{ r.withheld | join(', ') }} — no exchange rate stored.</p>
 {% endif %}
-{% for sale in r.cgt.oversold %}
-<p class="note">Capital gains exclude <a href="{{ holding_href(sale.instrument.ticker, sale.instrument.exchange, return=back) }}">{{ sale.instrument.ticker }}</a>: its sell of {{ sale.trade.quantity | qty }} units on {{ sale.trade.date }} is more than the {{ sale.held | qty }} units held then.</p>
-{% endfor %}
 
 <section>
   <h2>Holdings at {{ r.asof }}</h2>
@@ -146,7 +147,11 @@
   {% if r.cgt.regime_warning %}
   <p class="panel warn">{{ r.cgt.regime_warning }}</p>
   {% endif %}
-  {% if r.cgt.disposals %}
+  {% if r.cgt.oversold %}
+  {% for sale in r.cgt.oversold %}
+  <p class="panel warn">Capital gains for {{ r.label }} can't be worked out: <a href="{{ holding_href(sale.instrument.ticker, sale.instrument.exchange, return=back) }}">{{ sale.instrument.ticker }}</a>'s sell of {{ sale.trade.quantity | qty }} units on {{ sale.trade.date }} is more than the {{ sale.held | qty }} units held then. Correct it or record the missing buy.</p>
+  {% endfor %}
+  {% elif r.cgt.disposals %}
   <p class="note">Each sale matched FIFO to the parcels it consumed. The discount halves a
   gain on a parcel held over twelve months, and losses are applied before it —
   the order the ATO uses.</p>
