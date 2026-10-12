@@ -93,7 +93,8 @@ timezone: Australia/Melbourne
 
 # ── Database ────────────────────────────────────────────────────────────────
 # Only ever changed here — the settings page shows it read-only, because
-# editing it from a web form is a way to lose a database.
+# editing it from a web form is a way to lose a database. Keep `type:` set:
+# a `database:` heading with nothing under it stops the app at startup.
 database:
   # sqlite (default) or postgres.
   #

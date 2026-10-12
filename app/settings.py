@@ -310,7 +310,7 @@ class PortfolioSettings(BaseAppSettings):
     # absent key — which is exactly what happens when someone comments out the
     # last option under a heading. Treat it as "use the defaults" instead of
     # refusing to start, because the alternative is a config file that breaks
-    # by being tidied.
+    # by being tidied. `database` is the exception, refused by `db.start`.
     _empty_means_defaults = field_validator(
         "database", "price_feed", "imports", "auth", "maintenance", "metrics", "features",
         mode="before",

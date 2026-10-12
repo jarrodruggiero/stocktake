@@ -111,6 +111,89 @@ def test_a_config_file_without_a_database_block_is_not_configured(
     assert database.source(settings).configured is False
 
 
+EMPTIED = ("app_name: stocktake\n"
+           "# The two below are the defaults.\n"
+           "database:\n"
+           "  # type: sqlite\n"
+           "  # path: /data/stocktake.db\n")
+
+
+@pytest.mark.parametrize("text", [EMPTIED, "app_name: stocktake\n\ndatabase: {}\n"],
+                         ids=["commented-out", "empty-mapping"])
+def test_an_empty_database_block_refuses_to_start_and_names_the_line(
+        text, monkeypatch, tmp_path, app_module):
+    """Commenting out what is under `database:` opened the public wizard on an
+    install with data, as though nothing had been chosen. It is configured
+    and broken, which is a refusal to start (decisions.md #75)."""
+    for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
+        monkeypatch.delenv(name, raising=False)
+    path = tmp_path / "config.yaml"
+    path.write_text(text, encoding="utf-8")
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(path))
+    connected = []
+    monkeypatch.setattr(database, "connect", lambda db, **kw: connected.append(db))
+
+    with pytest.raises(SystemExit) as refused:
+        database.start(app_module.settings)
+
+    assert f"Line 3 of {path}" in str(refused.value)
+    assert connected == []
+
+
+def test_an_empty_database_block_is_no_bar_when_the_environment_chooses(
+        monkeypatch, tmp_path, app_module):
+    """The environment wins over the file, so the empty block is not what the
+    app runs on and is no reason to stop."""
+    monkeypatch.setenv("APP_DATABASE__HOST", "pg.internal")
+    path = tmp_path / "config.yaml"
+    path.write_text(EMPTIED, encoding="utf-8")
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(path))
+    connected = []
+    monkeypatch.setattr(database, "connect", lambda db, **kw: connected.append(db))
+
+    assert database.start(app_module.settings).where == database.FROM_ENVIRONMENT
+    assert connected == [app_module.settings.database]
+
+
+def test_a_database_block_with_something_in_it_starts(monkeypatch, tmp_path, app_module):
+    for name in [k for k in os.environ if k.startswith("APP_DATABASE__")]:
+        monkeypatch.delenv(name, raising=False)
+    path = tmp_path / "config.yaml"
+    path.write_text("database:\n  type: sqlite\n", encoding="utf-8")
+    monkeypatch.setattr(configfile, "CONFIG_FILE", str(path))
+    connected = []
+    monkeypatch.setattr(database, "connect", lambda db, **kw: connected.append(db))
+
+    assert database.start(app_module.settings).where == database.FROM_FILE
+    assert connected == [app_module.settings.database]
+
+
+@pytest.mark.slow
+def test_the_app_does_not_start_on_an_empty_database_block(tmp_path):
+    """The refusal is the process's, not only `start`'s: imported for real, the
+    app exits before serving anything, saying which line to fix."""
+    (tmp_path / "config.yaml").write_text(EMPTIED, encoding="utf-8")
+    script = textwrap.dedent(f"""
+        import os, sys
+        for name in [k for k in os.environ if k.startswith("APP_")]:
+            del os.environ[name]
+        os.environ.pop("STOCKTAKE_TEST_DB", None)
+        os.environ["APP_CONFIG_FILE"] = {str(tmp_path / "config.yaml")!r}
+        sys.path[:0] = [{str(APP_ROOT)!r},
+                        {str(APP_ROOT.parent.parent / "libs" / "appcore")!r}]
+
+        from app import main  # noqa: F401 - importing is the test
+        print("STARTED")
+    """)
+
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                            text=True, timeout=180)
+
+    assert result.returncode != 0
+    assert "STARTED" not in result.stdout
+    assert "Line 3 of" in result.stderr
+
+
 def test_describe_never_includes_the_password():
     """It is rendered on a page and written to the log."""
     db = DatabaseSettings(type="postgres", host="pg", port=5432, name="portfolio",

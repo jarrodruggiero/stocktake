@@ -162,9 +162,7 @@ logbuffer.install()
 # deliberately conditional so a fresh install can serve the wizard —
 # decisions.md #41.
 database.set_migrations(str(APP_DIR / "migrations"))
-db_source = database.source(settings)
-if db_source.configured:
-    database.connect(settings.database)
+database.start(settings)
 
 
 def SessionLocal():

@@ -41,6 +41,10 @@ CONNECT_TIMEOUT = 10
 NOT_CONFIGURED = "not configured"
 FROM_ENVIRONMENT = "environment"
 FROM_FILE = "config file"
+# A `database:` heading with nothing under it: configured, and broken. The app
+# refuses to start rather than open the public wizard on an install that has
+# data (decisions.md #75).
+EMPTY_IN_FILE = "empty in config file"
 
 
 # --------------------------------------------------------------------------- #
@@ -81,6 +85,12 @@ def source(settings) -> Source:
         written = {}
     if isinstance(written, dict) and written.get("database"):
         return Source(FROM_FILE, f"set in {configfile.config_path()}")
+    if isinstance(written, dict) and "database" in written:
+        line = written.lc.key("database")[0] + 1
+        return Source(EMPTY_IN_FILE,
+                      f"Line {line} of {configfile.config_path()} starts a database: "
+                      "block with nothing in it. Fill in its settings, or delete the "
+                      "line to choose a database in the setup wizard.")
 
     return Source(NOT_CONFIGURED)
 
@@ -257,6 +267,17 @@ def connect(db: DatabaseSettings, *, migrate: bool = True) -> None:
     _factory = factory
     _current = db
     log.info("database connected: %s", describe(db))
+
+
+def start(settings) -> Source:
+    """Connect at startup if a database was chosen, and refuse to start on a
+    `database:` block left empty."""
+    found = source(settings)
+    if found.where == EMPTY_IN_FILE:
+        raise SystemExit(found.detail)
+    if found.configured:
+        connect(settings.database)
+    return found
 
 
 def session():
