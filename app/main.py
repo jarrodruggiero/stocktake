@@ -2413,6 +2413,11 @@ def login_oidc_callback(request: Request, code: str = "", state: str = "",
             pending = {"state": attempt.state, "nonce": attempt.nonce,
                        "verifier": attempt.verifier}
             held = db.get(PortfolioInvite, attempt.invite_id) if attempt.invite_id else None
+            # Checked when the sign-in started, and again now: withdrawn, used
+            # or expired while the browser was at the provider, it is no invite
+            # at all (#116). Only checked then, it still made the account.
+            if held is not None and invites.spent(held):
+                held = None
             identity = oidc.complete(federation.provider(settings), code=code,
                                      pending=pending)
             if attempt.link_user_id is not None:
@@ -2423,7 +2428,7 @@ def login_oidc_callback(request: Request, code: str = "", state: str = "",
                 federation.link(db, user, identity)
             else:
                 user = federation.resolve(db, settings, identity, held)
-            if held is not None and held.used_at is None:
+            if held is not None:
                 invites.accept_row(db, held, user)
             # Spent only once everything above succeeded: a provider error must
             # not burn the attempt and force a second trip.
@@ -3144,9 +3149,11 @@ def members_page(request: Request, error: str = ""):
 
 
 def _members(request: Request, ctx, db: DbSession, *, error: str = "",
-             typed: dict | None = None, status_code: int = 200) -> HTMLResponse:
+             typed: dict | None = None, status_code: int = 200,
+             new_invite: str = "") -> HTMLResponse:
     """The portfolio's admin page. `typed` is a refused settings form's own
-    values, shown in place of the stored ones."""
+    values, shown in place of the stored ones; `new_invite` the token just
+    issued, the one time it can be shown."""
     rows = db.execute(
         select(PortfolioMember, User)
         .join(User, User.id == PortfolioMember.user_id)
@@ -3182,8 +3189,7 @@ def _members(request: Request, ctx, db: DbSession, *, error: str = "",
             ],
             # Shown once, straight after issuing: it is a credential, and
             # the database keeps only its hash.
-            "new_invite": _invite_url(request,
-                                      request.query_params.get("invite", "")),
+            "new_invite": _invite_url(request, new_invite),
             "error": error,
             "typed": typed,
         },
@@ -3219,7 +3225,7 @@ async def members_add(request: Request, user_id: Annotated[RowId, Form()], role:
 
 @app.post("/members/invite")
 async def members_invite(request: Request, role: str = Form("member")):
-    """Issue a link. Shown once, in the redirect, because it is a credential."""
+    """Issue a link. Shown once, in the response, because it is a credential."""
     with scoped(request) as (ctx, db):
         _require_owner(ctx)
         await auth.verify_csrf(request, db)
@@ -3230,7 +3236,9 @@ async def members_invite(request: Request, role: str = Form("member")):
             return _redirect("/members?error=" + quote_plus(str(exc)))
         log.info("invite issued for portfolio %s by user %s",
                  ctx.active_portfolio_id, ctx.user.id)
-    return _redirect("/members?invite=" + quote_plus(token))
+        # In THIS response, never an address: in a redirect's query string the
+        # link went into browser history and the proxy's access log (#128).
+        return _members(request, ctx, db, new_invite=token)
 
 
 @app.post("/members/invite/{invite_id}/revoke")

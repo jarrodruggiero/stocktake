@@ -25,7 +25,7 @@ import datetime as dt
 import hashlib
 import secrets
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session as DbSession
 
 from appcore import ensure_utc
@@ -88,13 +88,21 @@ def lookup(db: DbSession, raw: str | None) -> PortfolioInvite:
         select(PortfolioInvite).where(PortfolioInvite.token_hash == _hash(raw)))
     if row is None:
         raise InviteError("That invitation link is not valid.")
-    if row.revoked_at is not None:
-        raise InviteError("That invitation was withdrawn.")
-    if row.used_at is not None:
-        raise InviteError("That invitation has already been used.")
-    if ensure_utc(row.expires_at) < _utcnow():
-        raise InviteError("That invitation has expired. Ask for a new one.")
+    problem = spent(row)
+    if problem:
+        raise InviteError(problem)
     return row
+
+
+def spent(row: PortfolioInvite) -> str | None:
+    """Why this invite can no longer be used, or None while it can."""
+    if row.revoked_at is not None:
+        return "That invitation was withdrawn."
+    if row.used_at is not None:
+        return "That invitation has already been used."
+    if ensure_utc(row.expires_at) < _utcnow():
+        return "That invitation has expired. Ask for a new one."
+    return None
 
 
 def accept(db: DbSession, raw: str | None, user: User) -> PortfolioInvite:
@@ -109,13 +117,22 @@ def accept_row(db: DbSession, invite: PortfolioInvite, user: User) -> PortfolioI
     provider and back, and it stores the invite's ID rather than its token —
     a row holding a live credential in the clear is a row worth stealing.
 
-    Marked used BEFORE anything else can fail, so a link cannot be spent twice
-    by two requests arriving together. Already being a member is not an error:
-    the invite is still consumed, because it was offered and answered.
+    Marked used BEFORE anything else can fail, and by an UPDATE that only
+    matches an invite still unused: two requests that both looked it up before
+    either spent it, as the OIDC path always has, cannot both join. Setting
+    the attributes and flushing was a read-then-write, and both did. Already
+    being a member is not an error: the invite is still consumed, because it
+    was offered and answered.
     """
-    invite.used_at = _utcnow()
-    invite.used_by = user.id
-    db.flush()
+    claimed = db.execute(
+        update(PortfolioInvite)
+        .where(PortfolioInvite.id == invite.id, PortfolioInvite.used_at.is_(None),
+               PortfolioInvite.revoked_at.is_(None))
+        .values(used_at=_utcnow(), used_by=user.id)
+        .execution_options(synchronize_session="fetch")
+    ).rowcount
+    if claimed != 1:
+        raise InviteError("That invitation has already been used.")
 
     existing = db.scalar(
         select(PortfolioMember).where(
