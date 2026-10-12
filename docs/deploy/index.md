@@ -15,10 +15,14 @@ There is no Redis, no queue and no secrets service. Sessions are
 database-backed tokens and the price feed needs no credentials, which is what
 makes this a two-file deployment.
 
-## Three things everyone gets wrong
+## Four things everyone gets wrong
 
 Read these before picking a path — they apply to all four, and each one causes
 a failure that looks like something else.
+
+**Finish setup before anyone else can reach it.** Until the first account
+exists, whoever opens the app first runs the setup wizard and becomes its
+administrator. Run it before the port or the Ingress is open to anyone else.
 
 **Set the timezone.** Containers run UTC. Every date decision — which financial
 year today is in, whether a trade is dated in the future — is made in the
