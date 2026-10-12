@@ -104,11 +104,11 @@ ROLE_LABELS = {
     "viewer": "Viewer",
 }
 ROLE_BLURBS = {
-    "owner": "manages this portfolio's people and API keys",
+    "owner": "manages this portfolio's settings and people",
     "member": "records trades and edits the schedule",
     "viewer": "reads everything, changes nothing",
 }
-# Deliberately coarse. owner: manage members, keys and portfolio settings.
+# Deliberately coarse. owner: manage members and portfolio settings.
 # member: record trades, edit the plan, import. viewer: read everything, change
 # nothing — for showing family the numbers without risking an edit.
 WRITE_ROLES = ("owner", "member")

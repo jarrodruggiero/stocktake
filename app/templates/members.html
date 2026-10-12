@@ -14,7 +14,7 @@ all of them.</p>
 
 {% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
 
-{% if auth.is_admin %}
+{% if auth.is_owner %}
 <section class="narrow">
   <h2>This portfolio</h2>
   <form class="panel" method="post" action="/portfolio/settings">

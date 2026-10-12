@@ -234,7 +234,10 @@ one. Set `database.path` explicitly if you ever change it.
 
 **34. Two different things both sounded like "admin", so the labels name the
 scope.** `user.is_admin` is app-wide — accounts and settings. `member.role ==
-"owner"` is rights over one portfolio — its people and its keys. Collapsing them
+"owner"` is rights over one portfolio — its settings and its people. A site
+admin gets nothing in a portfolio beyond the role held there: settings went to
+the site admin first, so an owner could not rename their own portfolio while an
+admin who only viewed it could. Collapsing them
 to one word would make them look identical while behaving differently, so the
 interface says "Site admin" and "Portfolio admin". The stored values stay
 `owner`/`member`/`viewer`.
