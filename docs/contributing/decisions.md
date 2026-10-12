@@ -591,6 +591,16 @@ figure because it is the working; the FY report nets losses first because that
 is the number to lodge. Both are right for their job, so the caveat travels
 inside the exported file rather than living only in the interface.
 
+The losses include earlier years'. A year's net capital loss carries forward
+and is applied in the next year with gains, after that year's own losses and
+before the discount, each in the taxpayer-favourable order (s102-5(1)):
+`fyreport.fy_cgt` works out every year from the first sale. Without it a 300
+loss one year left the next year's 300 discountable gain at 150 rather than
+nil, on the number this page calls the one to lodge. The app knows only the
+sales recorded in it, so a loss used or made elsewhere is not in the figure. A
+year it cannot work out, for a sale of more than was held, leaves the loss it
+would have carried unknown, so every year after it names that sale too.
+
 **78. config.yaml is edited in the app, under three constraints.** It may not
 be writable — mounted from a ConfigMap or baked into an image — which is a
 deployment choice, not a fault, so the page shows every value and explains why

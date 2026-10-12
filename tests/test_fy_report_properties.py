@@ -57,7 +57,7 @@ def _session(session_factory, portfolio):
 # The working-out
 # --------------------------------------------------------------------------- #
 
-def _cgt(history: History, fy: int) -> dict:
+def _year(history: History, fy: int, carried) -> dict:
     start, end = fy_bounds(fy)
     disposals = sorted((d for d in worked_disposals(history) if start <= d["date"] <= end),
                        key=lambda d: d["date"])
@@ -73,17 +73,38 @@ def _cgt(history: History, fy: int) -> dict:
                 gains_disc += gain
             else:
                 gains_other += gain
-    # Losses come off the gains that get no discount first, then the discount
-    # applies to what is left of the rest.
+    # This year's losses come off the gains that get no discount first, then
+    # the rest; earlier years' losses next, in the same order; and the
+    # discount applies to what is left (s102-5(1)).
     off_other = min(losses, gains_other)
     off_disc = min(losses - off_other, gains_disc)
     unapplied = losses - off_other - off_disc
-    discounted = gains_disc - off_disc
-    net_gain = ZERO if unapplied > 0 else (gains_other - off_other) + discounted / 2
+    other, disc = gains_other - off_other, gains_disc - off_disc
+    carried_other = min(carried, other)
+    carried_disc = min(carried - carried_other, disc)
+    disc -= carried_disc
+    net_gain = ZERO if unapplied > 0 else (other - carried_other) + disc / 2
+    applied = carried_other + carried_disc
     return {"disposals": disposals, "gains_discountable": gains_disc,
-            "gains_other": gains_other, "losses": losses, "discount": discounted / 2,
+            "gains_other": gains_other, "losses": losses, "discount": disc / 2,
             "net_capital_gain": net_gain, "net_capital_loss": max(unapplied, ZERO),
+            "losses_carried_in": carried, "losses_carried_applied": applied,
+            "losses_carried_out": carried - applied + max(unapplied, ZERO),
             "withheld": sorted({d["ticker"] for d in disposals if not known(d)})}
+
+
+def _cgt(history: History, fy: int) -> dict:
+    """Every year from the first sale, each carrying its net capital loss on."""
+    sales = [t.date for h in history.holdings for t in h.trades if t.type == "sell"]
+    first = min(fy_of(min(sales)), fy) if sales else fy
+    carried, left_out = ZERO, set()
+    for year in range(first, fy + 1):
+        out = _year(history, year, carried)
+        carried = out["losses_carried_out"]
+        if year < fy:
+            left_out |= set(out["withheld"])
+    out["withheld"] = sorted(set(out["withheld"]) | left_out)
+    return out
 
 
 def _report(history: History, fy: int) -> dict:
@@ -187,7 +208,10 @@ def _app(report: dict) -> dict:
                 "gains_discountable": cgt.gains_discountable, "gains_other": cgt.gains_other,
                 "losses": cgt.losses, "discount": cgt.discount,
                 "net_capital_gain": cgt.net_capital_gain,
-                "net_capital_loss": cgt.net_capital_loss, "withheld": cgt.withheld},
+                "net_capital_loss": cgt.net_capital_loss,
+                "losses_carried_in": cgt.losses_carried_in,
+                "losses_carried_applied": cgt.losses_carried_applied,
+                "losses_carried_out": cgt.losses_carried_out, "withheld": cgt.withheld},
         "withheld": report["withheld"],
     }
 

@@ -9,8 +9,9 @@ identification can be offered later without schema changes. Rules applied:
   * 50% discount for parcels held > 12 months (per parcel, individuals)
   * within a FY, losses offset non-discountable gains first, then discountable,
     and the discount applies to what remains (the taxpayer-favourable order)
-  * no loss carry-forward across FYs: a year's net loss stays in that year, and
-    the report does not say so
+  * a year's net capital loss carries forward, and is applied in later years
+    after their own losses and before the discount (s102-5(1)); the app sees
+    only the sales recorded in it
 """
 
 from __future__ import annotations
@@ -324,6 +325,12 @@ class CgtSummary:
     discount: Decimal = ZERO
     net_capital_gain: Decimal = ZERO
     net_capital_loss: Decimal = ZERO  # >0 when the FY nets to a loss
+    # Earlier years' net capital losses: what was left at the start of this
+    # year, what this year used of it, and what goes on to the next, this
+    # year's own loss included (s102-5(1)).
+    losses_carried_in: Decimal = ZERO
+    losses_carried_applied: Decimal = ZERO
+    losses_carried_out: Decimal = ZERO
     # Set when this year's rules are not the ones implemented here. When it is
     # set for a whole year, every figure above is zero — the report refuses
     # rather than guessing.
@@ -338,18 +345,40 @@ class CgtSummary:
 
 
 def fy_cgt(session: Session, fy_end_year: int, fx_book=None) -> CgtSummary:
-    start, end = fy_bounds(fy_end_year)
-    out = CgtSummary()
+    """This financial year's capital gains, with every earlier year's net
+    capital loss carried in: each year is worked out in turn from the first
+    sale, so a loss left over reaches the years after it (decisions.md #77)."""
     # A year under rules this version does not implement returns an empty
     # summary carrying the reason, rather than numbers computed under the wrong
     # regime — decisions.md #26.
-    out.regime_warning = regime_warning(fy_end_year)
-    if out.regime_warning:
-        return out
+    warning = regime_warning(fy_end_year)
+    if warning:
+        return CgtSummary(regime_warning=warning)
     instruments = session.scalars(
         select(Instrument).options(selectinload(Instrument.trades))
     ).unique().all()
     fx_book = fx_book or queries.FxBook(session)
+    sales = [t.date for inst in instruments for t in inst.trades if t.type == "sell"]
+    first = min(current_fy(min(sales)), fy_end_year) if sales else fy_end_year
+    carried, left_out = ZERO, set()
+    for year in range(first, fy_end_year + 1):
+        out = _year_cgt(instruments, year, fx_book, carried)
+        if out.oversold:
+            # Refused, and so is every year after it: whether it made a loss
+            # to carry on is not known.
+            return out
+        carried = out.losses_carried_out
+        if year < fy_end_year:
+            left_out.update(out.withheld)
+    # A sale left out of an earlier year's figures is left out of the loss it
+    # carried too.
+    out.withheld = sorted(set(out.withheld) | left_out)
+    return out
+
+
+def _year_cgt(instruments, fy_end_year: int, fx_book, carried: Decimal) -> CgtSummary:
+    start, end = fy_bounds(fy_end_year)
+    out = CgtSummary(losses_carried_in=carried)
     for inst in instruments:
         if not any(t.type == "sell" and start <= t.date <= end for t in inst.trades):
             continue
@@ -374,21 +403,29 @@ def fy_cgt(session: Session, fy_end_year: int, fx_book=None) -> CgtSummary:
                         out.gains_other += p.gain
                 else:
                     out.losses += -p.gain
-    # losses offset non-discountable gains first, then discountable
-    out.losses_applied_other = min(out.losses, out.gains_other)
-    rest = out.losses - out.losses_applied_other
-    out.losses_applied_discountable = min(rest, out.gains_discountable)
-    unapplied = rest - out.losses_applied_discountable
-    disc_after = out.gains_discountable - out.losses_applied_discountable
-    out.discount = disc_after / 2
-    if unapplied > 0:
-        out.net_capital_loss = unapplied
-    else:
-        out.net_capital_gain = (out.gains_other - out.losses_applied_other) + disc_after - out.discount
     if out.oversold:
         # Refused, as a year under rules this version does not implement is:
         # gains without the oversold holding are not the year's gains.
         return CgtSummary(oversold=sorted(out.oversold, key=lambda sale: sale.trade.date))
+    # This year's losses offset its gains with no discount first, then the
+    # discountable ones; earlier years' losses come next, in the same order;
+    # and only then is the discount applied (s102-5(1), taxpayer-favourable).
+    out.losses_applied_other = min(out.losses, out.gains_other)
+    rest = out.losses - out.losses_applied_other
+    out.losses_applied_discountable = min(rest, out.gains_discountable)
+    unapplied = rest - out.losses_applied_discountable
+    other = out.gains_other - out.losses_applied_other
+    discountable = out.gains_discountable - out.losses_applied_discountable
+    carried_other = min(carried, other)
+    carried_discountable = min(carried - carried_other, discountable)
+    out.losses_carried_applied = carried_other + carried_discountable
+    discountable -= carried_discountable
+    out.discount = discountable / 2
+    if unapplied > 0:
+        out.net_capital_loss = unapplied
+    else:
+        out.net_capital_gain = (other - carried_other) + discountable - out.discount
+    out.losses_carried_out = carried - out.losses_carried_applied + unapplied
     out.disposals.sort(key=lambda d: d.date)
     out.withheld.sort()
     return out

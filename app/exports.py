@@ -402,8 +402,9 @@ the app names any holding where that is more than a week from the day.
 
 Capital gains: parcels are matched FIFO. The "gain after discount" columns halve
 a gain on a parcel held more than twelve months. The ATO applies capital LOSSES
-before that discount, which the FY report in the app does — use the FY report's
-net figure when lodging, and these rows as the working.
+before that discount, the year's own and then those carried from earlier years,
+which the FY report in the app does — use the FY report's net figure when
+lodging, and these rows as the working.
 
 Dividends: franking credits are only present where a statement supplied them;
 blank means not recorded, not zero. The grossed-up column is cash plus franking,
