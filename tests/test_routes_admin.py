@@ -918,7 +918,8 @@ def test_a_plain_member_cannot_manage_the_members(client, session_factory, path,
         assert s.get(PortfolioInvite, ids["invite"]).revoked_at is None
 
 
-def test_the_server_log_and_portfolio_settings_are_for_admins(client, session_factory):
+def test_the_server_log_is_for_admins_and_portfolio_settings_for_owners(
+        client, session_factory):
     ids = _as_plain_member(client, session_factory)
 
     assert client.get("/admin/logs.json").status_code == 403
@@ -927,6 +928,43 @@ def test_the_server_log_and_portfolio_settings_are_for_admins(client, session_fa
     assert resp.status_code == 403
     with session_factory() as s:
         assert s.get(Portfolio, ids["shared"]).name == "Shared"
+
+
+def test_an_owner_who_is_no_site_admin_runs_their_own_portfolio(client, session_factory):
+    """Portfolio settings are the owner's, as its people are (decisions.md
+    #34): somebody running their own portfolio needed a site admin to rename
+    it."""
+    make_login(client, session_factory, admin=False)
+
+    assert 'action="/portfolio/settings"' in client.get("/members", headers=HTML).text
+    resp = client.post("/portfolio/settings", headers=HTML, follow_redirects=False,
+                       data={"name": "Mine now", "_csrf": csrf(session_factory)})
+
+    assert resp.status_code == 303
+    with session_factory() as s:
+        assert s.scalar(select(Portfolio.name).where(Portfolio.name != "Shared")) == "Mine now"
+
+
+def test_a_site_admin_who_only_views_a_portfolio_cannot_change_it(client, session_factory):
+    """The other side: being a site admin is about accounts, and gives nothing
+    in somebody else's portfolio beyond the role there."""
+    make_login(client, session_factory, admin=True)
+    with session_factory() as s:
+        me = s.scalar(select(User).where(User.email == "user@example.test"))
+        theirs = fac.make_portfolio(s, "Theirs", owner=fac.make_user(s, "boss@example.test"))
+        fac.add_member(s, theirs, me, role="viewer")
+        s.commit()
+        theirs_id = theirs.id
+    client.post("/portfolio/switch", data={"portfolio_id": str(theirs_id),
+                                           "_csrf": csrf(session_factory)}, headers=HTML)
+
+    assert 'action="/portfolio/settings"' not in client.get("/members", headers=HTML).text
+    resp = client.post("/portfolio/settings", headers=HTML, follow_redirects=False,
+                       data={"name": "Renamed", "_csrf": csrf(session_factory)})
+
+    assert resp.status_code == 403
+    with session_factory() as s:
+        assert s.get(Portfolio, theirs_id).name == "Theirs"
 
 
 def test_the_members_page_lists_this_portfolios_people(client, session_factory):

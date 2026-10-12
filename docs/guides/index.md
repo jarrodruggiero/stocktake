@@ -119,7 +119,7 @@ choose and never doing more than you can.
 ## Admin
 
 Users and portfolio members. Admins can reset a password and clear someone's
-two-factor; portfolio owners manage members.
+two-factor; portfolio owners manage members and the portfolio's settings.
 
 Roles: **owner** (everything), **member** (record and edit), **viewer** (read
 everything, change nothing).

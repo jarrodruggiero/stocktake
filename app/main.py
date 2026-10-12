@@ -2735,9 +2735,8 @@ def _invite_url(request: Request, token: str) -> str:
 
 
 def _require_owner(ctx):
-    """Who is in the portfolio: members and invitations. Portfolio settings are
-    an app admin's (`_require_admin`), and a key anyone may make for
-    themselves."""
+    """This portfolio's settings, and who is in it: members and invitations.
+    A key is anyone's to make for themselves."""
     if not ctx.is_owner:
         raise HTTPException(403, "Only the portfolio owner can do that")
 
@@ -3107,7 +3106,7 @@ async def portfolio_settings(
              "foreign_brokerage_minimum": foreign_brokerage_minimum}
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
-        _require_admin(ctx)
+        _require_owner(ctx)
         try:
             cleaned, currency, place, fees = _portfolio_settings(typed)
         except HTTPException as exc:

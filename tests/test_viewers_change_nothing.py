@@ -199,11 +199,12 @@ ADMIN_ROUTES = {
     "GET /users", "GET /admin/accounts", "GET /admin/settings", "GET /admin/logs.json",
     "POST /users/add", "POST /users/{user_id}/active", "POST /users/{user_id}/reset",
     "POST /users/{user_id}/2fa/clear", "POST /admin/settings", "POST /admin/settings/restart",
-    "POST /portfolio/settings", "POST /imports-exports/formats",
+    "POST /imports-exports/formats",
     "POST /imports-exports/formats/{kind}/{slug}/delete",
     "POST /imports-exports/statement/design/install",
 }
 OWNER_ROUTES = {
+    "POST /portfolio/settings",
     "POST /members/add", "POST /members/invite", "POST /members/invite/{invite_id}/revoke",
     "POST /members/{member_id}/role", "POST /members/{member_id}/remove",
 }
