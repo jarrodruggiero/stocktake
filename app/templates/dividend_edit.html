@@ -32,6 +32,16 @@ it bought. Both save together or not at all.</p>
       <input name="franking_credits" inputmode="decimal"
              value="{% if dividend.franking_credits is not none %}{{ dividend.franking_credits | qty }}{% endif %}">
     </label>
+    <label>Period ended <span class="sub">optional</span>
+      {% set period_tip %}
+      <p>For a trust, as most ETFs are: the end of the period this distribution
+      is for. It is income of the year that date is in, so a June quarter paid
+      in July belongs to the year to 30 June.</p>
+      <p>Leave it empty for a company's dividend, which counts when it is paid.</p>
+      {% endset %}
+      {% with body = period_tip, label = "About the period end" %}{% include "_tip.html" %}{% endwith %}
+      <input type="date" name="period_end" value="{{ dividend.period_end or '' }}">
+    </label>
   </div>
 
   {% if drp %}

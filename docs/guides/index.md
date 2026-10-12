@@ -53,8 +53,10 @@ The Australian tax view for a financial year:
 - **Capital gains** — FIFO parcel matching, per-parcel detail, the 50%
   discount where a parcel was held more than twelve months, and losses applied
   in the taxpayer-favourable order, earlier years' carried forward.
-- **Dividend income** — the cash received. Franking credits, and the
-  gross-up, are in the dividends export rather than on the page.
+- **Dividend income** — the cash received. A trust's distribution counts in
+  the year its period ends, when it says one, so a June quarter paid in July
+  belongs to the year to 30 June. Franking credits, and the gross-up, are in the
+  dividends export rather than on the page.
 - **A snapshot** of what was held at year end.
 
 The figures are a starting point for your accountant, not a lodgement. See the

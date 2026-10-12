@@ -338,6 +338,41 @@ def test_0014_gives_each_mode_the_colours_that_served_both(tmp_path: Path):
     assert stored()[1] == {"up": "#111111"}
 
 
+def test_0015_keeps_every_distribution_on_the_way_up_and_down(tmp_path: Path):
+    """0015 adds a column to `dividend`, which SQLite rebuilds to drop again:
+    a rebuild that lost the rows, or the trade a DRP points at, would lose
+    income."""
+    path = tmp_path / "period.db"
+    cfg = _config(path)
+    command.upgrade(cfg, "0014")
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        INSERT INTO portfolio (id, name, created_at) VALUES (1, 'Main', '2026-01-01');
+        INSERT INTO instrument (id, ticker, exchange, currency, asset_class, drp, active)
+        VALUES (1, 'ALPHA', 'ASX', 'AUD', 'etf', 1, 1);
+        INSERT INTO trade (id, instrument_id, date, type, quantity, unit_price,
+                           brokerage, fx_rate, portfolio_id)
+        VALUES (1, 1, '2026-07-16', 'drp', 3, 50.0, 0, 1.0, 1);
+        INSERT INTO dividend (id, instrument_id, date, cash_amount, fx_rate,
+                              reinvest_trade_id, portfolio_id)
+        VALUES (1, 1, '2026-07-16', 150.0, 1.0, 1, 1);
+    """)
+    conn.commit()
+    conn.close()
+
+    def rows() -> list[tuple]:
+        conn = sqlite3.connect(path)
+        try:
+            return conn.execute("SELECT id, date, reinvest_trade_id FROM dividend").fetchall()
+        finally:
+            conn.close()
+
+    command.upgrade(cfg, "0015")
+    assert rows() == [(1, "2026-07-16", 1)]
+    command.downgrade(cfg, "0014")
+    assert rows() == [(1, "2026-07-16", 1)]
+
+
 def _tables(path: Path) -> set[str]:
     conn = sqlite3.connect(path)
     try:

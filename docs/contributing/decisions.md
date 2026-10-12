@@ -1416,3 +1416,16 @@ become 1 again for AUD, and otherwise unknown until the feed fills them from
 the stored series. Where another portfolio has the holding too, the admin is
 asked first, and every reset is logged with whose rows it changed: it is the
 one bulk update on a request path that crosses portfolios.
+
+**144. A trust's distribution belongs to the year its period ends.** A unit
+trust's income is assessed for the trust's year to 30 June (ITAA36 s97), so a
+June-quarter distribution paid in July is income of the year just ended and is
+on that year's AMMA statement. Filed by payment date, it landed a year late.
+Each distribution can say when its period ended (`dividend.period_end`), and
+the FY report and the dividends export file it in the year holding that date
+(`fyreport.income_date`); left empty, the payment date decides, as it does for
+a company's dividend, which is assessable when paid. The ex-date would not do:
+a June-quarter fund goes ex on the first business day of July, which is the
+wrong year too. The cash is still converted at its payment date's rate, and
+the charts still place it on that date, because they show money moving. A
+period end comes on or before the payment, and within a year of it.

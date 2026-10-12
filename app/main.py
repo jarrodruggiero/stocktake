@@ -5315,6 +5315,7 @@ async def dividend_edit(
     div_date: str = Form(...),
     cash_amount: str = Form(...),
     franking_credits: str = Form(""),
+    period_end: str = Form(""),
     quantity: str = Form(""),
     unit_price: str = Form(""),
     note: str = Form(""),
@@ -5335,10 +5336,14 @@ async def dividend_edit(
             franking = (money.parse(franking_credits, Dividend.franking_credits,
                                     "Franking credits")
                         if franking_credits.strip() else None)
+            ended = dt.date.fromisoformat(period_end.strip()) if period_end.strip() else None
         except money.FigureError as exc:
             return _reject(f"{exc}.")
         except ValueError:
             return _reject("Date, cash and franking must be numbers (date as YYYY-MM-DD).")
+        problem = fyreport.period_problem(ended, date)
+        if problem:
+            return _reject(problem)
         if cash <= 0:
             return _reject("A distribution has to be more than zero.")
         if franking is not None and franking < 0:
@@ -5383,11 +5388,13 @@ async def dividend_edit(
             "date": dividend.date,
             "cash_amount": dividend.cash_amount,
             "franking_credits": dividend.franking_credits,
+            "period_end": dividend.period_end,
             "note": dividend.note,
         }
         dividend.date = date
         dividend.cash_amount = cash
         dividend.franking_credits = franking
+        dividend.period_end = ended
         dividend.note = note_text
         if drp is not None:
             drp.date = date
@@ -5401,6 +5408,7 @@ async def dividend_edit(
                 "date": dividend.date,
                 "cash_amount": dividend.cash_amount,
                 "franking_credits": dividend.franking_credits,
+                "period_end": dividend.period_end,
                 "note": dividend.note,
             },
         )

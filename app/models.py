@@ -832,6 +832,10 @@ class Dividend(Base):
     # the next distribution. Native currency, balance AFTER this one. NULL means
     # unknown and 0 means it kept nothing; a balance, never income.
     residual_carried: Mapped[Decimal | None] = mapped_column(Numeric(14, 4))
+    # For a trust's distribution, the end of the period it is for: its income
+    # belongs to the financial year that holds that date (decisions.md #144).
+    # NULL means the payment date decides, as for a company's dividend.
+    period_end: Mapped[dt.date | None] = mapped_column(Date)
     reinvest_trade_id: Mapped[int | None] = mapped_column(
         ForeignKey("trade.id"), unique=True
     )
