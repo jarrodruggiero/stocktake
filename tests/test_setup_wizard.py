@@ -1117,6 +1117,12 @@ def test_a_read_only_config_path_still_finishes(client, tmp_path, monkeypatch):
     import os
     import stat
 
+    from app import lifecycle
+
+    # A plain process, wherever the suite runs: in a container, where a restart
+    # brings the app back, Finish draws the waiting page instead.
+    monkeypatch.setattr(lifecycle, "supervision", lambda: lifecycle.Supervision(
+        restarts=False, certain=True, platform="a plain process", detail=""))
     directory = tmp_path / "ro"
     directory.mkdir()
     monkeypatch.setattr(configfile, "CONFIG_FILE", str(directory / "config.yaml"))

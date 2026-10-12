@@ -178,6 +178,17 @@ def _fresh_provider(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_stop(monkeypatch):
+    """No test may stop the test run. The real `request_stop` sends SIGTERM to
+    this very process, and Finish asks for it wherever a restart would bring
+    the app back: in a container, the image's test stage included. A test
+    about stopping replaces it with its own."""
+    from app import lifecycle
+
+    monkeypatch.setattr(lifecycle, "request_stop", lambda reason: None)
+
+
+@pytest.fixture(autouse=True)
 def _discard_wizard_draft():
     """A wizard draft is process-global, so one test's leaks into the next.
 
