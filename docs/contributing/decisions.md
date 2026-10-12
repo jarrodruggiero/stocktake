@@ -559,7 +559,10 @@ accordingly.
 **75. "Configured but failed" is a different state from "not configured".** The
 answer to the first is "fix this" and to the second "choose one". Silently
 falling back to an empty SQLite file would be the worst response available: it
-looks like it worked and the data is gone.
+looks like it worked and the data is gone. A `database:` heading with nothing
+under it is the first kind: it is what commenting out the two shipped lines
+leaves, on an install that has data, so the app refuses to start and names the
+line rather than opening the public wizard (`db.start`).
 
 **76. The OFX reader never hands an upload to a general XML parser.** External
 entity expansion and entity-expansion denial of service both live in Python's
