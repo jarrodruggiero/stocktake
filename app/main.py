@@ -1292,7 +1292,7 @@ async def setup_account_create(
         user = User(
             email=email.strip().lower(),
             name=_name_or_email(name, email),
-            password_hash=auth.hash_password(password),
+            password_hash=await asyncio.to_thread(auth.hash_password, password),
             is_admin=True,  # the bootstrap account manages the others
         )
         db.add(user)
@@ -1723,13 +1723,17 @@ async def login_submit(
             return _fail("Too many attempts. Try again shortly.")
         user = db.scalar(select(User).where(User.email == email_l))
         stored = user.password_hash if user else None
-        # Same message either way — no account enumeration.
-        ok = auth.verify_password(stored, password) and user is not None and user.is_active
+        # Same message either way — no account enumeration. Argon2 in a thread,
+        # here and wherever a handler checks or makes a hash: tens of
+        # milliseconds by design, unknown addresses included, and on the event
+        # loop every other request waited for them.
+        ok = (await asyncio.to_thread(auth.verify_password, stored, password)
+              and user is not None and user.is_active)
         auth.record_attempt(db, email_l, ip, success=ok)
         if not ok:
             return _fail("Invalid email or password.")
         if auth.needs_rehash(user.password_hash):
-            user.password_hash = auth.hash_password(password)
+            user.password_hash = await asyncio.to_thread(auth.hash_password, password)
         landing = _landing_portfolio(db, user, request)
         # With a second factor on, the password only buys a half-authenticated
         # session: `auth.load_session` refuses it everywhere, so the cookie is
@@ -2495,8 +2499,10 @@ async def oidc_backchannel_logout(request: Request,
         raise HTTPException(400, "logout_token is required")
     with anon() as db:
         try:
-            notice = oidc.verify_logout_token(federation.provider(settings),
-                                              logout_token)
+            # In a thread: verifying it can fetch the provider's configuration
+            # and keys, ten seconds' timeout each.
+            notice = await asyncio.to_thread(
+                oidc.verify_logout_token, federation.provider(settings), logout_token)
         except oidc.OidcError as exc:
             log.warning("back-channel logout refused: %s", exc)
             raise HTTPException(400, "that logout could not be verified") from exc
@@ -2590,7 +2596,7 @@ async def twofactor_disable(
         await auth.verify_csrf(request, db)
         if not twofactor.is_enabled(ctx.user):
             return _redirect("/profile")
-        if not auth.verify_password(ctx.user.password_hash, password):
+        if not await asyncio.to_thread(auth.verify_password, ctx.user.password_hash, password):
             return _redirect("/profile?error=password")
         if not (twofactor.accept_code(db, ctx.user, code)
                 or twofactor.consume_recovery_code(db, ctx.user, code)):
@@ -2632,7 +2638,8 @@ async def account_password(
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
         error = None
-        if not auth.verify_password(ctx.user.password_hash, current_password):
+        if not await asyncio.to_thread(auth.verify_password, ctx.user.password_hash,
+                                       current_password):
             error = "Current password is incorrect."
         elif password != confirm:
             error = "The new passwords don't match."
@@ -2643,7 +2650,7 @@ async def account_password(
                 request, ctx, "account.html",
                 {"saved": "", "error": error, "active_nav": ""},
             )
-        ctx.user.password_hash = auth.hash_password(password)
+        ctx.user.password_hash = await asyncio.to_thread(auth.hash_password, password)
         ctx.user.must_change_password = False
         db.flush()
         # Every other session for this account is invalidated; keep this one.
@@ -2806,7 +2813,7 @@ async def users_add(
         new_user = User(
             email=email_l,
             name=_name_or_email(name, email_l),
-            password_hash=auth.hash_password(password),
+            password_hash=await asyncio.to_thread(auth.hash_password, password),
             is_admin=bool(is_admin),
             # They set their own on first login; this one is only a handover.
             must_change_password=True,
@@ -2860,7 +2867,7 @@ async def users_reset(request: Request, user_id: RowId, password: str = Form(...
         user = db.get(User, user_id)
         if user is None:
             raise HTTPException(404, "no such user")
-        user.password_hash = auth.hash_password(password)
+        user.password_hash = await asyncio.to_thread(auth.hash_password, password)
         user.must_change_password = True
         auth.destroy_sessions_for(db, user.id)
         db.flush()
@@ -3348,7 +3355,7 @@ async def invite_signup(
                 "That email already has an account. Sign in, then open this "
                 "link again."))
         user = User(email=email_l, name=_name_or_email(name, email_l),
-                    password_hash=auth.hash_password(password))
+                    password_hash=await asyncio.to_thread(auth.hash_password, password))
         db.add(user)
         db.flush()
         # Issued but NOT shown: the banner asks them to save a set of their own

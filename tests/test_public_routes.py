@@ -19,10 +19,13 @@ fails here, naming itself.
 from __future__ import annotations
 
 import ast
+import asyncio
 import inspect
 import textwrap
 
 import pytest
+
+from appcore import oidc
 
 # What counts as a route authenticating itself. Each is a call that refuses the
 # request unless something proves it is genuine:
@@ -43,12 +46,22 @@ SELF_GUARDING = {"verify_csrf", "verify_pre_auth_csrf", "verify_logout_token",
                  "api_session", "_wizard_step"}
 
 
+def _name(node) -> str:
+    return node.attr if isinstance(node, ast.Attribute) else getattr(node, "id", "")
+
+
 def _calls(handler) -> set[str]:
-    """Every name the handler calls, read off its syntax tree."""
+    """Every name the handler calls, read off its syntax tree. A function
+    handed to `asyncio.to_thread` is called too, in a thread: the
+    back-channel logout's verification runs there."""
     tree = ast.parse(textwrap.dedent(inspect.getsource(handler)))
-    return {node.func.attr if isinstance(node.func, ast.Attribute)
-            else getattr(node.func, "id", "")
-            for node in ast.walk(tree) if isinstance(node, ast.Call)}
+    called = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            called.add(_name(node.func))
+            if _name(node.func) == "to_thread" and node.args:
+                called.add(_name(node.args[0]))
+    return called
 
 
 @pytest.fixture(scope="module")
@@ -114,6 +127,13 @@ def test_the_guard_notices_a_naked_public_post(main, monkeypatch):
         main.app.router.routes[:] = original
 
     assert naked == ["/a-new-public-thing"]
+
+
+def test_a_guard_run_in_a_thread_is_called():
+    async def in_a_thread(token):  # pragma: no cover - never called
+        return await asyncio.to_thread(oidc.verify_logout_token, None, token)
+
+    assert "verify_logout_token" in _calls(in_a_thread)
 
 
 def test_a_guard_named_but_never_called_is_no_guard():

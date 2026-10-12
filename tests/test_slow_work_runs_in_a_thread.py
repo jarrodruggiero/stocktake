@@ -105,3 +105,68 @@ def test_a_chart_preview_is_worked_out_in_a_thread(client, session_factory, app_
 
     assert took >= SLOW
     assert health_took < 0.6, "the health check waited for the chart"
+
+
+def test_a_back_channel_logout_is_verified_in_a_thread(client, app_module, monkeypatch):
+    """Its verification fetched the provider's configuration and keys, ten
+    seconds' timeout each, on the event loop."""
+    conf = app_module.settings.auth.oidc
+    for name, value in (("enabled", True), ("issuer", "https://idp.example.test"),
+                        ("client_id", "stocktake"), ("client_secret", "a-secret"),
+                        ("redirect_uri", "https://app.example.test/login/oidc/callback")):
+        monkeypatch.setattr(conf, name, value)
+    monkeypatch.setattr(app_module.oidc, "verify_logout_token",
+                        _slowly(app_module.oidc.OidcError("not verified")))
+
+    async def logout(http):
+        await http.post("/oidc/backchannel-logout", data={"logout_token": "x.y.z"})
+
+    took, health_took = health_during(app_module.app, logout)
+
+    assert took >= SLOW
+    assert health_took < 0.6, "the health check waited for the verification"
+
+
+def test_a_password_is_checked_in_a_thread(client, session_factory, app_module, monkeypatch):
+    """Argon2 takes tens of milliseconds by design, for unknown addresses too,
+    and every sign-in spent them on the one thread every other request
+    needs."""
+    from test_routes import pre_auth_csrf
+
+    make_login(client, session_factory)
+    client.post("/logout", data={"_csrf": session_csrf(session_factory)}, follow_redirects=False)
+    token = pre_auth_csrf(client)
+    monkeypatch.setattr(app_module.auth, "verify_password", _slowly(False))
+
+    async def sign_in(http):
+        await http.post("/login", headers=HTML, data={
+            "email": "user@example.test", "password": "wrong", "_csrf": token})
+
+    took, health_took = health_during(app_module.app, sign_in, cookies=client.cookies)
+
+    assert took >= SLOW
+    assert health_took < 0.6, "the health check waited for the password"
+
+
+def test_no_async_route_runs_argon2_on_the_event_loop(app_module):
+    """Every handler that checks or makes a password hash, read off its
+    syntax tree: an `async def` that calls one directly holds the loop for as
+    long as argon2 takes. `asyncio.to_thread(auth.verify_password, …)` names
+    it without calling it, and passes."""
+    import ast
+    import inspect
+    import textwrap
+
+    argon2 = {"verify_password", "hash_password"}
+    found = []
+    for route in app_module.app.routes:
+        handler = getattr(route, "endpoint", None)
+        if handler is None or not inspect.iscoroutinefunction(handler):
+            continue
+        tree = ast.parse(textwrap.dedent(inspect.getsource(handler)))
+        calls = {node.func.attr if isinstance(node.func, ast.Attribute)
+                 else getattr(node.func, "id", "")
+                 for node in ast.walk(tree) if isinstance(node, ast.Call)}
+        found += [route.path for name in calls & argon2]
+
+    assert found == []

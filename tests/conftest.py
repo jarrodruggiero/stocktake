@@ -168,6 +168,16 @@ def _clear_caches():
 
 
 @pytest.fixture(autouse=True)
+def _fresh_provider(monkeypatch):
+    """The app keeps one identity provider per configuration, with what its
+    discovery said, and every test that configures one uses the same issuer
+    with a discovery document of its own."""
+    from app import federation
+
+    monkeypatch.setattr(federation, "_provider", None)
+
+
+@pytest.fixture(autouse=True)
 def _discard_wizard_draft():
     """A wizard draft is process-global, so one test's leaks into the next.
 
