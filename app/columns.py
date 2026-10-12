@@ -106,8 +106,9 @@ COLUMNS: list[Column] = [
 
     Column("avg_price", "Avg price", GROUP_VALUE, lambda h: h.avg_price, currency="native",
            help="What you paid per unit on average, in the instrument's own currency."),
-    Column("cost", "Cost", GROUP_VALUE, lambda h: h.cost, currency="native",
-           help="Outlay including brokerage, in the instrument's own currency."),
+    Column("cost", "Cost base", GROUP_VALUE, lambda h: h.cost, currency="native",
+           help="What the units held cost, with brokerage, the oldest counted as "
+                "sold first. In the instrument's own currency."),
     Column("price", "Price", GROUP_VALUE, lambda h: h.price, currency="native",
            help="Latest stored close, in the instrument's own currency."),
     # The reporting-currency set, declared in the same order as the native one
@@ -118,20 +119,22 @@ COLUMNS: list[Column] = [
            currency="reporting",
            help="What you paid per unit on average, each purchase converted at "
                 "its own exchange rate."),
-    Column("cost_reporting", "Cost", GROUP_VALUE, lambda h: h.cost_aud, currency="reporting",
-           help="Outlay converted at each trade's own exchange rate."),
+    Column("cost_reporting", "Cost base", GROUP_VALUE, lambda h: h.cost_aud,
+           currency="reporting",
+           help="What the units held cost, each trade at its own exchange rate."),
     Column("price_reporting", "Price", GROUP_VALUE, lambda h: h.price_aud,
            currency="reporting",
            help="The latest stored close at the latest exchange rate."),
     Column("value_reporting", "Value", GROUP_VALUE, lambda h: h.value_aud, currency="reporting",
            help="Today's value at the latest exchange rate."),
 
-    Column("gain_reporting", "Gain", GROUP_PERFORMANCE, lambda h: h.gain_aud, currency="reporting",
-           render="gain",
+    Column("gain_reporting", "Unrealised gain", GROUP_PERFORMANCE, lambda h: h.gain_aud,
+           currency="reporting", render="gain",
            sort_pair=("gain_reporting", "gain_pct"), sort_marks=("$", "%"),
-           help="Value less cost, with the percentage underneath. Clicking cycles "
-                "the sort: amount up, % up, amount down, % down."),
-    Column("gain_pct", "Gain %", GROUP_PERFORMANCE, lambda h: h.gain_pct, render="pct"),
+           help="Value less cost base, with the percentage underneath. Clicking "
+                "cycles the sort: amount up, % up, amount down, % down."),
+    Column("gain_pct", "Unrealised gain %", GROUP_PERFORMANCE, lambda h: h.gain_pct,
+           render="pct"),
     Column("day_change", "Today", GROUP_PERFORMANCE, lambda h: h.day_change_aud, currency="reporting",
            render="gain",
            sort_pair=("day_change", "day_pct"), sort_marks=("$", "%"),

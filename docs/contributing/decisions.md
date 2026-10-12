@@ -401,13 +401,25 @@ outside conftest's reach, so it stubs `_kick_feed` itself and asserts at the end
 that yfinance was never imported — it started a real feed run on every visual
 pass until it did.
 
-**54. The performance line is cumulative gain over money in, not a
-time-weighted return.** "Don't count new investments as a gain" first read as
-TWR, which removes contributions by chaining daily returns — it compounds, and
-on a long dollar-cost-average history it showed 125% where the portfolio had
-made 47%. Arithmetically fine, and not the number anybody means. The Gain
-tile, the FY pages and the exports do not all use this definition, so once part
-of a holding has been sold their figures differ from the line's.
+**54. Two measures of gain, each labelled for what it is.** A holding's gain
+is **unrealised**: its value less what the units still held cost, the oldest
+counted as sold first (`fyreport.walk`), each parcel at its own rate. That is
+the cost base the CGT export uses, so a reinvested unit counts at what was
+reinvested rather than as free; the distribution is in the Dividends column.
+The holdings table, the tiles above it, a holding's page, the FY snapshot and
+the holdings export all measure this. The portfolio's **Performance** chart
+and the period figures are **total return**: value, plus sale proceeds and cash
+income, less everything put in. Once anything is sold or paid out the two
+differ by design: buy 100 at $10, receive $100, sell 50 at $20 with the price
+still $20, and the holding has made $500 on what it still holds while the
+portfolio has returned $1,100 on $1,000. Measured against every buy instead,
+the old Gain tile said $0 there, which is neither.
+
+The line is cumulative return over money in, not a time-weighted return.
+"Don't count new investments as a gain" first read as TWR, which removes
+contributions by chaining daily returns — it compounds, and on a long
+dollar-cost-average history it showed 125% where the portfolio had made 47%.
+Arithmetically fine, and not the number anybody means.
 
 **55. An HTTPS-configured instance reached over plain HTTP says so.** This is
 the nastiest failure in the app and it is silent: with `cookie_secure` on, a

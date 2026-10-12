@@ -62,7 +62,10 @@ def get_portfolios(request: Request) -> dict:
 
 @router.get("/portfolio")
 def get_portfolio(request: Request) -> dict:
-    """Headline numbers — what a budgeting app wants for a net-worth line."""
+    """Headline numbers — what a budgeting app wants for a net-worth line.
+
+    `cost` is what the units held cost, the oldest sold first, and `gain` is
+    the unrealised gain on them (decisions.md #54)."""
     with auth.api_session(request) as (access, db):
         holdings = queries.all_holdings(db)
         open_positions, closed = queries.split_positions(holdings)
@@ -85,11 +88,17 @@ def get_portfolio(request: Request) -> dict:
             # totals above, so a consumer can flag rather than silently
             # under-report.
             "excluded": totals.excluded,
+            # Left out for a sale of more than was held, which has no cost.
+            "oversold": totals.oversold,
+            # Converted at a rate more than a week from the day (#124).
+            "distant_rates": totals.far,
         }
 
 
 @router.get("/holdings")
 def get_holdings(request: Request) -> dict:
+    """Open positions. `cost_aud` is what the units held cost, the oldest sold
+    first, and `gain_aud` the unrealised gain on them (decisions.md #54)."""
     with auth.api_session(request) as (access, db):
         open_positions, _ = queries.split_positions(queries.all_holdings(db))
         return {
@@ -207,6 +216,9 @@ def get_fy(request: Request, year: int) -> dict:
             "distant_rates": r["far"],
             "value": _num(r["total_value"]),
             "invested": _num(r["total_invested"]),
+            # What the units held at the as-of date cost, the oldest sold
+            # first: their gain is unrealised (decisions.md #54).
+            "cost_base": _num(r["total_cost_base"]),
             "invested_this_fy": _num(r["activity"].invested),
             "proceeds_this_fy": _num(r["activity"].proceeds),
             "brokerage_this_fy": _num(r["activity"].brokerage),

@@ -74,7 +74,7 @@
        looking through, never the number at the right-hand end. */
     var pct = data.gain.slice(start);
     /* The canvas's text alternative, for the window chosen. */
-    canvas.setAttribute("aria-label", "Gain over time" + (start ? " since " + labels[0] : "") +
+    canvas.setAttribute("aria-label", "Total return" + (start ? " since " + labels[0] : "") +
                         ": " + pct[pct.length - 1].toFixed(2) + "% on " + labels[labels.length - 1]);
 
     if (chart) { chart.destroy(); }
@@ -84,7 +84,7 @@
         labels: labels,
         datasets: [
           {
-            label: "Gain",
+            label: "Total return",
             data: pct,
             borderColor: token("--viz-1", "#2a78d6"),
             backgroundColor: "transparent",

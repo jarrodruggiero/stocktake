@@ -54,13 +54,18 @@ class Holding:
     instrument: Instrument
     units: Decimal
     avg_price: Decimal | None  # native ccy, over buys + DRP (matches the sheet)
-    cost: Decimal  # native ccy, buys incl. brokerage
+    # What the units still held cost, with brokerage, the oldest sold first:
+    # the gain below is UNREALISED, on those units (decisions.md #54). None
+    # for a ledger with a sale of more than was held, which has no FIFO cost.
+    cost: Decimal | None  # native ccy
     dividends_cash: Decimal  # native ccy
     price: Decimal | None  # latest close, native ccy
     price_date: dt.date | None
     value: Decimal | None  # native ccy
-    gain: Decimal | None  # value - cost (open positions)
+    gain: Decimal | None  # value - cost
     gain_pct: Decimal | None
+    # Every buy with its brokerage, sold or not: what a closed position cost.
+    invested: Decimal = ZERO  # native ccy
     # AUD view: cost at trade-date fx, value at latest fx. None = fx missing.
     cost_aud: Decimal | None = None
     value_aud: Decimal | None = None
@@ -85,6 +90,10 @@ class Holding:
     # This user's own view of the holding (holding_pref) — never shared.
     note: str | None = None
     drp: bool = False
+    # A sale of more than was held, which leaves no FIFO cost (fyreport.Oversold).
+    oversold: bool = False
+    # A figure here converted at a rate more than a week from its date (#124).
+    far: bool = False
 
 
 def _latest_price(session: Session, instrument_id: int) -> tuple[Decimal, dt.date] | None:
@@ -178,8 +187,12 @@ def in_aud(amount: Decimal, currency: str, stored_rate: Decimal | None) -> Decim
 
 
 def build_holding(
-    session: Session, inst: Instrument, pref: HoldingPref | None = None
+    session: Session, inst: Instrument, pref: HoldingPref | None = None,
+    fx_book: FxBook | None = None,
 ) -> Holding:
+    from . import fyreport
+
+    fx_book = fx_book or FxBook(session)
     buys = [t for t in inst.trades if t.type == "buy"]
     accumulating = [t for t in inst.trades if t.type in ("buy", "drp")]
     sells = [t for t in inst.trades if t.type == "sell"]
@@ -187,7 +200,7 @@ def build_holding(
     units = sum((t.quantity for t in accumulating), ZERO) - sum(
         (t.quantity for t in sells), ZERO
     )
-    cost = sum((t.quantity * t.unit_price + t.brokerage for t in buys), ZERO)
+    invested = sum((t.quantity * t.unit_price + t.brokerage for t in buys), ZERO)
     acc_units = sum((t.quantity for t in accumulating), ZERO)
     avg = (
         (sum((t.quantity * t.unit_price for t in accumulating), ZERO) / acc_units)
@@ -196,30 +209,37 @@ def build_holding(
     )
     dividends_cash = sum((d.cash_amount for d in inst.dividends), ZERO)
 
+    # The cost of the units still held, from the same FIFO walk as the CGT
+    # figures, each parcel at its own trade's rate or else the stored series.
+    oversold = False
+    try:
+        held = fyreport.walk(inst, fx_book).held
+    except fyreport.OversoldError:
+        held, oversold = [], True
+    cost = None if oversold else sum((p.native_held for p in held), ZERO)
+    cost_aud = None if oversold or any(p.cost_held is None for p in held) else sum(
+        (p.cost_held for p in held), ZERO)
+
     latest = _latest_price(session, inst.id)
     price, price_date = latest if latest else (None, None)
     value = gain = gain_pct = None
     if price is not None and units:
         value = units * price
-        gain = value - cost
-        gain_pct = gain / cost if cost else None
+        if cost is not None:
+            gain = value - cost
+            gain_pct = gain / cost if cost else None
 
-    # AUD view: cost at each trade's own fx, value at the latest fx.
-    fx_now = latest_fx(session, inst.currency)
-    cost_aud = ZERO
-    for t in buys:
-        part = in_aud(t.quantity * t.unit_price + t.brokerage, inst.currency, t.fx_rate)
-        if part is None:
-            cost_aud = None
-            break
-        cost_aud += part
+    # Value at the latest rate, named if that is more than a week old.
+    fx_now = fx_book.rate(inst.currency, clock.today(),
+                          inst.ticker if price is not None and units else None)
     value_aud = value * fx_now if (value is not None and fx_now is not None) else None
     gain_aud = (
         value_aud - cost_aud if (value_aud is not None and cost_aud is not None) else None
     )
     dividends_aud = ZERO
     for d in inst.dividends:
-        part = in_aud(d.cash_amount, inst.currency, d.fx_rate)
+        part = in_aud(d.cash_amount, inst.currency,
+                      fx_book.of(d, inst.currency, inst.ticker))
         if part is None:
             dividends_aud = None
             break
@@ -232,7 +252,8 @@ def build_holding(
     if acc_units:
         paid_aud = ZERO
         for t in accumulating:
-            part = in_aud(t.quantity * t.unit_price, inst.currency, t.fx_rate)
+            part = in_aud(t.quantity * t.unit_price, inst.currency,
+                          fx_book.of(t, inst.currency, inst.ticker))
             if part is None:
                 paid_aud = None
                 break
@@ -266,6 +287,7 @@ def build_holding(
         value=value,
         gain=gain,
         gain_pct=gain_pct,
+        invested=invested,
         cost_aud=cost_aud,
         value_aud=value_aud,
         gain_aud=gain_aud,
@@ -277,6 +299,8 @@ def build_holding(
         day_pct=day_pct,
         note=pref.note if pref else None,
         drp=pref.drp if pref else inst.drp,
+        oversold=oversold,
+        far=inst.ticker in fx_book.far,
     )
 
 
@@ -295,7 +319,8 @@ def all_holdings(session: Session) -> list[Holding]:
         .all()
     )
     prefs = prefs_by_instrument(session)
-    return [build_holding(session, inst, prefs.get(inst.id)) for inst in instruments]
+    fx_book = FxBook(session)
+    return [build_holding(session, inst, prefs.get(inst.id), fx_book) for inst in instruments]
 
 
 @dataclass
@@ -325,7 +350,7 @@ def split_positions(
                 RealisedPosition(
                     instrument=h.instrument,
                     proceeds=proceeds,
-                    outlay=h.cost,
+                    outlay=h.invested,
                     note=h.note,
                 )
             )
@@ -334,7 +359,8 @@ def split_positions(
 
 @dataclass
 class DashboardTotals:
-    """AUD totals over open positions whose AUD value is computable."""
+    """AUD totals over open positions whose AUD value is computable. `cost` is
+    what the units held cost and `gain` is unrealised (decisions.md #54)."""
 
     cost: Decimal
     value: Decimal
@@ -348,16 +374,23 @@ class DashboardTotals:
     dividends_excluded: list[str] = field(default_factory=list)
     day_change: Decimal = ZERO  # AUD move since the previous close
     day_pct: Decimal | None = None
+    # Left out for a sale of more than was held, which leaves no FIFO cost.
+    oversold: list[str] = field(default_factory=list)
+    # Converted at a rate more than a week from its date (#124).
+    far: list[str] = field(default_factory=list)
 
 
 def totals(open_positions: list[Holding]) -> DashboardTotals:
     cost = value = dividends = ZERO
     excluded: list[str] = []
+    oversold: list[str] = []
     dividends_excluded: list[str] = []
     for h in open_positions:
         if h.cost_aud is not None and h.value_aud is not None:
             cost += h.cost_aud
             value += h.value_aud
+        elif h.oversold:
+            oversold.append(h.instrument.ticker)
         else:
             # No stored fx/price yet (feed hasn't run since this was added).
             excluded.append(h.instrument.ticker)
@@ -380,6 +413,8 @@ def totals(open_positions: list[Holding]) -> DashboardTotals:
         dividends_excluded=dividends_excluded,
         day_change=day_change,
         day_pct=(day_change / yesterday) if yesterday else None,
+        oversold=oversold,
+        far=[h.instrument.ticker for h in open_positions if h.far],
     )
 
 
@@ -488,8 +523,8 @@ class LedgerEvent:
     brokerage: Decimal | None
     cash: Decimal | None
     note: str | None
-    # Per-parcel performance at the latest price (buy/drp rows only) — the
-    # sheet's "% / $ Inc for this trade" rows.
+    # Per-parcel performance at the latest price, on the units of it still
+    # held (buy/drp rows only) — the sheet's "% / $ Inc for this trade" rows.
     gain: Decimal | None = None
     gain_pct: Decimal | None = None
     # Which row the edit/delete buttons act on. A DRP row shows the trade but
@@ -513,16 +548,27 @@ def ledger(
         select(Instrument).where(Instrument.id == found[0].id)
         .options(selectinload(Instrument.trades), selectinload(Instrument.dividends))
     ).one()
+    from . import fyreport
+
     pref = prefs_by_instrument(session).get(inst.id)
     latest = _latest_price(session, inst.id)
     latest_close = latest[0] if latest else None
+    fx_book = FxBook(session)
+    try:
+        held = {p.trade_id: p for p in fyreport.walk(inst, fx_book).held}
+    except fyreport.OversoldError:
+        held = {}
 
     def _parcel_gain(t: Trade) -> tuple[Decimal | None, Decimal | None]:
-        if latest_close is None or t.type not in ("buy", "drp"):
+        """What the parcel's units still held have made at the latest close,
+        against what they cost: unrealised, as the holding's gain is (#54).
+        A parcel sold in full has none."""
+        parcel = held.get(t.id)
+        if latest_close is None or parcel is None:
             return None, None
-        outlay = t.quantity * t.unit_price
-        gain = t.quantity * latest_close - outlay
-        return gain, (gain / outlay if outlay else None)
+        cost = parcel.native_held
+        gain = parcel.remaining * latest_close - cost
+        return gain, (gain / cost if cost else None)
 
     # A DRP trade is edited through the dividend that reinvested into it.
     dividend_of_trade = {
@@ -560,7 +606,7 @@ def ledger(
         if d.reinvest_trade_id is None  # DRP cash shows through its trade row
     ]
     events.sort(key=lambda e: (e.date, e.kind), reverse=True)
-    return inst, build_holding(session, inst, pref), events
+    return inst, build_holding(session, inst, pref, fx_book), events
 
 
 # ---------- chart series (computed from trades + daily prices/fx) ----------

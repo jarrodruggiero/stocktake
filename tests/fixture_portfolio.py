@@ -121,12 +121,14 @@ def build_reference(db) -> Reference:
 # --------------------------------------------------------------------------- #
 
 # ---- per-holding, at TODAY -------------------------------------------------
+# Cost is what the units still held cost, with brokerage, the oldest sold
+# first: the gain beside it is unrealised (decisions.md #54).
 # ALPHA  units 100 bought + 5 DRP           = 105  @ 15.00 = 1575.00
-#        cost = 100 × 10.00 + 10.00 brokerage = 1010.00   (DRP units cost nothing)
+#        cost = (100 × 10.00 + 10.00) + 5 DRP units × 10.00 = 1060.00
+#        (a reinvested unit cost what was reinvested, as its cost base does)
 # BETAX  units 100 + 100 − 150 sold          =  50  @  9.00 =  450.00
-#        cost = (100×5 + 10) + (100×6 + 10)  = 1120.00
-#        NB cost is all-time outlay, not the cost of the units still held —
-#        the app's "Total Spent" semantics, inherited from the spreadsheet.
+#        the sale took all of parcel A and half of B, so what is held is
+#        half of B: (100×6 + 10) × 50/100    =  305.00
 # GAMMA  units 100                           @  5.00 =  500.00
 #        cost = 100 × 20.00 + 10.00          = 2010.00
 # OMEGA  units 10 @ 120 USD × 1.60 fx        = 1920.00
@@ -136,15 +138,15 @@ UNITS = {"ALPHA": Decimal("105"), "BETAX": Decimal("50"), "GAMMA": Decimal("100"
          "OMEGA": Decimal("10"), "ZULU": Decimal("0")}
 VALUE_AUD = {"ALPHA": Decimal("1575.00"), "BETAX": Decimal("450.00"),
              "GAMMA": Decimal("500.00"), "OMEGA": Decimal("1920.00")}
-COST_AUD = {"ALPHA": Decimal("1010.00"), "BETAX": Decimal("1120.00"),
+COST_AUD = {"ALPHA": Decimal("1060.00"), "BETAX": Decimal("305.00"),
             "GAMMA": Decimal("2010.00"), "OMEGA": Decimal("1507.50")}
 
 # ---- dashboard totals over OPEN positions ---------------------------------
-# cost  = 1010.00 + 1120.00 + 2010.00 + 1507.50 = 5647.50
+# cost  = 1060.00 +  305.00 + 2010.00 + 1507.50 = 4882.50
 # value = 1575.00 +  450.00 +  500.00 + 1920.00 = 4445.00
-TOTAL_COST_AUD = Decimal("5647.50")
+TOTAL_COST_AUD = Decimal("4882.50")
 TOTAL_VALUE_AUD = Decimal("4445.00")
-TOTAL_GAIN_AUD = Decimal("-1202.50")   # 4445.00 − 5647.50
+TOTAL_GAIN_AUD = Decimal("-437.50")    # 4445.00 − 4882.50
 
 # Only ALPHA moved on the last day: (15.00 − 14.00) × 105 units = 105.00
 TOTAL_DAY_CHANGE_AUD = Decimal("105.00")

@@ -6,6 +6,12 @@ Holdings, totals, and the day's movement. Open and closed positions are
 separated — a sold-out holding stops cluttering the table but keeps its
 realised history.
 
+Gain is measured two ways, each labelled. A holding's **unrealised gain** is
+its value less what the units still held cost, the oldest counted as sold
+first — a reinvested unit at what was reinvested. The **Performance** chart is
+**total return**: value, plus what sales and cash distributions brought in,
+less everything put in.
+
 Money figures blur when a session is about to time out. That is the only time
 they blur; there is no manual toggle.
 
@@ -73,7 +79,8 @@ spreadsheet shows it rather than running it as a formula.
 ## Instruments and the ledger
 
 An instrument's page shows its full ledger: every buy, sell, DRP allocation and
-cash distribution, with per-parcel gain at the latest price.
+cash distribution, with the gain at the latest price on the units of each
+parcel still held.
 
 Rows can be edited and deleted here. Two rules apply:
 

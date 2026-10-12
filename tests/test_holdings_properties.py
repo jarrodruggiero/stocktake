@@ -6,10 +6,12 @@ numbers: a holding's cost could subtract its brokerage, the AUD gain could be
 `value + cost`, and a closed position's proceeds and profit could take almost
 any sign, with every test green.
 
-The rules are the documented ones: cost is buys with their brokerage; the
+The rules are the documented ones: cost is what the units still held cost,
+with brokerage, the oldest sold first, so the gain is unrealised (#54); the
 average price is over buys and DRP allotments without it (decisions.md #50);
-an AUD figure uses each row's own rate and is blank when a foreign row has
-none (#5, #6); value uses the latest close and the latest rate.
+an AUD figure uses each row's own rate, else the stored series, and is blank
+when a foreign currency has none at all (#5, #6); value uses the latest close
+and the latest rate.
 """
 
 from __future__ import annotations
@@ -28,7 +30,8 @@ def _q(v):
     return None if v is None else Decimal(v).quantize(EXACT)
 
 
-FIELDS = ("units", "cost", "avg_price", "price", "value", "gain", "gain_pct", "cost_aud",
+FIELDS = ("units", "cost", "invested", "avg_price", "price", "value", "gain", "gain_pct",
+          "cost_aud",
           "value_aud", "gain_aud", "dividends_cash", "dividends_aud", "avg_price_aud",
           "price_aud", "day_pct", "day_change_aud")
 
@@ -55,7 +58,7 @@ def test_every_holding_agrees_with_the_working_out(session_factory, portfolio, h
             h.instrument.ticker for h in open_}
         for c in closed:
             w = want[c.instrument.ticker]
-            assert (c.outlay, _q(c.proceeds)) == (w["cost"], _q(w["proceeds"]))
+            assert (c.outlay, _q(c.proceeds)) == (w["invested"], _q(w["proceeds"]))
 
         totals = queries.totals(open_)
         held = {t: w for t, w in want.items() if w["units"] > 0 and t in active}

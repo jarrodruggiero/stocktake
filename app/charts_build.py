@@ -401,16 +401,16 @@ def summary_ranges(dates: list[str], today: dt.date, fy_start: dt.date) -> list[
 
 
 def gain_series(series: dict) -> list[float]:
-    """Cumulative gain as a percentage of what went in, per day.
+    """Total return as a percentage of what went in, per day.
 
     The money you put in is not something you made, so it comes off the top:
     `(value + proceeds + cash income − paid in) / paid in`. Paying $1,000 in
-    adds $1,000 to both sides and creates no gain. Not a time-weighted return —
-    decisions.md #54.
+    adds $1,000 to both sides and creates no gain. Not a time-weighted return,
+    and not the holdings' unrealised gain either — decisions.md #54.
 
     `queries.portfolio_series` already computes it, so this is a unit change and
     not a second definition: the chart must not be able to disagree with the
-    Gain tile.
+    period figures.
     """
     return [round(v * 100, 4) for v in (series.get("gain_pct") or [])]
 
@@ -431,10 +431,9 @@ def summary_chart(session: Session, today: dt.date, fy_start: dt.date) -> dict |
         return None
     return {
         "dates": dates,
-        # Cumulative gain %, already in percent — see `gain_series`. A LEVEL,
+        # Total return %, already in percent — see `gain_series`. A LEVEL,
         # not an index: selecting a range slices the window rather than
-        # rebasing it, so every range ends on the portfolio's actual gain and
-        # "All" is the same number the Gain tile shows.
+        # rebasing it, so every range ends on the portfolio's actual return.
         "gain": gain_series(series),
         "ranges": summary_ranges(dates, today, fy_start),
     }

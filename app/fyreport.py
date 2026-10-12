@@ -158,6 +158,17 @@ class _Parcel:
     quantity: Decimal          # as acquired; never changes
     cost: Decimal | None       # exact AUD outlay for `quantity`, unrounded; None without a rate
     cost_allotted: Decimal = ZERO
+    native: Decimal = ZERO     # the same outlay in the instrument's own currency
+    trade_id: int | None = None
+
+    @property
+    def cost_held(self) -> Decimal | None:
+        """The AUD cost of the units still held: what has not been billed yet."""
+        return None if self.cost is None else self.cost - self.cost_allotted
+
+    @property
+    def native_held(self) -> Decimal:
+        return self.native * self.remaining / self.quantity
 
     def take(self, units: Decimal) -> Decimal | None:
         """Consume `units` from this parcel and return their cost base, or None
@@ -201,9 +212,22 @@ class OversoldError(ValueError):
         self.sale = sale
 
 
+@dataclass
+class Walk:
+    disposals: list[Disposal]
+    held: list[_Parcel]        # what is left after every sale, oldest first
+
+
 def instrument_disposals(inst: Instrument, fx_book=None,
                          until: dt.date | None = None) -> list[Disposal]:
-    """FIFO-match this instrument's sells against its acquisition parcels.
+    """This instrument's sales, each matched FIFO to its parcels: `walk`."""
+    return walk(inst, fx_book, until).disposals
+
+
+def walk(inst: Instrument, fx_book=None, until: dt.date | None = None) -> Walk:
+    """FIFO-match this instrument's sells against its acquisition parcels, and
+    keep what is left: the cost of the units still held, which is what a
+    holding's unrealised gain is measured from (decisions.md #54).
 
     `fx_book` is a `queries.FxBook` used to resolve a trade whose own
     `fx_rate` was never captured. Without one — the direct call in a test —
@@ -224,12 +248,15 @@ def instrument_disposals(inst: Instrument, fx_book=None,
             break
         fx = _rate(t, inst, fx_book)
         if t.type in ("buy", "drp"):
+            outlay = t.quantity * t.unit_price + t.brokerage
             fifo.append(
                 _Parcel(
                     acquired=t.date,
                     remaining=t.quantity,
                     quantity=t.quantity,
-                    cost=None if fx is None else (t.quantity * t.unit_price + t.brokerage) * fx,
+                    cost=None if fx is None else outlay * fx,
+                    native=outlay,
+                    trade_id=t.id,
                 )
             )
             continue
@@ -283,7 +310,7 @@ def instrument_disposals(inst: Instrument, fx_book=None,
                 parcels=uses,
             )
         )
-    return disposals
+    return Walk(disposals, fifo)
 
 
 @dataclass
@@ -420,30 +447,34 @@ class SnapshotRow:
     price: Decimal | None  # native, close on/before the as-of date
     price_date: dt.date | None
     value_aud: Decimal | None
-    gain_aud: Decimal | None
+    gain_aud: Decimal | None  # unrealised: value less `cost_base`
+    # AUD, what the units held then cost, the oldest sold first (decisions.md
+    # #54). None without a rate, or for a sale of more than was held.
+    cost_base: Decimal | None = None
 
     @property
     def gain_pct(self) -> Decimal | None:
-        """Gain as a fraction of what was put in.
+        """Unrealised gain as a fraction of what the units held cost.
 
         Derived rather than stored, so it cannot drift from the two numbers it
         comes from.
 
-        **None covers two situations and the template tells them apart**: no
-        `invested_cum`, so a percentage cannot exist — renders **N/A**; or an
-        unpriced holding, where it is computable in principle and simply not
-        known yet — renders an em dash. Returning zero would claim the holding
-        broke even, which is a statement about the data rather than its absence.
+        **None covers two situations and the template tells them apart**: a
+        cost base of nothing, so a percentage cannot exist — renders **N/A**;
+        or an unpriced holding, where it is computable in principle and simply
+        not known yet — renders an em dash. Returning zero would claim the
+        holding broke even, which is a statement about the data rather than
+        its absence.
         """
-        if self.gain_aud is None or not self.invested_cum:
+        if self.gain_aud is None or not self.cost_base:
             return None
-        return self.gain_aud / self.invested_cum
+        return self.gain_aud / self.cost_base
 
     @property
     def percentage_applies(self) -> bool:
         """Whether a gain percentage is a meaningful thing to ask for here.
-        An amount invested that is unknown for want of a rate still has one."""
-        return self.invested_cum is None or bool(self.invested_cum)
+        A cost base that is unknown for want of a rate still has one."""
+        return self.cost_base is None or bool(self.cost_base)
 
 
 def _price_at(session: Session, instrument_id: int, asof: dt.date):
@@ -478,6 +509,8 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
     # Holdings some AUD figure on this page leaves out for want of a rate,
     # named once at the top of the page (decisions.md #5).
     withheld: set[str] = set()
+    # Held at the as-of date with a sale of more than was held behind them.
+    oversold: set[str] = set()
     for inst in instruments:
         units = ZERO
         invested: Decimal | None = ZERO
@@ -512,21 +545,26 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
                         activity.brokerage += t.brokerage * fx
         if units <= 0:
             continue
+        # What the units held then cost, from the same FIFO walk as the gains.
+        try:
+            held = walk(inst, fx_book, until=asof).held
+        except OversoldError:
+            held = None
+            oversold.add(inst.ticker)
+        cost_base = (None if held is None or any(p.cost_held is None for p in held)
+                     else sum((p.cost_held for p in held), ZERO))
         price_row = _price_at(session, inst.id, asof)
         price, price_date = (price_row.close, price_row.date) if price_row else (None, None)
         # The stored rate nearest the date, and no value at all for a currency
         # with none: never 1:1 (decisions.md #5).
         # Named only for a value it converts: with no price there is none.
         rate = fx_book.rate(inst.currency, asof, inst.ticker if price is not None else None)
-        if invested is None or (price is not None and rate is None):
+        if (cost_base is None and held is not None) or (price is not None and rate is None):
             withheld.add(inst.ticker)
         value = gain = None
         if price is not None and rate is not None:
-            # `invested` is never None here: it is None only for a currency
-            # with no rate stored at all, and FxBook gives every date a rate
-            # once a currency has one.
             value = units * price * rate
-            gain = value - invested
+            gain = None if cost_base is None else value - cost_base
         snapshot.append(
             SnapshotRow(
                 instrument=inst,
@@ -536,6 +574,7 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
                 price_date=price_date,
                 value_aud=value,
                 gain_aud=gain,
+                cost_base=cost_base,
             )
         )
 
@@ -554,6 +593,9 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
         "total_value": sum((r.value_aud for r in snapshot if r.value_aud is not None), ZERO),
         "total_invested": sum((r.invested_cum for r in snapshot
                                if r.invested_cum is not None), ZERO),
+        "total_cost_base": sum((r.cost_base for r in snapshot
+                                if r.cost_base is not None), ZERO),
+        "oversold_held": sorted(oversold),
         "activity": activity,
         "income": income,
         "income_cash": sum((r.cash for r in income if r.cash is not None), ZERO),
@@ -584,7 +626,7 @@ SORTABLE: dict[str, dict[str, object]] = {
         "ticker": lambda r: r.instrument.ticker,
         "units": lambda r: r.units,
         "price": lambda r: r.price,
-        "invested_cum": lambda r: r.invested_cum,
+        "cost_base": lambda r: r.cost_base,
         "value_aud": lambda r: r.value_aud,
         "gain_aud": lambda r: r.gain_aud,
         "gain_pct": lambda r: r.gain_pct,

@@ -272,11 +272,12 @@ def test_a_new_currency_forgets_the_rates_recorded_under_the_old_one(
     with session_factory() as s:                # what that run's repair does
         tenancy.allow_unscoped(s)
         fac.add_fx(s, "USDAUD", "2026-01-02", "1.50")
+        fac.add_fx(s, "USDAUD", "2026-02-04", "1.55")
         filled = (pricefeed._backfill_rates(s, Trade), pricefeed._backfill_rates(s, Dividend))
         s.commit()
     # The distribution too: the repair used to fill trades only, and the
     # dashboard left this holding's distributions out for good (NEW-1).
-    assert filled == (1, 1) and rates() == [Decimal("1.500000"), Decimal("1.500000")]
+    assert filled == (1, 1) and rates() == [Decimal("1.500000"), Decimal("1.550000")]
     _save(client, session_factory, writer["zulu"], currency="AUD", yahoo_symbol="ZULU.AX")
     assert rates() == [Decimal(1), Decimal(1)] and kicked == [1], "AUD needs no rate"
     _save(client, session_factory, writer["zulu"], currency="AUD", yahoo_symbol="ZULU.AX")
