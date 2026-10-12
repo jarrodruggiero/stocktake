@@ -14,6 +14,7 @@ disposal whose parcels straddle the discount boundary.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from decimal import Decimal
 
 import pytest
@@ -171,13 +172,13 @@ def test_a_sale_of_more_than_was_held_is_named_in_the_years_that_depend_on_it(pf
     def named(fy):
         return [sale.trade.date for sale in fyreport.fy_cgt(pf, fy).oversold]
 
-    # A year before it is matched as usual. A later sale's parcels depend on
-    # what the oversold one used up, so its year names it too. A year that
-    # sold nothing has no gain to depend on it.
+    # A year before it is matched as usual. Every year after it depends on
+    # it: a later sale's parcels on what the oversold one used up, and any
+    # year, one that sold nothing included, on the loss it would have carried.
     assert [d.date for d in fyreport.fy_cgt(pf, 2021).disposals] == [dt.date(2021, 3, 1)]
     assert named(2021) == []
     assert named(2024) == [dt.date(2024, 1, 1)]
-    assert named(2025) == []
+    assert named(2025) == [dt.date(2024, 1, 1)]
     assert named(2026) == [dt.date(2024, 1, 1)]
 
 
@@ -399,23 +400,166 @@ def test_a_fy_netting_to_a_loss_reports_net_capital_loss_and_no_gain(pf):
     assert cgt.net_capital_loss == Decimal("200.00")   # 300.00 - 100.00
 
 
-def test_a_capital_loss_does_not_carry_into_the_next_fy(pf):
-    loser = make_instrument(pf, "WIDGET", asset_class="share")
-    add_trade(pf, loser, "2023-01-01", "buy", 100, "5.00")
-    add_trade(pf, loser, "2024-03-01", "sell", 100, "2.00")    # FY2024: 300.00 loss
+def _sale(pf, ticker: str, bought: str, sold: str, cost: str, price: str):
+    """100 units bought on `bought` at `cost` and sold on `sold` at `price`."""
+    inst = make_instrument(pf, ticker, asset_class="share")
+    add_trade(pf, inst, bought, "buy", 100, cost)
+    add_trade(pf, inst, sold, "sell", 100, price)
+    return inst
 
-    winner = make_instrument(pf, "ACME", asset_class="share")
-    add_trade(pf, winner, "2022-01-01", "buy", 100, "1.00")
-    add_trade(pf, winner, "2024-12-01", "sell", 100, "4.00")   # FY2025: 300.00 gain
 
-    assert fyreport.fy_cgt(pf, 2024).net_capital_loss == Decimal("300.00")
+def test_an_earlier_years_loss_is_applied_before_the_discount(pf):
+    """s102-5(1): this year's losses, then earlier years' net capital losses,
+    then the discount. A FY2024 loss of 300 left FY2025's discountable gain of
+    300 standing at 150; the net capital gain is nil."""
+    _sale(pf, "WIDGET", "2023-01-02", "2024-03-01", "5.00", "2.00")    # FY2024: 300 loss
+    _sale(pf, "ACME", "2022-01-03", "2024-12-02", "1.00", "4.00")      # FY2025: 300 gain, >12m
 
-    # Each FY is computed from its own disposals only — carry-forward is
-    # deliberately not implemented, so FY2025's gain is discounted, not erased.
+    earlier = fyreport.fy_cgt(pf, 2024)
     later = fyreport.fy_cgt(pf, 2025)
-    assert later.losses == 0
-    assert later.gains_discountable == Decimal("300.00")   # 400.00 - 100.00
-    assert later.net_capital_gain == Decimal("150.00")     # 300.00 less the 50% discount
+
+    assert (earlier.net_capital_loss, earlier.losses_carried_out) == (300, 300)
+    assert (later.losses, later.losses_carried_in, later.losses_carried_applied) == (0, 300, 300)
+    assert (later.discount, later.net_capital_gain, later.losses_carried_out) == (0, 0, 0)
+
+
+def test_what_an_earlier_loss_does_not_use_carries_on(pf):
+    _sale(pf, "WIDGET", "2023-01-02", "2024-03-01", "5.00", "4.00")    # FY2024: 100 loss
+    _sale(pf, "ACME", "2022-01-03", "2024-12-02", "1.00", "4.00")      # FY2025: 300 gain
+
+    later = fyreport.fy_cgt(pf, 2025)
+
+    # 300 − 100 carried = 200, halved by the discount.
+    assert (later.losses_carried_applied, later.discount, later.net_capital_gain) == (
+        100, 100, 100)
+    assert later.losses_carried_out == 0
+
+
+def test_an_earlier_loss_goes_to_the_gains_with_no_discount_first(pf):
+    """The taxpayer-favourable order, as for this year's own losses: a dollar
+    of loss on an undiscounted gain saves a dollar, on a discounted one fifty
+    cents."""
+    _sale(pf, "WIDGET", "2023-01-02", "2024-03-01", "5.00", "4.00")    # FY2024: 100 loss
+    _sale(pf, "ACME", "2022-01-03", "2024-12-02", "1.00", "4.00")      # FY2025: 300, >12m
+    _sale(pf, "NOVA", "2024-09-02", "2025-02-03", "1.00", "1.50")      # FY2025: 50, <12m
+
+    later = fyreport.fy_cgt(pf, 2025)
+
+    # 50 of the 100 cancels the 50 with no discount; 50 comes off the 300,
+    # and the 250 left is halved: 125.
+    assert (later.losses_carried_applied, later.discount, later.net_capital_gain) == (
+        100, 125, 125)
+
+
+def test_this_years_losses_come_off_before_an_earlier_years(pf):
+    _sale(pf, "WIDGET", "2023-01-02", "2024-03-01", "5.00", "4.00")    # FY2024: 100 loss
+    _sale(pf, "ACME", "2022-01-03", "2024-12-02", "1.00", "4.00")      # FY2025: 300 gain
+    _sale(pf, "GAMMA", "2024-08-01", "2025-01-06", "3.00", "2.00")     # FY2025: 100 loss
+
+    later = fyreport.fy_cgt(pf, 2025)
+
+    assert (later.losses_applied_discountable, later.losses_carried_applied) == (100, 100)
+    assert later.net_capital_gain == 50     # (300 − 100 − 100) / 2
+
+
+def test_a_years_own_net_loss_is_what_its_losses_leave_after_its_gains(pf):
+    """This year's losses meet its gains before an earlier year's do, so the
+    year's own net capital loss is what is left of them, and the earlier loss
+    carries on untouched beside it."""
+    _sale(pf, "WIDGET", "2023-01-02", "2024-03-01", "5.00", "4.50")    # FY2024:  50 loss
+    _sale(pf, "ACME", "2022-01-03", "2024-12-02", "1.00", "2.00")      # FY2025: 100 gain
+    _sale(pf, "GAMMA", "2024-08-01", "2025-01-06", "3.00", "1.50")     # FY2025: 150 loss
+
+    later = fyreport.fy_cgt(pf, 2025)
+
+    assert (later.net_capital_loss, later.losses_carried_applied,
+            later.losses_carried_out) == (50, 0, 100)
+
+
+def test_a_year_that_nets_to_a_loss_carries_it_with_the_earlier_ones(pf):
+    """Nothing was left to set an earlier loss against, so all of it carries
+    on, with this year's own."""
+    _sale(pf, "WIDGET", "2023-01-02", "2024-03-01", "5.00", "4.00")    # FY2024: 100 loss
+    _sale(pf, "GAMMA", "2024-08-01", "2025-01-06", "3.00", "2.50")     # FY2025:  50 loss
+    _sale(pf, "ACME", "2022-01-03", "2025-12-01", "1.00", "3.00")      # FY2026: 200 gain
+
+    middle = fyreport.fy_cgt(pf, 2025)
+    last = fyreport.fy_cgt(pf, 2026)
+
+    assert (middle.net_capital_loss, middle.losses_carried_in, middle.losses_carried_out) == (
+        50, 100, 150)
+    assert (last.losses_carried_in, last.net_capital_gain, last.losses_carried_out) == (
+        150, 25, 0)
+
+
+def test_a_year_with_no_sales_passes_an_earlier_loss_on(pf):
+    _sale(pf, "WIDGET", "2023-01-02", "2024-03-01", "5.00", "4.00")    # FY2024: 100 loss
+    _sale(pf, "ACME", "2022-01-03", "2025-12-01", "1.00", "3.00")      # FY2026: 200 gain
+
+    quiet = fyreport.fy_cgt(pf, 2025)
+
+    assert (quiet.losses_carried_in, quiet.losses_carried_out) == (100, 100)
+    assert fyreport.fy_cgt(pf, 2026).net_capital_gain == 50
+
+
+def test_a_year_that_cannot_be_worked_out_leaves_the_years_after_it_unknown(pf):
+    """Whether it made a loss to carry is not known, so neither is any later
+    year's net gain: it names the same sale."""
+    oversold = make_instrument(pf, "OVER", asset_class="share")
+    add_trade(pf, oversold, "2023-01-02", "buy", 100, "5.00")
+    add_trade(pf, oversold, "2024-03-01", "sell", 150, "4.00")         # FY2024: refused
+    _sale(pf, "ACME", "2022-01-03", "2024-12-02", "1.00", "4.00")      # FY2025: 300 gain
+
+    later = fyreport.fy_cgt(pf, 2025)
+
+    assert [sale.trade.date for sale in later.oversold] == [dt.date(2024, 3, 1)]
+    assert (later.disposals, later.net_capital_gain) == ([], 0)
+
+
+@freeze_time("2026-08-03")
+def test_the_fy_pages_and_the_api_show_a_loss_carried_forward(client, session_factory):
+    """A loss year read as a gain of nothing, under a green arrow."""
+    from test_api import bearer, issue_key
+
+    from test_routes import bind_to_only_portfolio, make_login
+
+    make_login(client, session_factory)
+    with session_factory() as s:
+        portfolio = bind_to_only_portfolio(s)
+        _sale(s, "WIDGET", "2023-01-02", "2024-03-01", "5.00", "2.00")    # FY2024: 300 loss
+        _sale(s, "ACME", "2022-01-03", "2024-12-02", "1.00", "4.00")      # FY2025: 300 gain
+        s.commit()
+        user_id, portfolio_id = portfolio.members[0].user_id, portfolio.id
+    html = {"accept": "text/html"}
+
+    loss_year = client.get("/", params={"fy": 2024}, headers=html).text
+    gain_year = client.get("/", params={"fy": 2025}, headers=html).text
+    api = client.get("/api/v1/fy/2025",
+                     headers=bearer(issue_key(session_factory, portfolio_id,
+                                              created_by=user_id))).json()["cgt"]
+
+    tile = re.search(r'<div class="tile[^"]*">\s*<span class="label">Net capital loss</span>'
+                     r'.*?</div>', loss_year, re.S).group(0)
+    assert 'class="tile down"' in tile and "300.00" in tile
+    assert "carried forward: 300.00" in tile
+    assert re.search(r"<td>Losses from earlier years</td><td class=\"num\">−"
+                     r"<span class=\"m\">300\.00</span>", gain_year)
+    assert (api["losses_carried_in"], api["losses_carried_applied"],
+            api["losses_carried_forward"], api["net_capital_gain"]) == (300, 300, 0, 0)
+
+
+def test_a_loss_carried_in_names_a_holding_an_earlier_year_left_out(pf):
+    """An earlier sale with no rate was left out of that year's figures, and
+    so out of the loss it carried."""
+    nova = make_instrument(pf, "NOVA", exchange="NASDAQ", asset_class="share",
+                           currency="USD")
+    add_trade(pf, nova, "2023-01-02", "buy", 100, "5.00", fx_rate=None)
+    add_trade(pf, nova, "2024-03-01", "sell", 100, "4.00", fx_rate=None)
+    _sale(pf, "ACME", "2022-01-03", "2024-12-02", "1.00", "4.00")
+
+    assert fyreport.fy_cgt(pf, 2025).withheld == ["NOVA"]
+
+
 
 
 def test_a_fy_with_no_disposals_is_all_zeros(pf):

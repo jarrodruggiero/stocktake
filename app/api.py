@@ -240,6 +240,11 @@ def get_fy(request: Request, year: int) -> dict:
                     "discount": _num(cgt.discount),
                     "net_capital_gain": _num(cgt.net_capital_gain),
                     "net_capital_loss": _num(cgt.net_capital_loss),
+                    # Earlier years' net capital losses: at the start of the
+                    # year, used this year, and carried on (s102-5(1)).
+                    "losses_carried_in": _num(cgt.losses_carried_in),
+                    "losses_carried_applied": _num(cgt.losses_carried_applied),
+                    "losses_carried_forward": _num(cgt.losses_carried_out),
                 }.items()},
                 "oversold": [
                     {

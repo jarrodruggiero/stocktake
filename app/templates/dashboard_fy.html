@@ -33,10 +33,15 @@
   {# Direction as a glyph as well as a colour — see the dashboard tiles. #}
   {% if r.cgt.oversold %}
   <div class="tile"><span class="label">Net capital gain</span><span class="big">–</span></div>
+  {% elif r.cgt.net_capital_loss %}
+  {% set loss = -r.cgt.net_capital_loss %}
+  <div class="tile {{ loss | trend }}">
+    <span class="label">Net capital loss</span><span class="big">{{ loss | arrow }}{{ r.cgt.net_capital_loss | cash }}</span>
+    <span class="sub">carried forward: {{ r.cgt.losses_carried_out | money_plain }}</span></div>
   {% else %}
   <div class="tile {{ r.cgt.net_capital_gain | trend }}">
     <span class="label">Net capital gain</span><span class="big">{{ r.cgt.net_capital_gain | arrow }}{{ r.cgt.net_capital_gain | cash }}</span>
-    {% if r.cgt.net_capital_loss %}<span class="sub">loss carried: {{ r.cgt.net_capital_loss | money_plain }}</span>{% endif %}</div>
+    {% if r.cgt.losses_carried_out %}<span class="sub">loss carried forward: {{ r.cgt.losses_carried_out | money_plain }}</span>{% endif %}</div>
   {% endif %}
 </section>
 {% if r.withheld %}
@@ -160,8 +165,8 @@ units than were held. Correct it or record the missing buy.</p>
   {% endfor %}
   {% elif r.cgt.disposals %}
   <p class="note">Each sale matched FIFO to the parcels it consumed. The discount halves a
-  gain on a parcel held over twelve months, and losses are applied before it —
-  the order the ATO uses.</p>
+  gain on a parcel held over twelve months, and losses, this year's and then
+  earlier years', are applied before it — the order the ATO uses.</p>
   <div class="tablewrap">
   <table>
     <thead><tr>
@@ -196,8 +201,15 @@ units than were held. Correct it or record the missing buy.</p>
       <tr><td>Gains on parcels held &gt; 12 months</td><td class="num">{{ r.cgt.gains_discountable | money }}</td></tr>
       <tr><td>Other gains</td><td class="num">{{ r.cgt.gains_other | money }}</td></tr>
       <tr><td>Capital losses</td><td class="num">−{{ r.cgt.losses | money }}</td></tr>
+      {% if r.cgt.losses_carried_in %}
+      <tr><td>Losses from earlier years</td><td class="num">−{{ r.cgt.losses_carried_applied | money }}</td></tr>
+      {% endif %}
       <tr><td>50% discount</td><td class="num">−{{ r.cgt.discount | money }}</td></tr>
+      {% if r.cgt.net_capital_loss %}
+      <tr><th>Net capital loss</th><th class="num">{{ r.cgt.net_capital_loss | money }}</th></tr>
+      {% else %}
       <tr><th>Net capital gain</th><th class="num">{{ r.cgt.net_capital_gain | money }}</th></tr>
+      {% endif %}
     </tbody>
   </table>
   </div>
