@@ -10,13 +10,15 @@ the network.
 
 from __future__ import annotations
 
+import datetime as dt
+import re
 import urllib.parse
 
 import pytest
 from sqlalchemy import select
 
 from app import federation, twofactor
-from app.models import ExternalIdentity, PortfolioMember, User, UserSession
+from app.models import ExternalIdentity, PortfolioInvite, PortfolioMember, User, UserSession
 from appcore import oidc
 from appcore.testing import FakeIdp
 from test_routes import make_login, session_csrf
@@ -360,21 +362,25 @@ def test_a_provider_session_id_is_kept_only_when_it_fits(
         assert newest.oidc_sid == kept
 
 
+def _invited(client, session_factory, oidc_on, role: str = "viewer") -> str:
+    """An invite's token, issued by an owner who then signs out, with
+    provisioning by invite."""
+    make_login(client, session_factory)
+    issued = client.post("/members/invite", follow_redirects=False, headers=HTML,
+                         data={"_csrf": session_csrf(session_factory), "role": role})
+    token = re.search(r"/invite/([A-Za-z0-9_-]+)", issued.text).group(1)
+    client.post("/logout", data={"_csrf": session_csrf(session_factory)},
+                follow_redirects=False)
+    oidc_on.provisioning = "invite"
+    return token
+
+
 def test_an_invite_carries_across_the_round_trip(
     client, session_factory, oidc_on, idp
 ):
     """The reason `provisioning: invite` is usable: the link somebody was sent
     has to survive being bounced through the provider and back."""
-    make_login(client, session_factory)
-    issued = client.post("/members/invite", follow_redirects=False,
-                         data={"_csrf": session_csrf(session_factory),
-                               "role": "viewer"})
-    token = issued.headers["location"].partition("invite=")[2]
-    client.post("/logout", data={"_csrf": session_csrf(session_factory)},
-                follow_redirects=False)
-    oidc_on.provisioning = "invite"
-
-    state = _begin(client, f"/login/oidc?invite={token}")
+    state = _begin(client, f"/login/oidc?invite={_invited(client, session_factory, oidc_on)}")
     resp = _callback(client, idp, state)
 
     assert resp.headers["location"] == "/"
@@ -383,6 +389,31 @@ def test_an_invite_carries_across_the_round_trip(
         member = db.scalar(select(PortfolioMember).where(
             PortfolioMember.user_id == made.id))
         assert member.role == "viewer"
+
+
+@pytest.mark.parametrize("spent", ["withdrawn", "used"])
+def test_an_invite_spent_during_the_round_trip_admits_nobody(
+    client, session_factory, oidc_on, idp, spent
+):
+    """Checked when the sign-in started and not again. Withdrawn while the
+    browser was at the provider, it still made the account and gave it the
+    role (decisions.md #116); used by somebody else meanwhile, it still made
+    an account, so one link made two."""
+    state = _begin(client, f"/login/oidc?invite={_invited(client, session_factory, oidc_on)}")
+    with session_factory() as db:
+        row = db.scalar(select(PortfolioInvite))
+        now = dt.datetime.now(dt.timezone.utc)
+        if spent == "withdrawn":
+            row.revoked_at = now
+        else:
+            row.used_at, row.used_by = now, db.scalar(select(User.id))
+        db.commit()
+
+    resp = _callback(client, idp, state)
+
+    assert "invitation" in urllib.parse.unquote(resp.headers["location"])
+    with session_factory() as db:
+        assert db.scalar(select(User).where(User.email == "member@example.test")) is None
 
 
 def test_invite_provisioning_refuses_somebody_without_one(

@@ -108,6 +108,32 @@ def test_an_invite_can_only_be_used_once(session_factory, owner_and_portfolio):
             PortfolioMember.user_id == second.id)) is None
 
 
+def test_two_requests_racing_with_one_link_cannot_both_join(session_factory,
+                                                           owner_and_portfolio):
+    """Each looked the invite up before the other had spent it, which the
+    sign-on path always does: it carries the row across the provider and
+    back. Marking it used was a read-then-write, so both joined. The UPDATE's
+    own condition is what refuses one."""
+    owner_id, portfolio_id = owner_and_portfolio
+    with session_factory() as db:
+        token = _invite(db, portfolio_id, owner_id)
+        first_id = fac.make_user(db, "first@example.test").id
+        second_id = fac.make_user(db, "second@example.test").id
+        db.commit()
+    with session_factory() as first, session_factory() as second:
+        mine, theirs = invites.lookup(first, token), invites.lookup(second, token)
+
+        invites.accept_row(first, mine, first.get(User, first_id))
+        first.commit()
+        with pytest.raises(invites.InviteError, match="already been used"):
+            invites.accept_row(second, theirs, second.get(User, second_id))
+        second.rollback()
+
+    with session_factory() as db:
+        assert db.scalar(select(PortfolioMember).where(
+            PortfolioMember.user_id == second_id)) is None
+
+
 def test_a_withdrawn_invite_is_refused(session_factory, owner_and_portfolio):
     owner_id, portfolio_id = owner_and_portfolio
     with session_factory() as db:

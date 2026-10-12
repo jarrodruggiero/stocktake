@@ -21,9 +21,9 @@ HTML = {"accept": "text/html"}
 
 def _issue(client, session_factory, role: str = "member") -> str:
     """Create an invite through the real endpoint and return its token."""
-    resp = client.post("/members/invite", follow_redirects=False,
+    resp = client.post("/members/invite", follow_redirects=False, headers=HTML,
                        data={"_csrf": session_csrf(session_factory), "role": role})
-    return re.search(r"invite=([^&]+)", resp.headers["location"]).group(1)
+    return re.search(r"/invite/([A-Za-z0-9_-]+)", resp.text).group(1)
 
 
 @pytest.fixture
@@ -37,13 +37,17 @@ def owner(client, session_factory):
 # --------------------------------------------------------------------------- #
 
 def test_an_owner_can_issue_a_link_and_it_is_shown_once(owner, session_factory):
-    token = _issue(owner, session_factory)
-    page = owner.get("/members?invite=" + token, headers=HTML).text
+    """In the response that made it, and never in an address. It used to
+    travel in a redirect's query string, and so into browser history and the
+    proxy's access log, as API keys once did (decisions.md #128). The database
+    keeps only the hash, so there is nothing to render a second time."""
+    resp = owner.post("/members/invite", follow_redirects=False, headers=HTML,
+                      data={"_csrf": session_csrf(session_factory), "role": "member"})
+    token = re.search(r"/invite/([A-Za-z0-9_-]+)", resp.text).group(1)
 
-    assert f"/invite/{token}" in page
-    # Gone from the page as soon as it is not in the URL: the database keeps
-    # only the hash, so there is nothing to render a second time.
+    assert resp.status_code == 200
     assert token not in owner.get("/members", headers=HTML).text
+    assert token not in owner.get("/members?invite=" + token, headers=HTML).text
 
 
 def test_only_an_owner_can_issue_one(client, session_factory):

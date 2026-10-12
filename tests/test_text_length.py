@@ -357,7 +357,7 @@ def test_an_invitation_cannot_create_an_account_with_text_too_long(
     make_login(client, session_factory)
     resp = client.post("/members/invite", follow_redirects=False,
                        data={"_csrf": session_csrf(session_factory), "role": "member"})
-    token = re.search(r"invite=([^&]+)", resp.headers["location"]).group(1)
+    token = re.search(r"/invite/([A-Za-z0-9_-]+)", resp.text).group(1)
     client.post("/logout", data={"_csrf": session_csrf(session_factory)},
                 follow_redirects=False)
     before = len(_users(session_factory))
@@ -462,7 +462,7 @@ def test_a_blank_name_with_a_long_email_is_cut_to_fit_on_an_invitation(
     make_login(client, session_factory)
     resp = client.post("/members/invite", follow_redirects=False,
                        data={"_csrf": session_csrf(session_factory), "role": "member"})
-    token = re.search(r"invite=([^&]+)", resp.headers["location"]).group(1)
+    token = re.search(r"/invite/([A-Za-z0-9_-]+)", resp.text).group(1)
     client.post("/logout", data={"_csrf": session_csrf(session_factory)},
                 follow_redirects=False)
 

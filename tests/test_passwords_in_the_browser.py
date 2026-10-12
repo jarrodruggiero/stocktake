@@ -124,7 +124,7 @@ def test_the_meter_says_how_strong_and_never_stops_a_save(client, session_factor
     make_login(client, session_factory)
     resp = client.post("/members/invite", follow_redirects=False,
                        data={"_csrf": session_csrf(session_factory), "role": "member"})
-    token = re.search(r"invite=([^&]+)", resp.headers["location"]).group(1)
+    token = re.search(r"/invite/([A-Za-z0-9_-]+)", resp.text).group(1)
     client.post("/logout", data={"_csrf": session_csrf(session_factory)},
                 follow_redirects=False)
     page = client.get(f"/invite/{token}", headers=HTML).text
