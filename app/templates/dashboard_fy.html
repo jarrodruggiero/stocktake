@@ -42,6 +42,9 @@
 {% if r.withheld %}
 <p class="note">Totals exclude {{ r.withheld | join(', ') }} — no exchange rate stored.</p>
 {% endif %}
+{% if r.far %}
+<p class="note">Converted at an exchange rate more than a week from the day: {{ r.far | join(', ') }}.</p>
+{% endif %}
 
 <section>
   <h2>Holdings at {{ r.asof }}</h2>

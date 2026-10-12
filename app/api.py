@@ -203,6 +203,8 @@ def get_fy(request: Request, year: int) -> dict:
             # Holdings every total below leaves out, for want of an exchange
             # rate: the figures are short of them, not wrong (decisions.md #5).
             "withheld": r["withheld"],
+            # Holdings converted at a rate more than a week from the day (#124).
+            "distant_rates": r["far"],
             "value": _num(r["total_value"]),
             "invested": _num(r["total_invested"]),
             "invested_this_fy": _num(r["activity"].invested),

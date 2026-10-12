@@ -986,6 +986,15 @@ figure or omit the holding, whereas a form can ask the person to read their
 contract note. It is #5 applied to an input rather than an output: an empty
 rate is repairable, a plausible wrong one is not.
 
+How far is a week (`FX_REACH_DAYS`). With the series fetched from
+`backfill_start`, the reach forward was years: a 2018 purchase took a January
+2020 rate as its cost base, and nothing said so. So the feed fetches each
+currency's rates from a week before its first trade or distribution, and the
+reach is a weekend or a holiday. The repair pass and the form's prefill take a
+rate only from the week before, since what they store is never re-derived; and
+a report that still converts at a rate more than a week from the day names the
+holding (`FxBook.far`), on the FY page and in the API's `distant_rates`.
+
 Zero is still not the right cost base for an employee share scheme, which is
 what prompted the change (issue #35). The ATO resets it to market value at the
 taxing point, and the taxing point also restarts the 12-month discount clock.
