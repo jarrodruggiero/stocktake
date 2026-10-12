@@ -362,3 +362,28 @@ def test_a_deactivated_account_does_not_sign_in_through_its_provider(session_fac
 
         with pytest.raises(federation.FederationError, match="no longer active"):
             federation.resolve(db, settings, an_identity(), None)
+
+
+def test_one_provider_per_configuration_so_discovery_is_fetched_once(app_module, monkeypatch):
+    """A new Provider was made for every call, and the configuration appcore
+    caches on it was fetched again each time. A changed setting is a
+    different provider."""
+    conf = app_module.settings.auth.oidc
+    monkeypatch.setattr(conf, "issuer", "https://idp.example.test")
+    first = federation.provider(app_module.settings)
+
+    assert federation.provider(app_module.settings) is first
+    monkeypatch.setattr(conf, "issuer", "https://elsewhere.example.test")
+    assert federation.provider(app_module.settings) is not first
+
+
+def test_what_discovery_said_is_asked_again_after_an_hour(app_module, monkeypatch):
+    """Kept for good, an endpoint the provider moved would need a restart."""
+    import time
+
+    monkeypatch.setattr(app_module.settings.auth.oidc, "issuer", "https://idp.example.test")
+    first = federation.provider(app_module.settings)
+    later = time.monotonic() + federation.DISCOVERY_SECONDS + 1
+    monkeypatch.setattr(federation.time, "monotonic", lambda: later)
+
+    assert federation.provider(app_module.settings) is not first

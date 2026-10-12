@@ -21,6 +21,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import secrets
+import time
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as DbSession
@@ -106,16 +107,29 @@ def unavailable_reason(settings: PortfolioSettings) -> str | None:
     return None
 
 
+# How long what a provider's discovery said is kept: an hour, so an endpoint
+# it moves is picked up without a restart.
+DISCOVERY_SECONDS = 3600
+
+_provider: tuple[tuple, float, oidc.Provider] | None = None
+
+
 def provider(settings: PortfolioSettings) -> oidc.Provider:
+    """The configured provider, one per configuration for up to an hour.
+    appcore keeps what discovery said on the instance, and a new one per call
+    fetched it again every time.
+    A changed setting is a different configuration, so it takes effect without
+    a restart."""
+    global _provider
     conf = settings.auth.oidc
-    return oidc.Provider(
-        issuer=conf.issuer or "",
-        client_id=conf.client_id or "",
-        client_secret=conf.client_secret,
-        redirect_uri=conf.redirect_uri or "",
-        scopes=tuple(conf.scopes),
-        client_auth=conf.client_auth,
-    )
+    key = (conf.issuer or "", conf.client_id or "", conf.client_secret,
+           conf.redirect_uri or "", tuple(conf.scopes), conf.client_auth)
+    now = time.monotonic()
+    if _provider is None or _provider[0] != key or now - _provider[1] > DISCOVERY_SECONDS:
+        _provider = (key, now, oidc.Provider(
+            issuer=key[0], client_id=key[1], client_secret=key[2],
+            redirect_uri=key[3], scopes=key[4], client_auth=key[5]))
+    return _provider[2]
 
 
 # --------------------------------------------------------------------------- #
