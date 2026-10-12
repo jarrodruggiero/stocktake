@@ -46,9 +46,9 @@ def with_acme(session_factory):
 
 
 def _holding_acme(client, session_factory):
-    """Signed in, with ACME on the portfolio's list: a statement is recorded
-    against a holding this portfolio has (decisions.md #139), not the first
-    instrument in the catalogue with its ticker."""
+    """Signed in, with ACME on the portfolio's list: a statement or a CSV row is
+    recorded against a holding this portfolio has (decisions.md #139), not the
+    first instrument in the catalogue with its ticker."""
     make_login(client, session_factory)
     with session_factory() as s:
         bind_to_only_portfolio(s)
@@ -176,7 +176,7 @@ def test_a_viewer_cannot_upload(client, session_factory):
 # --------------------------------------------------------------------------- #
 
 def test_committing_writes_the_previewed_trades(client, session_factory, with_acme):
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
     uid = staged_id(upload_csv(client, session_factory))
 
     resp = client.post(f"/imports-exports/csv/{uid}/commit",
@@ -195,7 +195,7 @@ def test_the_staged_file_is_cleared_after_committing(client, session_factory, wi
                                                      staging_dir):
     """It holds parsed trade data, so it must not linger once it is no longer
     needed."""
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
     uid = staged_id(upload_csv(client, session_factory))
     assert (staging_dir / f"{uid}.json").exists()
 
@@ -222,7 +222,7 @@ def test_a_trade_recorded_since_the_preview_is_skipped_at_commit(client, session
                                                                  with_acme):
     """The file is checked against the ledger again when it is committed: a
     row typed in by hand since the preview is a duplicate by then."""
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
     uid = staged_id(upload_csv(client, session_factory))
     with session_factory() as s:
         bind_to_only_portfolio(s)
@@ -273,7 +273,7 @@ def test_with_creation_allowed_a_new_ticker_is_offered_and_committed(client, ses
 
 def test_committing_twice_is_refused_rather_than_duplicating(client, session_factory,
                                                              with_acme):
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
     uid = staged_id(upload_csv(client, session_factory))
     client.post(f"/imports-exports/csv/{uid}/commit", data={"_csrf": session_csrf(session_factory)},
                 headers=HTML)
@@ -313,6 +313,9 @@ def test_another_accounts_staged_upload_cannot_be_committed(client, session_fact
     portfolio — reading data they were never shown.
     """
     make_login(client, session_factory, email="first@example.test", admin=True)
+    with session_factory() as s:
+        fac.hold(s, s.scalar(select(Instrument).where(Instrument.ticker == "ACME")))
+        s.commit()
     uid = staged_id(upload_csv(client, session_factory))
 
     # A second account, with a portfolio of its own.
@@ -370,7 +373,7 @@ def test_a_file_selling_more_than_is_held_cannot_be_committed(client, session_fa
     """A broker export covering the last year carries sales of shares bought
     before it starts. Committed, one left a negative holding and the FY page
     raised; now the row is refused in the preview, and at commit."""
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
     sale = ("Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
             "06/01/2025,Buy,ACME,100,5.00,9.50\n"
             "02/03/2025,Sell,ACME,150,6.00,9.50\n").encode()
@@ -396,7 +399,7 @@ def test_the_staged_rows_survive_the_round_trip_exactly(client, session_factory,
                                                         staging_dir):
     """The preview writes JSON and the commit reads it back; a lossy trip here
     would silently alter what gets imported."""
-    make_login(client, session_factory)
+    _holding_acme(client, session_factory)
     uid = staged_id(upload_csv(client, session_factory))
 
     staged = json.loads((staging_dir / f"{uid}.json").read_text(encoding="utf-8"))
@@ -826,7 +829,7 @@ def test_a_corrected_exchange_finds_the_listing_there(client, session_factory, w
     exchange is a text box, so it is typed as it comes: lower case, spaced."""
     _holding_acme(client, session_factory)
     with session_factory() as s:
-        fac.make_instrument(s, "ACMEE", exchange="NASDAQ", currency="USD")
+        fac.hold(s, fac.make_instrument(s, "ACMEE", exchange="NASDAQ", currency="USD"))
         s.commit()
     uid = resolve_id(upload_csv(client, session_factory, payload=TYPO_CSV))
 

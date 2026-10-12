@@ -371,6 +371,16 @@ def relabel(candidates: list[CandidateTrade], moves: dict[tuple[str, str], tuple
     return changed
 
 
+def _own(session: Session, ticker: str, exchange: str, own_ids: set[int]) -> Instrument | None:
+    """This portfolio's instrument for a row, never the catalogue's. Whether
+    some other portfolio holds a ticker is not this one's to learn (#139), so a
+    row for one is new here, exactly as for a ticker nobody holds."""
+    return session.scalars(
+        select(Instrument).where(Instrument.ticker == ticker, Instrument.exchange == exchange,
+                                 Instrument.id.in_(own_ids))
+    ).first()
+
+
 def annotate(session: Session, candidates: list[CandidateTrade], imports: ImportSettings) -> None:
     """Mark each candidate as new / duplicate / unknown-instrument.
 
@@ -384,11 +394,10 @@ def annotate(session: Session, candidates: list[CandidateTrade], imports: Import
     reason a row is new.
     """
     matching: list[tuple[CandidateTrade, list[Trade]]] = []
+    own_ids = queries.portfolio_instrument_ids(session)
     for c in candidates:
         c.status, c.detail = "new", ""
-        inst = session.scalars(
-            select(Instrument).where(Instrument.ticker == c.ticker, Instrument.exchange == c.exchange)
-        ).first()
+        inst = _own(session, c.ticker, c.exchange, own_ids)
         if inst is None:
             c.status = "unknown-instrument"
             # Refused when new instruments are off: the note under the table
@@ -428,10 +437,9 @@ def _refuse_shortfalls(session: Session, candidates: list[CandidateTrade]) -> No
     for c in candidates:
         if c.status in ("new", "unknown-instrument"):
             by_holding.setdefault((c.ticker, c.exchange), []).append(c)
+    own_ids = queries.portfolio_instrument_ids(session)
     for (ticker, exchange), rows in by_holding.items():
-        inst = session.scalars(
-            select(Instrument).where(Instrument.ticker == ticker, Instrument.exchange == exchange)
-        ).first()
+        inst = _own(session, ticker, exchange, own_ids)
         held = (list(session.scalars(select(Trade).where(Trade.instrument_id == inst.id)))
                 if inst is not None else [])
         for c, breach in _shortfalls(held, rows):
@@ -511,13 +519,12 @@ def commit(session: Session, candidates: list[CandidateTrade], imports: ImportSe
     refused = [c for c in candidates if c.status == "refused"]
     if refused:
         raise ValueError(refused[0].detail)
+    own_ids = queries.portfolio_instrument_ids(session)
     for c in candidates:
         if c.status == "duplicate":
             counts["duplicates_skipped"] += 1
             continue
-        inst = session.scalars(
-            select(Instrument).where(Instrument.ticker == c.ticker, Instrument.exchange == c.exchange)
-        ).first()
+        inst = _own(session, c.ticker, c.exchange, own_ids)
         if inst is None:
             if not imports.allow_new_instruments:
                 raise ValueError(f"unknown instrument {c.ticker} ({c.exchange})")
@@ -525,6 +532,13 @@ def commit(session: Session, candidates: list[CandidateTrade], imports: ImportSe
             problem = ticker_problem(c.ticker) or exchange_problem(c.exchange)
             if problem:
                 raise ValueError(f"{problem} (got {c.ticker!r} on {c.exchange!r})")
+            # New to this portfolio, and only now looked for in the shared
+            # catalogue (#125), which the preview could not tell from new.
+            inst = session.scalars(
+                select(Instrument).where(Instrument.ticker == c.ticker,
+                                         Instrument.exchange == c.exchange)
+            ).first()
+        if inst is None:
             inst = Instrument(
                 ticker=c.ticker,
                 exchange=c.exchange,

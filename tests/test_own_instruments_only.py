@@ -13,13 +13,16 @@ BHP on different exchanges each risked being shown the other's.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from sqlalchemy import select
 from test_api import bearer, issue_key
+from test_imports_web import staged_id, upload_csv
 
 import factories as fac
 from app import queries, tenancy
-from app.models import Portfolio, Trade
+from app.models import Instrument, Portfolio, Trade
 from test_routes import make_login, session_csrf
 
 HTML = {"accept": "text/html"}
@@ -234,3 +237,88 @@ def test_a_statement_is_recorded_against_this_portfolios_own_holding(
         recorded = [(s.get(Instrument, d.instrument_id).name, d.portfolio_id)
                     for d in s.scalars(select(Dividend))]
     assert recorded == ([("BHP on the ASX", ids["mine"])] if ticker == "BHP" else [])
+
+
+def test_the_charts_keep_to_this_portfolios_instruments(client, session_factory):
+    """The daily series read the whole catalogue, so another portfolio's
+    holdings were named and dated on this portfolio's charts."""
+    make_login(client, session_factory)
+    ids = _theirs(session_factory)
+    with session_factory() as s:
+        tenancy.allow_unscoped(s)
+        for inst in s.scalars(select(Instrument)):
+            mine = inst.ticker in ("ACME", "BHP") and inst.exchange == "ASX"
+            fac.add_price(s, inst, "2026-01-08" if mine else "2026-01-09", "10.00")
+        s.commit()
+
+    with session_factory() as s:
+        tenancy.bind(s, ids["mine"], None)
+        series = queries.portfolio_series(s)
+        grouped = queries.grouped_series(s, "ticker")
+
+    assert series["excluded"] == [] and grouped["excluded"] == []
+    assert "2026-01-09" not in [str(d) for d in [*series["dates"], *grouped["dates"]]]
+    assert sorted(grouped["groups"]) == ["ACME", "BHP"]
+
+
+def _row(page: str, ticker: str) -> str:
+    row = next(r for r in re.findall(r"<tr\b.*?</tr>", page, re.S) if f">{ticker}<" in r)
+    return " ".join(re.sub(r"<[^>]+>", " ", row).replace(ticker, "X").split())
+
+
+def test_a_csv_row_for_a_strangers_ticker_is_new_here_like_any_other(client, session_factory):
+    """The preview looked each row's instrument up in the whole catalogue, so a
+    row for a ticker only another portfolio holds came back plain "new", and
+    one nobody holds came back "not in this portfolio". The add form is careful
+    that the two never read differently (#139)."""
+    make_login(client, session_factory)
+    _theirs(session_factory)
+
+    page = upload_csv(client, session_factory, b"Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+                                               b"06/01/2025,Buy,OMEGA,1,5.00,0\n"
+                                               b"06/01/2025,Buy,NOBODY,1,5.00,0\n").text
+
+    assert _row(page, "OMEGA") == _row(page, "NOBODY")
+
+
+def test_a_strangers_instrument_is_the_one_a_csv_trade_goes_on(client, session_factory,
+                                                               app_module, monkeypatch):
+    """New here, and committed onto the catalogue's entry, as the add form
+    uses it (#125): not a second OMEGA beside the first."""
+    monkeypatch.setattr(app_module.settings.imports, "allow_new_instruments", True)
+    make_login(client, session_factory)
+    _theirs(session_factory)
+
+    page = upload_csv(client, session_factory, b"Trade Date,Buy/Sell,Code,Units,Price,Brokerage\n"
+                                               b"06/01/2025,Buy,OMEGA,1,5.00,0\n")
+    client.post(f"/imports-exports/csv/{staged_id(page)}/commit", headers=HTML,
+                data={"_csrf": session_csrf(session_factory)}, follow_redirects=False)
+
+    assert "will be created" in _row(page.text, "OMEGA")
+    with session_factory() as s:
+        tenancy.allow_unscoped(s)
+        omega = s.scalars(select(Instrument).where(Instrument.ticker == "OMEGA")).all()
+        assert len(omega) == 1
+        assert len(s.scalars(select(Trade).where(Trade.instrument_id == omega[0].id)).all()) == 2
+
+
+def test_one_ticker_that_cannot_be_converted_leaves_its_namesake_in(client, session_factory):
+    """Leaving out went by ticker, so this portfolio's NYSE BHP, in a currency
+    with no stored rate, took its ASX BHP out of every chart too."""
+    make_login(client, session_factory)
+    with session_factory() as s:
+        mine = s.scalar(select(Portfolio))
+        for exchange, currency in (("ASX", "AUD"), ("NYSE", "USD")):
+            bhp = fac.make_instrument(s, "BHP", exchange=exchange, currency=currency)
+            fac.add_trade(s, bhp, "2026-01-05", "buy", 10, "40.00", portfolio_id=mine.id)
+            fac.add_price(s, bhp, "2026-01-08", "41.00")
+        s.commit()
+
+    with session_factory() as s:
+        tenancy.bind(s, mine.id, None)
+        series = queries.portfolio_series(s)
+        grouped = queries.grouped_series(s, "exchange")
+
+    assert series["excluded"] == ["BHP"]
+    assert series["value"] and float(series["value"][-1]) == 410.0     # the ASX one, priced
+    assert sorted(grouped["groups"]) == ["ASX"]
