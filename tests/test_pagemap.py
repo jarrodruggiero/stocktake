@@ -454,6 +454,8 @@ def test_a_page_with_no_text_layer_falls_back_to_ocr(monkeypatch):
             buffer.write(b"png")
 
     class FakePage:
+        width, height = 595, 842        # A4, in points
+
         def to_image(self, resolution):
             return type("I", (), {"original": FakeImage()})()
 
@@ -498,6 +500,8 @@ def test_ocr_boxes_are_not_rescaled(monkeypatch):
             buffer.write(b"png")
 
     class FakePage:
+        width, height = 595, 842        # A4, in points
+
         def to_image(self, resolution):
             return type("I", (), {"original": FakeImage()})()
 
@@ -538,6 +542,8 @@ def test_no_text_layer_and_no_tesseract_is_an_empty_page_not_a_crash(monkeypatch
             buffer.write(b"png")
 
     class FakePage:
+        width, height = 595, 842        # A4, in points
+
         def to_image(self, resolution):
             return type("I", (), {"original": FakeImage()})()
 

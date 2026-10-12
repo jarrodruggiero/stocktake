@@ -144,11 +144,13 @@ def _render(data: bytes, resolution: int) -> list[RenderedPage]:
 
     from . import ocr
 
-    scale = resolution / 72
     pages: list[RenderedPage] = []
     with pdfplumber.open(io.BytesIO(data)) as pdf:
         for page in list(pdf.pages)[:MAX_PAGES]:
-            image = page.to_image(resolution=resolution)
+            # Never more than ocr.MAX_PIXELS, whatever size the page says it is.
+            dpi = ocr.resolution_for(page, resolution)
+            scale = dpi / 72
+            image = page.to_image(resolution=dpi)
             buffer = io.BytesIO()
             image.original.save(buffer, format="PNG")
 

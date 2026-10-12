@@ -246,6 +246,8 @@ def test_the_page_limit_is_enforced(monkeypatch):
     pages = []
 
     class FakePage:
+        width, height = 595, 842        # A4, in points
+
         def to_image(self, resolution):
             pages.append(1)
             return FakeImage()

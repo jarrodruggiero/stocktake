@@ -13,6 +13,7 @@ into a sentence rather than a traceback.
 from __future__ import annotations
 
 import io
+import math
 import shutil
 import subprocess
 from functools import lru_cache
@@ -28,6 +29,13 @@ MAX_PAGES = 4
 # enormous. 300 is the scanning convention and what its models were trained
 # near; 150 loses decimal points, and 600 is four times the pixels for no gain.
 RESOLUTION = 300
+
+# The most pixels one page is drawn in, here or by the visual mapper, whatever
+# size the PDF gives it. Twelve million is US Legal at 300 dpi with room to
+# spare, and drawing that peaked near 200 MiB for the whole process. A bigger
+# page is drawn at a lower resolution instead, so a large-format scan still
+# reads, if less sharply: A3 at about 250 dpi.
+MAX_PIXELS = 12_000_000
 
 # Per page. Generous for a statement and short enough that a pathological file
 # cannot hold a worker thread forever.
@@ -127,6 +135,15 @@ def word_boxes(image) -> list[dict]:
     return words
 
 
+def resolution_for(page, wanted: int) -> int:
+    """`wanted`, or less, so that `page` is drawn in MAX_PIXELS at most. Whole
+    dots per inch, rounded down, so the budget is never over by a rounding."""
+    points = float(page.width) * float(page.height)
+    if points <= 0:
+        return wanted
+    return max(1, min(wanted, math.floor(72 * math.sqrt(MAX_PIXELS / points))))
+
+
 def read_pdf(data: bytes) -> str:
     """Every page of a scanned PDF, rasterised and read.
 
@@ -142,5 +159,6 @@ def read_pdf(data: bytes) -> str:
     out = []
     with pdf:
         for page in list(pdf.pages)[:MAX_PAGES]:
-            out.append(_read_image(page.to_image(resolution=RESOLUTION).original))
+            image = page.to_image(resolution=resolution_for(page, RESOLUTION))
+            out.append(_read_image(image.original))
     return "\n".join(out)
