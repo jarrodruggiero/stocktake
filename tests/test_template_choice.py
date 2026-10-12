@@ -519,7 +519,7 @@ def test_the_editors_way_back_follows_where_you_came_from(client, session_factor
     page = client.post("/imports-exports/statement/visual/edit?return=/holdings", headers=HTML,
                        data={"_csrf": session_csrf(session_factory), "token": token}).text
 
-    back = re.search(r'class="backlink" href="([^"]*)">\s*<button[^>]*>\s*&larr;\s*([^<]*?)\s*<',
+    back = re.search(r'class="backlink button secondary" href="([^"]*)">\s*&larr;\s*([^<]*?)\s*<',
                      page)
     assert back.groups() == ("/holdings", "Holdings")
 

@@ -82,7 +82,9 @@ def test_a_table_heading_is_legible_on_its_band(mode):
     ("button", "on-accent"), ("button.primary", "on-accent"), ("a.button", "on-accent"),
 ])
 def test_the_words_are_drawn_in_the_colour_measured_above(selector, token):
-    rule = re.search(r"(?m)^" + re.escape(selector) + r"\s*\{([^}]*)\}", CSS)
+    # The selector alone or in a list: `button, a.button {` is a rule for both.
+    rule = re.search(r"(?m)^(?:[^{}\n]*,\s*)?" + re.escape(selector)
+                     + r"(?:\s*,[^{}]*)?\s*\{([^}]*)\}", CSS)
 
     assert rule, selector
     assert re.search(r"(?<![\w-])color:\s*var\(--" + token + r"\)", rule.group(1)), selector

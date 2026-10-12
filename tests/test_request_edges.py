@@ -100,7 +100,7 @@ def test_a_return_path_naming_no_real_year_keeps_the_usual_label(
 
     resp = client.get("/holding/ACME", params={"return": f"/?fy={year}"}, headers=HTML)
 
-    assert resp.status_code == 200 and "&larr; Portfolio</button>" in resp.text
+    assert resp.status_code == 200 and "&larr; Portfolio</a>" in resp.text
 
 
 def test_a_bare_nan_in_api_json_is_a_422_not_a_500(client, session_factory, signed_in):

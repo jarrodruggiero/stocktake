@@ -311,14 +311,18 @@ td.up { color: var(--up); } td.down { color: var(--down); }
    <button> being the submit that matters ("Save plan", "Save columns"), and
    `.secondary` is what steps down from it. Flipping that default would quietly
    demote every form on the site. */
-button { background: var(--accent-grad); color: var(--on-accent); border: 1px solid transparent;
-  border-radius: var(--radius-xs); padding: 0.45rem 0.95rem;
-  font-size: var(--fs-body); font-weight: 550; cursor: pointer; margin-top: var(--sp-2);
-  box-shadow: var(--shadow-sm);
+button, a.button { background: var(--accent-grad); color: var(--on-accent);
+  border: 1px solid transparent; border-radius: var(--radius-xs); padding: 0.45rem 0.95rem;
+  font-family: inherit; font-size: var(--fs-body); font-weight: 550; cursor: pointer;
+  margin-top: var(--sp-2); box-shadow: var(--shadow-sm);
   transition: filter 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease,
               border-color 0.14s ease, color 0.14s ease; }
-button:hover { filter: brightness(1.07); }
-button:active { transform: translateY(1px); }
+/* A link that acts is drawn as a button (style.md): what the browser gives a
+   <button> and not an <a>. */
+a.button { display: inline-block; line-height: normal; letter-spacing: normal;
+  text-align: center; text-decoration: none; }
+button:hover, a.button:hover { filter: brightness(1.07); }
+button:active, a.button:active { transform: translateY(1px); }
 button[disabled] { filter: grayscale(0.7) opacity(0.6); cursor: default; }
 /* Focus has to be visible on glass, where a faint ring disappears into the
    panel behind it. */
@@ -367,7 +371,7 @@ pre.note { overflow-x: auto; background: var(--sunken); border-radius: 8px; padd
 .plot { position: relative; height: 260px; }
 .chartcard.wide .plot { height: 340px; }
 .rangebar { display: flex; gap: 0.4rem; margin: 1rem 0 0; }
-.rangebar button { background: var(--panel); color: var(--text); border: 1px solid var(--line); margin: 0; padding: 0.25rem 0.7rem; font-size: 0.8rem; }
+.rangebar button, .rangebar a.button { background: var(--panel); color: var(--text); border: 1px solid var(--line); margin: 0; padding: 0.25rem 0.7rem; font-size: 0.8rem; }
 .rangebar button.active { border-color: var(--accent); color: var(--accent); }
 details.tableview { margin-top: 0.6rem; }
 details.tableview summary { color: var(--muted); font-size: 0.8rem; cursor: pointer; }
@@ -580,11 +584,12 @@ code.reveal { word-break: break-all; }
 .headside { display: flex; flex-direction: column; align-items: flex-end; gap: 0.35rem; }
 .headactions { display: flex; align-items: center; gap: 0.5rem; }
 .headactions form { margin: 0; }
-.headactions button { margin-top: 0; }
+.headactions button, .headactions a.button { margin-top: 0; }
 
 /* One primary action per page. Everything else on the page is quieter than
    this, which is the whole point — a row of equal buttons has no hierarchy. */
-button.primary { background: var(--accent-grad); border-color: transparent; color: var(--on-accent); }
+button.primary, a.button.primary { background: var(--accent-grad); border-color: transparent;
+  color: var(--on-accent); }
 
 /* Status, not an action: smaller and quieter than the buttons above it. */
 .feedline { display: flex; align-items: center; gap: 0.4rem; margin: 0;
@@ -630,11 +635,9 @@ button.primary { background: var(--accent-grad); border-color: transparent; colo
 
 /* The way back from a spoke page. Above the title, because that is where a
    back control is looked for and because putting it beside the title makes it
-   compete with the title. */
-/* A real button, not a link: it is an action people expect to press, and it
-   sat as underlined text among a page of buttons. */
-.backlink { display: inline-block; text-decoration: none; margin-bottom: 0.4rem; }
-.backlink button { margin: 0; font-size: 0.8rem; padding: 0.3rem 0.7rem; }
+   compete with the title. Drawn as a button: it is an action people expect to
+   press, and it sat as underlined text among a page of buttons. */
+a.backlink.button { margin: 0 0 0.4rem; font-size: 0.8rem; padding: 0.3rem 0.7rem; }
 
 /* --- side-by-side panels that stack on narrow screens ------------------- */
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; align-items: start; }
@@ -1126,17 +1129,16 @@ form.inlineform { display: flex; gap: 0.8rem; align-items: flex-end; flex-wrap: 
 form.inlineform label { flex: 0 0 12rem; margin: 0; }
 form.inlineform button { margin: 0; }
 
-a.button { background: var(--accent-grad); color: var(--on-accent); border-radius: var(--radius-xs);
-  padding: 0.45rem 0.95rem; text-decoration: none; display: inline-block; box-shadow: var(--shadow-sm); }
 /* The step down from the filled primary: a real surface with a hairline, so it
    reads as a control rather than as text that happens to be clickable. */
-button.secondary { background: var(--sunken); color: var(--text); border: 1px solid var(--line);
-  box-shadow: none; }
-button.secondary:hover { border-color: var(--accent); color: var(--accent); filter: none; }
+button.secondary, a.button.secondary { background: var(--sunken); color: var(--text);
+  border: 1px solid var(--line); box-shadow: none; }
+button.secondary:hover, a.button.secondary:hover { border-color: var(--accent); color: var(--accent);
+  filter: none; }
 /* For a button inside a table row, where the full size dominates the data it
    sits beside. Size only — it does not change what a button MEANS, so it
    combines with `.secondary` or `.danger` rather than replacing either. */
-button.small { padding: 0.2rem 0.55rem; font-size: var(--fs-small); }
+button.small, a.button.small { padding: 0.2rem 0.55rem; font-size: var(--fs-small); }
 
 /* How strong a new password is: five steps, and the word beside them carries
    the meaning, never the colour alone. */
@@ -1307,7 +1309,7 @@ dialog h2 { margin-top: 0; }
 /* A table's heading with its tools on the right, over the table they act on. */
 .tablehead { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
 .tablehead .tabletools { margin-left: auto; display: flex; align-items: center; gap: 0.5rem; }
-.tablehead .tabletools button { margin-top: 0; }
+.tablehead .tabletools button, .tablehead .tabletools a.button { margin-top: 0; }
 .inccy { font-size: 0.75rem; font-weight: 400; color: var(--muted);
   text-transform: uppercase; letter-spacing: 0.04em; }
 
@@ -1324,9 +1326,9 @@ dialog h2 { margin-top: 0; }
   gap: 0.6rem; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--line); }
 .calbar h2 { margin: 0; font-size: 1rem; }
 .calnav { display: flex; gap: 0.3rem; }
-.calnav button { margin: 0; padding: 0.2rem 0.6rem; font-size: 0.8rem;
+.calnav button, .calnav a.button { margin: 0; padding: 0.2rem 0.6rem; font-size: 0.8rem;
   background: var(--sunken); color: var(--text); border: 1px solid var(--line); }
-.calnav button:hover { border-color: var(--accent); color: var(--accent); }
+.calnav button:hover, .calnav a.button:hover { border-color: var(--accent); color: var(--accent); }
 /* **Never stretch the table.** This was `flex: 1`, which asks the browser to
    hand a <table> surplus height and leaves it to decide where that height
    goes. Chromium absorbs it into the body rows; Firefox gives it to the
@@ -1359,7 +1361,7 @@ dialog h2 { margin-top: 0; }
 .upactions { grid-column: 1 / -1; display: flex; gap: 0.8rem;
   align-items: center; }
 .upactions form { margin: 0; }
-.upactions button { margin: 0; }
+.upactions button, .upactions a.button { margin: 0; }
 
 /* The plan editor: fields beside a preview of the dates they produce. */
 .planedit { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem;
@@ -1440,7 +1442,8 @@ dialog h2 { margin-top: 0; }
 .rowactions button { margin: 0; }
 /* Destroys something: solid red with white text in every theme. Only the label
    was red once, on the purple default, and test users read that as primary. */
-button.danger { background: var(--danger); color: #ffffff; border-color: transparent; }
+button.danger, a.button.danger { background: var(--danger); color: #ffffff;
+  border-color: transparent; }
 button.linkish.danger { background: none; color: var(--down); }
 /* Pushes a destructive button away from Save and Cancel in the same row. */
 .commitbar .apart { margin-left: auto; }
@@ -1523,7 +1526,7 @@ details.summary > summary + * { margin-top: 0.7rem; }
   font-size: 0.9rem; line-height: 1.7; }
 /* A button sitting on a section heading: smaller than a page action, and it
    must not inherit the heading's weight or size. */
-h2 > a > button, h2 > button { font-size: 0.78rem; padding: 0.25rem 0.6rem;
+h2 > a.button, h2 > button { font-size: 0.78rem; padding: 0.25rem 0.6rem;
   margin: 0 0 0 0.5rem; font-weight: 400; vertical-align: middle; }
 /* A heading whose action must be able to LEAVE the line. Inline, a button
    beside a two-word title is fine at 1400px and shoves the title into a
@@ -1531,7 +1534,7 @@ h2 > a > button, h2 > button { font-size: 0.78rem; padding: 0.25rem 0.6rem;
    gap replaces the margin above so the two do not stack up. */
 .sectionhead { display: flex; flex-wrap: wrap; align-items: baseline;
   gap: 0.2rem 0.5rem; }
-.sectionhead > a > button, .sectionhead > button { margin-left: 0; }
+.sectionhead > a.button, .sectionhead > button { margin-left: 0; }
 
 /* --- the Portfolio page's performance chart ----------------------------- */
 .summarycard { background: var(--panel); border: 1px solid var(--line);
@@ -1552,11 +1555,12 @@ h2 > a > button, h2 > button { font-size: 0.78rem; padding: 0.25rem 0.6rem;
 table.calendar { margin-top: 0; }
 table.calendar th { font-size: 0.68rem; padding: 0.3rem 0.2rem;
   letter-spacing: 0.02em; font-weight: 600; }
-/* The account menu's two actions, side by side under the switcher. */
-.menuactions { display: flex; gap: 0.5rem; }
-.menuactions form { margin: 0; flex: 1; }
-.menuactions a { flex: 1; }
-.menuactions button { margin: 0; width: 100%; }
+/* The account menu's two actions, side by side under the switcher, in two
+   equal columns: flex grew a link's padding along with it, so a link drawn as
+   a button came out wider than the button in a form beside it. */
+.menuactions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.menuactions form { margin: 0; }
+.menuactions button, .menuactions a.button { margin: 0; width: 100%; }
 
 /* The account page in two columns on desktop: what the app looks like on the
    left, how you get into it on the right. `.narrow` is a max-width for a
@@ -1820,7 +1824,7 @@ body.rotdragging .rotchip:hover { border-color: var(--line); color: var(--text);
   /* Natural width, wrapping onto a second line when they must. `flex: 1 1 auto`
      stretched the primary action across the whole screen, which made a Record
      trade button the largest thing on the page. */
-  .headactions button { flex: 0 0 auto; }
+  .headactions button, .headactions a.button { flex: 0 0 auto; }
   .feedline { justify-content: flex-start; }
 
   /* Tiles: two up, which is what fits a phone once the number does. */

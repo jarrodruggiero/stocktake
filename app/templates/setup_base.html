@@ -24,8 +24,7 @@
     {# A way back, so noticing a mistake on the summary does not mean starting
        again. Absent on the first step, which has nothing behind it. #}
     {% if wizard_back %}
-    <a class="backlink" href="{{ wizard_back }}"><button type="button"
-       class="secondary">&larr; Back</button></a>
+    <a class="backlink button secondary" href="{{ wizard_back }}">&larr; Back</a>
     {% endif %}
     {% if heading %}<h1>{{ heading }}</h1>{% endif %}
     {% if intro %}<p class="wizintro">{{ intro }}</p>{% endif %}

@@ -142,16 +142,21 @@ request that touches `app/templates` or `app/static`:
 else: cancel, back, opening another tool, an auxiliary action. `.danger` is for
 something that destroys data. One primary per form.
 
-**A link that acts gets wrapped in a button.** Anything that changes state,
+**A link that acts is drawn as a button.** Anything that changes state,
 opens a dialog or navigates to a form for changing something reads as a
-control, not as text that happens to be clickable:
+control, not as text that happens to be clickable. It stays one element, a
+link with the button's classes:
 
 ```jinja
-<a href="/trade/{{ id }}/edit"><button type="button"
-   class="secondary small">Edit</button></a>
+<a class="button secondary small" href="/trade/{{ id }}/edit">Edit</a>
 ```
 
-`button.small` exists for buttons inside a table row, where full size dominates
+Never a `<button>` inside an `<a>`: that is invalid HTML, it takes two tab
+stops, and the two can be named differently. `a.button` takes every variant a
+button does, and a rule written for `button` in one place needs `a.button`
+beside it (`test_links_as_buttons.py` compares the two).
+
+`.small` exists for buttons inside a table row, where full size dominates
 the data beside it. It changes size only, so it combines with `.secondary` or
 `.danger` rather than replacing either.
 

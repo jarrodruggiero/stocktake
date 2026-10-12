@@ -92,7 +92,7 @@
            actions, and a link above a differently-shaped button read as two
            unrelated things. #}
         <div class="menuactions">
-          <a href="/profile"><button type="button" class="secondary">Settings</button></a>
+          <a class="button secondary" href="/profile">Settings</a>
           <form method="post" action="/logout">
             <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
             <button class="secondary" type="submit">Log out</button>

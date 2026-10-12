@@ -33,11 +33,11 @@
     <header class="calbar">
       <h2>{{ month_label }}</h2>
       <div class="calnav">
-        <a href="/schedule?year={{ prev[0] }}&month={{ prev[1] }}"
-           aria-label="Previous month"><button type="button">←</button></a>
-        <a href="/schedule"><button type="button">Today</button></a>
-        <a href="/schedule?year={{ next[0] }}&month={{ next[1] }}"
-           aria-label="Next month"><button type="button">→</button></a>
+        <a class="button" href="/schedule?year={{ prev[0] }}&month={{ prev[1] }}"
+           aria-label="Previous month">←</a>
+        <a class="button" href="/schedule">Today</a>
+        <a class="button" href="/schedule?year={{ next[0] }}&month={{ next[1] }}"
+           aria-label="Next month">→</a>
       </div>
     </header>
     <table class="calendar">
@@ -88,7 +88,7 @@
              imply you can record the third buy before the first. #}
           {% if e.kind == 'buy-planned' and loop.first and auth.can_write %}
           <div class="upactions">
-            <a href="/schedule/complete"><button type="button" class="secondary">Record buy</button></a>
+            <a class="button secondary" href="/schedule/complete">Record buy</a>
             <form action="/schedule/skip" method="post" class="inline">
               <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
               <input type="hidden" name="ticker" value="{{ e.ticker }}">

@@ -5,8 +5,7 @@
 {# The other editor reached from a holding's ledger, and it gets the same way
    out as the trade editor. There is no `?return=` here — a distribution is
    only ever opened from its own instrument's page. #}
-<a class="backlink" href="{{ holding_href(inst.ticker, inst.exchange) }}"><button type="button"
-   class="secondary">&larr; {{ inst.ticker }}</button></a>
+<a class="backlink button secondary" href="{{ holding_href(inst.ticker, inst.exchange) }}">&larr; {{ inst.ticker }}</a>
 
 <h1>Edit {{ inst.ticker }} distribution</h1>
 {% if drp %}

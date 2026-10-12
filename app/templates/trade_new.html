@@ -5,8 +5,7 @@
 {# Where this form lets you out. `return_to` is decided in the route and is the
    SAME path the delete button below posts back to — two controls on one page
    that both mean "I am finished here" must not land in different places. #}
-<a class="backlink" href="{{ return_to }}"><button type="button"
-   class="secondary">&larr; {{ back_label }}</button></a>
+<a class="backlink button secondary" href="{{ return_to }}">&larr; {{ back_label }}</a>
 
 {% if edit %}
 {# Move sits with the heading, the same size and place as every other page's
