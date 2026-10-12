@@ -24,8 +24,17 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from . import auth, clock, fyreport, money, plans, queries
-from .models import WRITE_ROLES, Dividend, Instrument, Portfolio, Trade, ticker_problem
+from . import auth, clock, fyreport, money, plans, pricefeed, queries
+from .models import (
+    WRITE_ROLES,
+    Dividend,
+    Instrument,
+    Portfolio,
+    Trade,
+    currency_problem,
+    exchange_problem,
+    ticker_problem,
+)
 from .tenancy import owned
 
 router = APIRouter(prefix="/api/v1", tags=["api"])
@@ -268,10 +277,19 @@ def get_plan(request: Request) -> dict:
 # NaN and Infinity, but `1E+999999` is finite, and SQLite stores it as a float
 # that reads back as Infinity (and then every total fails) while Postgres
 # refuses it with an overflow. The same rule the forms use, money.parse.
-class TradeIn(BaseModel):
-    ticker: str
-    # Needed only for a ticker this portfolio holds on more than one exchange.
+class NewInstrument(BaseModel):
+    """Where an instrument trades: needed for one this portfolio has not got
+    yet, which is then added as the app's add form adds it. Ignored for an
+    instrument the shared catalogue already has (#139)."""
+
+    # Also needed for a ticker this portfolio holds on more than one exchange.
     exchange: str | None = Field(default=None, max_length=Instrument.exchange.type.length)
+    currency: str | None = Field(default=None, max_length=Instrument.currency.type.length)
+    asset_class: str = Field(default="share", pattern="^(etf|share|crypto)$")
+
+
+class TradeIn(NewInstrument):
+    ticker: str
     type: str = Field(pattern="^(buy|sell|drp)$")
     date: dt.date
     units: Decimal = Field(gt=0, lt=money.limit(Trade.quantity))
@@ -285,9 +303,8 @@ class TradeIn(BaseModel):
     note: str | None = Field(default=None, max_length=Trade.note.type.length)
 
 
-class DividendIn(BaseModel):
+class DividendIn(NewInstrument):
     ticker: str
-    exchange: str | None = Field(default=None, max_length=Instrument.exchange.type.length)
     date: dt.date
     cash_amount: Decimal = Field(gt=0, lt=money.limit(Dividend.cash_amount))
     franking_credits: Decimal | None = Field(
@@ -296,27 +313,48 @@ class DividendIn(BaseModel):
     note: str | None = Field(default=None, max_length=Dividend.note.type.length)
 
 
-def _instrument(db, ticker: str, exchange: str | None = None) -> Instrument:
-    problem = ticker_problem(ticker)
+def _instrument(request: Request, db, body: TradeIn | DividendIn) -> Instrument:
+    """This portfolio's instrument for `body`, adding it if `body` says where it
+    trades. Whether another portfolio has it already never changes the answer:
+    saying so would tell this one what the other holds (#139)."""
+    problem = ticker_problem(body.ticker)
     if problem:
         raise HTTPException(400, problem)
-    found = queries.held_as(db, ticker, exchange)
+    ticker = body.ticker.strip().upper()
+    found = queries.held_as(db, ticker, body.exchange)
     if len(found) > 1:
         # One code on two exchanges here: say which, rather than taking the older.
         raise HTTPException(409, f"{found[0].ticker} is held on "
                                  f"{' and '.join(i.exchange for i in found)} — say which in "
                                  "`exchange`.")
-    if not found:
-        raise HTTPException(
-            404, f"unknown instrument {ticker!r} — add it in the app first"
-        )
-    return found[0]
+    if found:
+        return found[0]
+    if not request.app.state.settings.imports.allow_new_instruments:
+        raise HTTPException(404, f"{ticker} isn't in this portfolio. Add it in the app first.")
+    if not (body.exchange and body.currency):
+        raise HTTPException(404, f"{ticker} isn't in this portfolio. To add it, give its "
+                                 "exchange and currency.")
+    exchange, currency = body.exchange.strip().upper(), body.currency.strip().upper()
+    problem = exchange_problem(exchange) or currency_problem(currency)
+    if problem:
+        raise HTTPException(400, problem)
+    inst = db.scalar(select(Instrument).where(Instrument.exchange == exchange,
+                                              Instrument.ticker == ticker))
+    if inst is None:
+        inst = Instrument(ticker=ticker, exchange=exchange, currency=currency,
+                          asset_class=body.asset_class, drp=False,
+                          yahoo_symbol=pricefeed.yahoo_symbol_for(ticker, exchange))
+        db.add(inst)
+    # A removed one comes back, as it does when a trade is typed in.
+    inst.active = True
+    db.flush()
+    return inst
 
 
 @router.post("/trades", status_code=201)
 def create_trade(request: Request, body: TradeIn) -> dict:
     with auth.api_session(request, write=True) as (access, db):
-        inst = _instrument(db, body.ticker, body.exchange)
+        inst = _instrument(request, db, body)
         if body.date > clock.today():
             raise HTTPException(400, "date is in the future")
         trade = owned(
@@ -348,7 +386,7 @@ def create_trade(request: Request, body: TradeIn) -> dict:
 @router.post("/dividends", status_code=201)
 def create_dividend(request: Request, body: DividendIn) -> dict:
     with auth.api_session(request, write=True) as (access, db):
-        inst = _instrument(db, body.ticker, body.exchange)
+        inst = _instrument(request, db, body)
         existing = db.scalar(
             select(Dividend).where(
                 Dividend.instrument_id == inst.id,
