@@ -640,7 +640,7 @@ def test_every_import_page_offers_a_way_back(client, session_factory, with_acme,
     }
     for label, resp in pages.items():
         assert resp.status_code == 200, label
-        assert 'class="backlink"' in resp.text, f"{label} has no way back"
+        assert 'class="backlink button secondary"' in resp.text, f"{label} has no way back"
         assert "/imports-exports" in resp.text, label
 
 
@@ -897,7 +897,7 @@ def test_a_correction_to_an_unknown_or_expired_upload_is_refused(client, session
 def _way_back(page: str) -> tuple[str, str]:
     """The back button's address and its words."""
 
-    found = re.search(r'class="backlink" href="([^"]*)">\s*<button[^>]*>\s*&larr;\s*([^<]*?)\s*<',
+    found = re.search(r'class="backlink button secondary" href="([^"]*)">\s*&larr;\s*([^<]*?)\s*<',
                       page)
     assert found, "no way back on the page"
     return found.groups()

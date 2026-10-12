@@ -52,7 +52,8 @@ def test_the_header_reads_quietest_to_loudest(holding):
     """Refresh prices, View charts, then the one primary action, last."""
     page = holding.get("/", headers=HTML).text
     head = re.search(r'<div class="headactions">.*?</div>', page, re.S).group(0)
-    labels = re.findall(r"<button[^>]*>\s*([^<]+?)\s*</button>", head)
+    # A button, or a link drawn as one.
+    labels = re.findall(r'<(?:button|a class="button[^"]*")[^>]*>\s*([^<]+?)\s*</(?:button|a)>', head)
     assert labels == ["Refresh prices", "View charts", "Record trade"], labels
 
 

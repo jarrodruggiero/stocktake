@@ -55,7 +55,7 @@ def test_white_reads_on_the_danger_red_in_every_theme(theme):
 
 
 def test_the_danger_button_is_solid_red_with_white_text():
-    rule = re.search(r"\nbutton\.danger\s*\{([^}]*)\}", CSS)
+    rule = re.search(r"\nbutton\.danger, a\.button\.danger\s*\{([^}]*)\}", CSS)
     assert rule, "no button.danger rule"
     assert re.search(r"background:\s*var\(--danger\)", rule.group(1)), rule.group(1)
     assert re.search(r"color:\s*#fff(fff)?\b", rule.group(1)), rule.group(1)
@@ -144,5 +144,5 @@ def test_editing_a_trade_puts_delete_with_save_and_cancel(edit_page):
 def test_cancel_on_the_edit_page_is_a_button(edit_page):
     trade_id, page = edit_page
     form = _trade_form(page, trade_id)
-    assert re.search(r'<a href="[^"]+">\s*<button type="button" class="secondary">\s*Cancel',
-                     form), "Cancel should look like the dialog's button, not a bare link"
+    assert re.search(r'<a class="button secondary" href="[^"]+">\s*Cancel</a>', form), (
+        "Cancel should look like the dialog's button, not a bare link")

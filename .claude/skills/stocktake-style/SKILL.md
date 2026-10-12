@@ -37,9 +37,10 @@ If it genuinely needs saying and will not fit in one line, it belongs in
 - **Primary** is the one committing action of a form. `.secondary` is
   everything else — cancel, back, opening another tool. `.danger` destroys
   data. One primary per form.
-- **A link that acts gets wrapped in a button.** `<a href=…><button
-  type="button" class="secondary small">Edit</button></a>`.
-- `button.small` is for a button inside a table row. Size only — it combines
+- **A link that acts is drawn as a button**, and stays one element:
+  `<a class="button secondary small" href=…>Edit</a>`. Never a `<button>`
+  inside an `<a>`.
+- `.small` is for a button inside a table row. Size only — it combines
   with `.secondary` or `.danger`.
 - **A row's actions go top-right in a `.pagehead`**, the same size as every
   other page's. Not full-width, and not each in its own panel: a single button

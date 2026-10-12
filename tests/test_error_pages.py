@@ -26,7 +26,7 @@ def test_a_page_that_is_not_there_is_a_page(client, session_factory):
     assert "<h1>Not found</h1>" in resp.text
     assert "There&#39;s nothing at this address." in resp.text
     # Somewhere to go that says where it is (decisions.md #40).
-    assert '<a class="backlink" href="/">' in resp.text
+    assert '<a class="backlink button secondary" href="/">' in resp.text
 
 
 def test_a_refusal_is_a_page_giving_the_reason(client, session_factory):

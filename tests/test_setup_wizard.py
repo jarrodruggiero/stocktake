@@ -1863,12 +1863,12 @@ def test_every_step_after_the_first_offers_a_way_back(client):
     for path, expected in (("/setup/portfolio", "/setup/recovery"),
                            ("/setup/environment", "/setup/features")):
         page = client.get(path, headers=HTML)
-        assert f'class="backlink" href="{expected}"' in page.text, path
+        assert f'class="backlink button secondary" href="{expected}"' in page.text, path
 
     # Recovery offers NO way back, and that is the point rather than an
     # omission: everything before it — welcome, database, account — shuts the
     # moment an account exists, so a link to one is a link into the loop.
-    assert 'class="backlink"' not in client.get("/setup/recovery", headers=HTML).text
+    assert 'class="backlink button secondary"' not in client.get("/setup/recovery", headers=HTML).text
 
 
 def test_the_steps_before_the_account_offer_a_way_back_too(client):
@@ -1882,16 +1882,16 @@ def test_the_steps_before_the_account_offer_a_way_back_too(client):
     client.post("/setup", data={"_csrf": token}, headers=HTML, follow_redirects=False)
 
     for path in ("/setup/database", "/setup/profile"):
-        assert 'class="backlink"' in client.get(path, headers=HTML).text, path
+        assert 'class="backlink button secondary"' in client.get(path, headers=HTML).text, path
 
     # Where the account step points depends on what this deployment offers:
     # the database step is skipped when config already names a database, as
     # this fixture does, so the nearest step still open behind it is welcome.
-    assert 'class="backlink" href="/setup"' in client.get(
+    assert 'class="backlink button secondary" href="/setup"' in client.get(
         "/setup/profile", headers=HTML).text
 
     # The first step has nothing behind it, which is the one legitimate absence.
-    assert 'class="backlink"' not in client.get("/setup", headers=HTML).text
+    assert 'class="backlink button secondary"' not in client.get("/setup", headers=HTML).text
 
 
 def test_login_does_not_explode_when_no_database_is_configured():
@@ -2037,7 +2037,7 @@ def test_a_back_button_never_points_at_a_step_that_has_closed(client):
                  "/setup/finish"):
         page = client.get(path, headers=HTML)
         for closed in ('href="/setup"', 'href="/setup/database"', 'href="/setup/profile"'):
-            assert f'class="backlink" {closed}' not in page.text, (path, closed)
+            assert f'class="backlink button secondary" {closed}' not in page.text, (path, closed)
 
 
 def test_next_step_never_names_a_step_with_no_page(client):
@@ -2192,7 +2192,7 @@ def test_going_back_to_the_codes_shows_the_same_ones(client, session_factory):
         stored = {c.code_hash for c in db.query(RecoveryCode).all()}
 
     page = client.get("/setup/2fa", headers=HTML).text
-    back = re.search(r'class="backlink" href="([^"]+)"', page).group(1)
+    back = re.search(r'class="backlink button secondary" href="([^"]+)"', page).group(1)
     again = client.get(back, headers=HTML).text
 
     assert re.findall(r"[A-Z0-9]{4}-[A-Z0-9]{4}", again) == first

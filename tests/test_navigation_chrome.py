@@ -123,7 +123,7 @@ def test_the_charts_page_offers_a_way_back(client, session_factory):
     page = client.get("/charts", headers={"accept": "text/html"})
 
     assert page.status_code == 200
-    assert 'class="backlink"' in page.text
+    assert 'class="backlink button secondary"' in page.text
 
 
 # --------------------------------------------------------------------------- #

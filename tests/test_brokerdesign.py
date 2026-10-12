@@ -928,7 +928,7 @@ def test_the_designers_way_back_follows_where_you_came_from(client, session_fact
 
     page = _confirmed(client, session_factory, **{"return": "/holdings"}).text
 
-    back = re.search(r'class="backlink" href="([^"]*)">\s*<button[^>]*>\s*&larr;\s*([^<]*?)\s*<',
+    back = re.search(r'class="backlink button secondary" href="([^"]*)">\s*&larr;\s*([^<]*?)\s*<',
                      page)
     assert back.groups() == ("/holdings", "Holdings")
 
