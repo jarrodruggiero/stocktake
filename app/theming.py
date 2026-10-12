@@ -4,11 +4,11 @@ Six colours: the accent, the two directions money can go, and the three chart
 series. Surfaces, lines and ink stay with the theme, so a bad choice makes
 something ugly rather than unusable (decisions.md #89).
 
-A person picks ONE value and it applies to both light and dark, so contrast is
-reported against both surfaces and the weaker one is shown — advice, not a veto.
+Light and dark each have their own six, so each is measured on its own card,
+against the floor for what it is drawn as — advice, not a veto.
 
-Storage is `user.theme_colors`, token -> `#rrggbb`. Absent keys fall through to
-the stylesheet, so a partial choice is a partial override.
+Storage is `user.theme_colors`, mode -> token -> `#rrggbb`. Absent keys fall
+through to the stylesheet, so a partial choice is a partial override.
 """
 
 from __future__ import annotations
@@ -18,17 +18,15 @@ from dataclasses import dataclass
 
 HEX = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
-# The surfaces a chosen colour has to be legible on: the light panel and the
-# dark one. Both are `--panel-solid` from style.css.
+MODES = ("light", "dark")
+
+# The surface a chosen colour has to be legible on in each mode: the panel.
+# Both are `--panel-solid` from style.css.
 SURFACES = {"light": "#f7f8fc", "dark": "#1b2030"}
 
-# The warning floor: 3:1, the floor for a graphical object (a chart line, a
-# swatch). Links and gain cells are 15px text, which needs 4.5:1, but one
-# colour serves both modes and none reaches 4.5:1 on both cards; the best is
-# 3.9:1. So text drawn in a chosen colour falls short in one mode or the
-# other, and this warns only when even the graphical floor is missed
-# (decisions.md #89).
-MIN_CONTRAST = 3.0
+# The floors a colour is held to, by what it is drawn as: 15px text needs
+# 4.5:1 (WCAG 1.4.3), a chart's line or slice 3:1 (1.4.11).
+TEXT, GRAPHIC = 4.5, 3.0
 
 # Words on a chosen accent's buttons: the dark ground's own colour, or white.
 INK = "#0d1018"
@@ -39,32 +37,30 @@ class Swatch:
     token: str          # the CSS custom property, without the leading --
     label: str
     blurb: str
+    floor: float        # TEXT or GRAPHIC
 
 
 # Order matters: this is the order they render in, and it goes from the colour
 # people will change first to the ones they may never touch.
 SWATCHES: tuple[Swatch, ...] = (
     Swatch("accent", "Accent",
-           "Buttons, links, and the highlight on the page you are looking at."),
-    Swatch("up", "Gain", "Money made — totals, table cells, the up arrow."),
-    Swatch("down", "Loss", "Money lost."),
-    Swatch("viz-1", "Chart series 1", "The first line or slice in every chart."),
-    Swatch("viz-2", "Chart series 2", "The second."),
-    Swatch("viz-3", "Chart series 3", "The third."),
+           "Buttons, links, and the highlight on the page you are looking at.", TEXT),
+    Swatch("up", "Gain", "Money made — totals, table cells, the up arrow.", TEXT),
+    Swatch("down", "Loss", "Money lost.", TEXT),
+    Swatch("viz-1", "Chart series 1", "The first line or slice in every chart.", GRAPHIC),
+    Swatch("viz-2", "Chart series 2", "The second.", GRAPHIC),
+    Swatch("viz-3", "Chart series 3", "The third.", GRAPHIC),
 )
 
 BY_TOKEN = {s.token: s for s in SWATCHES}
 
-# The built-in LIGHT value for each, shown as the input's placeholder: the
-# stylesheet declares light in `:root` and dark as an override, so this is the
-# base a person is choosing to replace. A test keeps it in step with style.css.
+# The built-in value for each in each mode, shown as the input's placeholder.
+# A test keeps them in step with style.css.
 DEFAULTS = {
-    "accent": "#4338ca",
-    "up": "#1a7f37",
-    "down": "#c62828",
-    "viz-1": "#8959ba",
-    "viz-2": "#1a7f37",
-    "viz-3": "#aa5f04",
+    "light": {"accent": "#4338ca", "up": "#1a7f37", "down": "#c62828",
+              "viz-1": "#8959ba", "viz-2": "#1a7f37", "viz-3": "#aa5f04"},
+    "dark": {"accent": "#8b83f0", "up": "#2ea043", "down": "#f25050",
+             "viz-1": "#a37ecd", "viz-2": "#2ea043", "viz-3": "#c77f3e"},
 }
 
 
@@ -106,22 +102,27 @@ def normalise(value: str) -> str | None:
     return "#" + h
 
 
-def clean(submitted: dict[str, str]) -> dict[str, str]:
-    """The stored form of what a person submitted.
+def clean(submitted) -> dict[str, dict[str, str]]:
+    """The stored form of what a person submitted, from fields named
+    `<mode>-<token>`.
 
-    Unknown tokens are dropped rather than stored — the set of colours the app
-    understands is `SWATCHES`, and a row naming something else would be dead
-    weight that a future version might misread. A blank value means "back to
-    the default", which is an absent key, not an empty string.
+    Anything else is ignored rather than stored — the colours the app
+    understands are `SWATCHES` in `MODES`, and a row naming something else
+    would be dead weight that a future version might misread. A blank value
+    means "back to the default", which is an absent key, not an empty string.
     """
-    out: dict[str, str] = {}
-    for token, raw in submitted.items():
-        if token not in BY_TOKEN:
-            continue
-        value = normalise(raw)
-        if value:
-            out[token] = value
+    out: dict[str, dict[str, str]] = {}
+    for mode in MODES:
+        chosen = {s.token: value for s in SWATCHES
+                  if (value := normalise(submitted.get(f"{mode}-{s.token}", "")))}
+        if chosen:
+            out[mode] = chosen
     return out
+
+
+def _chosen(colors, mode: str) -> dict:
+    found = colors.get(mode) if isinstance(colors, dict) else None
+    return found if isinstance(found, dict) else {}
 
 
 def _toward(colour: str, other: str, share: float) -> str:
@@ -140,18 +141,11 @@ def _accent(value: str) -> list[str]:
     return [f"--accent-grad:linear-gradient(135deg, {value}, {far})", f"--on-accent:{words}"]
 
 
-def css_variables(colors: dict | None) -> str:
-    """The overrides as a `style` attribute value for <body>.
-
-    An inline style beats both `:root` and `body[data-theme="dark"]`, which is
-    exactly the precedence a personal override should have — it wins over the
-    theme without the theme needing to know it exists.
-    """
-    if not colors:
-        return ""
+def _declarations(chosen: dict) -> str:
     parts = []
     for swatch in SWATCHES:                     # fixed order, so it is stable
-        value = colors.get(swatch.token)
+        # Checked again on the way out: this is written into a <style>.
+        value = normalise(chosen.get(swatch.token) or "")
         if value:
             parts.append(f"--{swatch.token}:{value}")
             # The diverging poles follow their series, or a chart drawn from
@@ -164,23 +158,40 @@ def css_variables(colors: dict | None) -> str:
     return ";".join(parts)
 
 
-def warnings(colors: dict | None) -> dict[str, str]:
-    """Per-token advice about a choice that will be hard to see.
+# Each mode's rule applies only where the page is in that mode, an `auto` page
+# following the device. `[data-colors]` puts it above the stylesheet's accent
+# presets, two attributes deep, and it comes after them. Unquoted attribute
+# values, so autoescaping has nothing to change.
+_RULES = {
+    "light": ("body[data-colors][data-theme=light]{%s}"
+              "@media (prefers-color-scheme: light){body[data-colors][data-theme=auto]{%s}}"),
+    "dark": ("body[data-colors][data-theme=dark]{%s}"
+             "@media (prefers-color-scheme: dark){body[data-colors][data-theme=auto]{%s}}"),
+}
 
-    Returned rather than enforced. The check is against BOTH surfaces because
-    one value serves both modes, and the weaker result is the one that matters.
-    """
-    out: dict[str, str] = {}
-    for token, value in (colors or {}).items():
-        if token not in BY_TOKEN:
-            continue
-        worst_mode, worst = min(
-            ((mode, contrast(value, surface)) for mode, surface in SURFACES.items()),
-            key=lambda pair: pair[1],
-        )
-        if worst < MIN_CONTRAST:
-            out[token] = (
-                f"Hard to see in {worst_mode} mode — {worst}:1 against the "
-                f"card behind it, where {MIN_CONTRAST}:1 is the readable floor."
-            )
+
+def stylesheet(colors: dict | None) -> str:
+    """The overrides as the text of a <style> element, or "" for none."""
+    out = []
+    for mode in MODES:
+        body = _declarations(_chosen(colors, mode))
+        if body:
+            out.append(_RULES[mode] % (body, body))
+    return "".join(out)
+
+
+def warnings(colors: dict | None) -> dict[str, dict[str, str]]:
+    """Advice about a choice that will be hard to see, per mode and token:
+    returned rather than enforced."""
+    out: dict[str, dict[str, str]] = {}
+    for mode in MODES:
+        for token, raw in _chosen(colors, mode).items():
+            swatch, value = BY_TOKEN.get(token), normalise(raw or "")
+            if swatch is None or value is None:
+                continue
+            ratio = contrast(value, SURFACES[mode])
+            if ratio < swatch.floor:
+                out.setdefault(mode, {})[token] = (
+                    f"Hard to see — {ratio}:1 against the card behind it, where "
+                    f"{swatch.floor:g}:1 is the readable floor.")
     return out

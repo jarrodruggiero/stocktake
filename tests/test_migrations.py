@@ -300,6 +300,44 @@ def test_0013_keeps_every_row_on_the_way_up_and_down(tmp_path: Path):
     assert counts() == [1, 1, 1, 1, 1]
 
 
+def test_0014_gives_each_mode_the_colours_that_served_both(tmp_path: Path):
+    """A stored colour applied to light and dark alike, so it goes into both,
+    and the page looks as it did. Going down keeps the light set."""
+    import json
+
+    path = tmp_path / "colours.db"
+    cfg = _config(path)
+    command.upgrade(cfg, "0013")
+    conn = sqlite3.connect(path)
+    for user_id, colours in ((1, {"accent": "#ff8800", "up": "#112233"}), (2, None), (3, {})):
+        conn.execute("INSERT INTO user (id, email, name, password_hash, public_id, created_at,"
+                     " theme_colors) VALUES (?, ?, 'A', 'x', ?, '2026-01-01', ?)",
+                     (user_id, f"{user_id}@example.com", f"pub-{user_id}",
+                      None if colours is None else json.dumps(colours)))
+    conn.commit()
+    conn.close()
+
+    def stored() -> dict:
+        conn = sqlite3.connect(path)
+        try:
+            return {i: None if c is None else json.loads(c)
+                    for i, c in conn.execute("SELECT id, theme_colors FROM user ORDER BY id")}
+        finally:
+            conn.close()
+
+    command.upgrade(cfg, "0014")
+    chosen = {"accent": "#ff8800", "up": "#112233"}
+    assert stored() == {1: {"light": chosen, "dark": chosen}, 2: None, 3: {}}
+
+    conn = sqlite3.connect(path)
+    conn.execute("UPDATE user SET theme_colors = ? WHERE id = 1",
+                 (json.dumps({"light": {"up": "#111111"}, "dark": {"up": "#eeeeee"}}),))
+    conn.commit()
+    conn.close()
+    command.downgrade(cfg, "0013")
+    assert stored()[1] == {"up": "#111111"}
+
+
 def _tables(path: Path) -> set[str]:
     conn = sqlite3.connect(path)
     try:

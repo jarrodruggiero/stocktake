@@ -228,7 +228,7 @@ class User(Base):
     # that has never opened the setting keeps the bar it has. Per user, like
     # the two above: sharing a portfolio does not mean sharing a top bar.
     nav_hidden: Mapped[list | None] = mapped_column(JSONType)
-    # Colours this person has overridden, as {token: "#rrggbb"} — see
+    # Colours this person has overridden, as {mode: {token: "#rrggbb"}} — see
     # app/theming.py for which tokens may be set and why the list is short.
     # NULL means "the built-in palette", so a later change to the defaults
     # reaches everyone who has not chosen, and nobody who has.

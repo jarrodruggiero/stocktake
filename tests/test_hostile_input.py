@@ -171,7 +171,8 @@ BY_HAND: dict[str, list[Field]] = {
     "/profile/columns": [Field("column", "form"), Field("back", "form")],
     "/profile/columns/order": [Field(n, "form") for n in ("order", "move", "back")],
     "/profile/appearance": [Field(n, "form") for n in ("nav_show", "default_portfolio")],
-    "/profile/colors": [Field(s.token, "form") for s in theming.SWATCHES],
+    "/profile/colors": [Field(f"{mode}-{s.token}", "form")
+                        for mode in theming.MODES for s in theming.SWATCHES],
     "/admin/settings": [Field(o.name, "form") for o in configfile.OPTIONS],
     "/setup/features": [Field("feature", "form")],
     "/imports-exports/csv/{uid}/resolve": [Field("ticker__ALPHA", "form")],
