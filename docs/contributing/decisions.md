@@ -1440,3 +1440,26 @@ portfolio's total return and every chart count. The FY report converts the two
 at the same rate and shows the tax in its own column where any was withheld;
 the grossed-up figure in the export and the API is cash plus franking plus the
 tax withheld.
+
+**146. A split or a capital change is an event on the holding, not a trade.**
+None could be recorded. A split typed as a free purchase restarts the
+twelve-month discount clock on every new unit, and a return of capital or an
+AMIT adjustment had no way to reach the cost base. Each is a
+`corporate_action` row per portfolio, like the trades it changes, and every walk
+over a holding reads one timeline of both (`queries.timeline`), where an action
+takes effect from the start of its day. A split scales the units and keeps each
+parcel's cost and date; the holding's new total is rounded once to the quantity
+column's last place and shared between the parcels by running total, so the
+balance check and the FIFO walk agree to the unit (a parcel left with none
+gives its cost to the next). A return of capital lowers each parcel's cost by
+its share of the units, an AMIT adjustment raises or lowers it, and whatever
+takes a cost below nil is a capital gain on the day (CGT events G1 and E10),
+listed with the year's sales as what it was. One with no AUD figure, for the
+change or for the parcel, is listed unpriced, and the year names the holding as
+it names a sale it cannot price (#5). A return of capital is money back
+in total return; an adjustment moves no money. The price history is stored as
+fetched: a history fetched after a split holds Yahoo's split-adjusted closes
+for the days before it, so a holding added after its split charts low before
+that day. Actions stay in the portfolio they were recorded in when trades move,
+each side walked with its own. A CSV import walks a holding with a split row by
+row, since its running totals cannot take a step that rounds.

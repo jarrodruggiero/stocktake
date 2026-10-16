@@ -227,6 +227,21 @@ def test_a_selection_that_strands_the_source_is_reported(home):
     assert "ACME" in problem
 
 
+def test_each_side_is_walked_with_its_own_splits(home):
+    """The source split 2 for 1 and then sold 150: it can spare nothing, and
+    the destination, which recorded no split, cannot take the sale alone."""
+    db, user, _source, target, acme = home
+    buy = fac.add_trade(db, acme, "2026-01-05", "buy", 100, "4.00")
+    fac.add_action(db, acme, "2026-02-02", "split", ratio=(2, 1))
+    sell = fac.add_trade(db, acme, "2026-03-02", "sell", 150, "2.50")
+    db.flush()
+
+    assert moves.source_problem(db, acme.id, trades=set()) is None
+    assert "ACME" in moves.source_problem(db, acme.id, trades={buy.id})
+    assert moves.target_problem(db, acme.id, target.id, user_id=user.id,
+                                trades={buy.id, sell.id}, dividends=set()) is not None
+
+
 def test_a_selection_the_source_can_spare_is_accepted(home):
     db, _user, _source, _target, acme = home
     buy = fac.add_trade(db, acme, "2026-01-05", "buy", 100, "4.00")

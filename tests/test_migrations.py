@@ -375,6 +375,55 @@ def test_0015_and_0016_keep_every_distribution_on_the_way_up_and_down(tmp_path: 
     assert rows() == [(1, "2026-07-16", 1)]
 
 
+def test_0017_adds_corporate_actions_beside_what_is_there(tmp_path: Path):
+    """A new table, so the trades it changes come through both ways untouched.
+    Its rows are their portfolio's, as trades are: deleting a portfolio takes
+    its own actions and leaves another's."""
+    path = tmp_path / "actions.db"
+    cfg = _config(path)
+    command.upgrade(cfg, "0016")
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        INSERT INTO portfolio (id, name, created_at) VALUES (1, 'Main', '2026-01-01'),
+                                                            (2, 'Other', '2026-01-01');
+        INSERT INTO instrument (id, ticker, exchange, currency, asset_class, drp, active)
+        VALUES (1, 'ALPHA', 'ASX', 'AUD', 'share', 0, 1);
+        INSERT INTO trade (id, instrument_id, date, type, quantity, unit_price,
+                           brokerage, fx_rate, portfolio_id)
+        VALUES (1, 1, '2025-01-06', 'buy', 100, 10.0, 0, 1.0, 1);
+    """)
+    conn.commit()
+    conn.close()
+
+    def trades() -> list[tuple]:
+        conn = sqlite3.connect(path)
+        try:
+            return conn.execute("SELECT id, date, quantity, portfolio_id FROM trade").fetchall()
+        finally:
+            conn.close()
+
+    before = trades()
+    command.upgrade(cfg, "0017")
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.executescript("""
+        INSERT INTO corporate_action (id, portfolio_id, instrument_id, date, kind,
+                                      ratio_new, ratio_old)
+        VALUES (1, 1, 1, '2025-03-03', 'split', 2, 1), (2, 2, 1, '2025-03-03', 'split', 2, 1);
+        DELETE FROM portfolio WHERE id = 2;
+    """)
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO corporate_action (portfolio_id, instrument_id, date, kind) "
+                     "VALUES (1, 1, '2025-04-01', 'bonus')")
+    kept = conn.execute("SELECT id FROM corporate_action").fetchall()
+    conn.close()
+
+    assert (kept, trades()) == ([(1,)], before)
+    command.downgrade(cfg, "0016")
+    assert "corporate_action" not in _tables(path)
+    assert trades() == before
+
+
 def _tables(path: Path) -> set[str]:
     conn = sqlite3.connect(path)
     try:

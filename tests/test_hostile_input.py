@@ -396,6 +396,10 @@ def _fresh(world: World, name: str) -> str:
             made = fac.add_trade(s, acme, TODAY - dt.timedelta(days=20), "buy", 5, "1.00")
         elif name == "dividend_id":
             made = fac.add_dividend(s, acme, TODAY - dt.timedelta(days=10), "3.00")
+        elif name == "action_id":
+            # A cost base change: a split here could strand the world's units.
+            made = fac.add_action(s, acme, TODAY - dt.timedelta(days=15), "cost_base",
+                                  amount="1.00")
         elif name == "instrument_id":
             # On this portfolio's list, as every Manage holdings row is.
             made = fac.make_instrument(s, f"FRESH{n}", asset_class="share")
@@ -481,6 +485,9 @@ def _typed(world: World, route: APIRoute, n: int, made: dict) -> dict:
         values["row"] = [f"trade:{made['trade_id']}"]
     elif path == "/imports-exports/statement/commit":
         values["net_amount"] = f"{10 + n}.00"       # the same dividend twice is refused
+    elif path in ("/action/new", "/action/{action_id}/edit"):
+        values.update(kind="cost_base", action_date=WHEN, ratio_new="2", ratio_old="1",
+                      direction="increase")
     elif path == "/imports-exports/statement/rows":
         values.update({"row": "0", "save": "0", "fund-0": "ACME", "ticker-0": "ACME",
                        "amount-0": f"{10 + n}.00", "units-0": "0", "price-0": "",

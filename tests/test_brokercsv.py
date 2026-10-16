@@ -934,6 +934,36 @@ def test_the_recorded_sale_named_is_the_first_left_short(pf):
     assert "leave ACME at -1 units from 2025-07-02" in candidates[0].detail
 
 
+@pytest.mark.parametrize("sold, status", [("150", "new"), ("250", "refused")])
+def test_a_sale_after_a_recorded_split_is_held_to_the_split_units(pf, sold, status):
+    """100 held, split 2 for 1: a file may sell up to 200 after it (#146)."""
+    acme = fac.make_instrument(pf, "ACME")
+    fac.add_trade(pf, acme, "2025-01-02", "buy", 100, "4.00")
+    fac.add_action(pf, acme, "2025-03-03", "split", ratio=(2, 1))
+    pf.commit()
+    candidates = [_candidate(type="sell", date="2025-04-01", quantity=sold)]
+
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    assert candidates[0].status == status
+    if status == "refused":
+        assert "more than the 200 units of ACME held" in candidates[0].detail
+
+
+def test_rows_after_a_split_are_judged_with_the_ones_before_them(pf):
+    """The second sale is short only because the first was accepted."""
+    acme = fac.make_instrument(pf, "ACME")
+    fac.add_trade(pf, acme, "2025-01-02", "buy", 100, "4.00")
+    fac.add_action(pf, acme, "2025-03-03", "split", ratio=(2, 1))
+    pf.commit()
+    candidates = [_candidate(type="sell", date="2025-04-01", quantity="150"),
+                  _candidate(type="sell", date="2025-05-01", quantity="100")]
+
+    brokercsv.annotate(pf, candidates, STRICT)
+
+    assert [c.status for c in candidates] == ["new", "refused"]
+
+
 def test_a_sale_already_recorded_is_a_duplicate_not_a_shortfall(pf):
     """The same export uploaded twice: its sale matches the recorded one and
     is skipped. Walked as a new row, it would sell the holding a second time

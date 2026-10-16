@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if action else 'Record' }} a split or capital change — Stocktake{% endblock %}
+{% block content %}
+
+{# Reached from the holding's page and back to it, like the trade editor. #}
+<a class="backlink button secondary" href="{{ back }}">&larr; {{ inst.ticker }}</a>
+
+<h1>{{ 'Edit' if action else 'Record' }} a split or capital change <small>{{ inst.ticker }}</small></h1>
+
+{% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
+
+<form class="panel narrow actionform" method="post" autocomplete="off"
+      action="{{ '/action/%d/edit' % action.id if action else '/action/new' }}">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  {% if not action %}<input type="hidden" name="instrument_id" value="{{ inst.id }}">{% endif %}
+  <div class="row">
+    <label>What happened
+      {% set kind_tip %}
+      <p>A split or a consolidation changes how many units are held, not what
+      they cost or when they were bought.</p>
+      <p>A return of capital, and an AMIT cost base decrease, lower the cost of
+      the units held; an increase raises it. What takes it below nil is a
+      capital gain on the day.</p>
+      {% endset %}
+      {% with body = kind_tip, label = "About these" %}{% include "_tip.html" %}{% endwith %}
+      <select name="kind" required>
+        {% for value, label in [('split', 'Split or consolidation'),
+                                ('capital_return', 'Return of capital'),
+                                ('cost_base', 'Cost base adjustment (AMIT)')] %}
+        <option value="{{ value }}" {% if form.kind == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Date
+      <input type="date" name="action_date" value="{{ form.action_date }}" max="{{ today }}" required>
+    </label>
+  </div>
+
+  {# Every kind's fields are in the form; actionform.js shows the chosen one's.
+     With no script they all show, and the server reads the ones it needs. #}
+  <fieldset data-kinds="split">
+    <legend>New units for old</legend>
+    <div class="row">
+      <label>New <input name="ratio_new" inputmode="numeric" value="{{ form.ratio_new }}"></label>
+      <label>Old <input name="ratio_old" inputmode="numeric" value="{{ form.ratio_old }}"></label>
+    </div>
+    <p class="sub">2 for 1 doubles the holding.</p>
+  </fieldset>
+
+  <fieldset data-kinds="capital_return cost_base">
+    <legend>For the whole holding</legend>
+    <div class="row">
+      <label data-kinds="cost_base">Change
+        <select name="direction">
+          <option value="increase" {% if form.direction != 'decrease' %}selected{% endif %}>Increase</option>
+          <option value="decrease" {% if form.direction == 'decrease' %}selected{% endif %}>Decrease</option>
+        </select>
+      </label>
+      <label>Amount <span class="sub">{{ inst.currency }}</span>
+        <input name="amount" inputmode="decimal" value="{{ form.amount }}"></label>
+      {% if inst.currency != reporting_ccy %}
+      <label>FX rate to {{ reporting_ccy }} <span class="sub">optional</span>
+        <input name="fx_rate" inputmode="decimal" value="{{ form.fx_rate }}"></label>
+      {% endif %}
+    </div>
+  </fieldset>
+
+  <label>Note
+    <input name="note" value="{{ form.note }}" maxlength="400">
+  </label>
+
+  <div class="commitbar">
+    <button type="submit">Save</button>
+    <a class="button secondary" href="{{ back }}">Cancel</a>
+  </div>
+</form>
+
+{% if action %}
+<form class="panel narrow danger" method="post" action="/action/{{ action.id }}/delete"
+      data-confirm="Delete this {{ inst.ticker }} {{ action_label(action) }} on {{ action.date }}?">
+  <input type="hidden" name="_csrf" value="{{ auth.session.csrf_token }}">
+  <h2>Delete this change</h2>
+  <button type="submit" class="danger">Delete</button>
+</form>
+{% endif %}
+
+<script src="/static/actionform.js?v={{ asset_v }}" defer></script>
+<script src="/static/confirm.js?v={{ asset_v }}" defer></script>
+{% endblock %}

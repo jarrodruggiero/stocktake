@@ -233,6 +233,9 @@ def render_all() -> None:
     # render shows whether the three still fit at phone width.
     edit_id = _re.search(r"/trade/(\d+)/edit", landed.text).group(1)
     save("16a-trade-edit", client.get(f"/trade/{edit_id}/edit", headers=HTML).text)
+    # A split or capital change: every kind's fields show until the script
+    # hides the others, so the page has to fit at phone width either way.
+    save("16b-action", client.get("/action/new?ticker=ALPHA", headers=HTML).text)
     save("16-dashboard-holdings", client.get("/", headers=HTML).text)
     # Sorted, so the arrow and the active-header styling are visible.
     save("17-dashboard-sorted",

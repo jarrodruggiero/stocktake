@@ -65,7 +65,9 @@
     {% if auth.can_write %}<a class="button secondary"
        href="/trade/new?ticker={{ inst.ticker }}{% if others %}&amp;exchange={{ inst.exchange }}{% endif %}">Record a trade</a>
     <button type="button" class="secondary" data-opens="distdialog">Record a distribution</button>
-    <noscript><a href="/dividend/new?ticker={{ dist.ticker | urlencode }}">Record a distribution</a></noscript>{% endif %}</h2>
+    <noscript><a href="/dividend/new?ticker={{ dist.ticker | urlencode }}">Record a distribution</a></noscript>
+    <a class="button secondary"
+       href="/action/new?ticker={{ inst.ticker }}{% if others %}&amp;exchange={{ inst.exchange }}{% endif %}">Record a split or capital change</a>{% endif %}</h2>
   <div class="tablewrap">
   <table>
     <thead>
@@ -82,7 +84,7 @@
         <td>{{ e.date }}{% if e.time and e.time.strftime('%H:%M') != '10:00' %}
           <time class="sub" datetime="{{ market_stamp(e.date, e.time, inst.exchange) }}"
                 data-market="{{ inst.exchange }}">{{ e.time.strftime('%H:%M') }}</time>{% endif %}</td>
-        <td><span class="event event-{{ e.kind }}">{{ e.kind }}</span></td>
+        <td><span class="event event-{{ e.kind }}">{{ e.label or e.kind }}</span></td>
         <td class="num">{{ e.quantity | qty }}</td>
         <td class="num">{{ e.unit_price | money }}</td>
         <td class="num">{{ e.brokerage | money }}</td>
@@ -98,6 +100,8 @@
           <a class="button secondary small" href="/trade/{{ e.row_id }}/edit">Edit</a>
           {% elif e.row_kind == 'dividend' %}
           <a class="button secondary small" href="/dividend/{{ e.row_id }}/edit">Edit</a>
+          {% elif e.row_kind == 'action' %}
+          <a class="button secondary small" href="/action/{{ e.row_id }}/edit">Edit</a>
           {% endif %}
         </td>
         {% endif %}

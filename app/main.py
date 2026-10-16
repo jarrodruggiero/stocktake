@@ -101,6 +101,7 @@ from . import (
 from .api import router as api_router
 from .imports_web import router as imports_router
 from .models import (
+    ACTION_KINDS,
     ASSET_CLASSES,
     MARKET_OPEN,
     MEMBER_ROLES,
@@ -112,6 +113,7 @@ from .models import (
     TIME_ZONES_SHOWN,
     WRITE_ROLES,
     ApiKey,
+    CorporateAction,
     Dividend,
     ExternalIdentity,
     HoldingPref,
@@ -545,6 +547,7 @@ templates.env.globals["docs_url"] = DOCS_URL
 # A fresh id each time a creating form renders — see app/submissions.py.
 templates.env.globals["submission_id"] = submissions.mint
 templates.env.globals["role_labels"] = ROLE_LABELS
+templates.env.globals["action_label"] = queries.action_label
 # Spreadsheet column letters: A..Z, AA, AB. Nobody counts to the 29th column.
 templates.env.globals["column_letter"] = brokerdesign.column_letter
 # A trade's moment on the exchange's clock, offset attached, for a <time
@@ -4623,8 +4626,14 @@ def _held_trades(db: DbSession, instrument_id: int) -> list[Trade]:
     return list(db.scalars(select(Trade).where(Trade.instrument_id == instrument_id)).all())
 
 
+def _held_actions(db: DbSession, instrument_id: int) -> list[CorporateAction]:
+    return list(db.scalars(
+        select(CorporateAction).where(CorporateAction.instrument_id == instrument_id)).all())
+
+
 def _breach(
-    db: DbSession, inst: Instrument, candidate: Trade | None, *, exclude_ids=frozenset()
+    db: DbSession, inst: Instrument, candidate: Trade | None, *, exclude_ids=frozenset(),
+    actions: list[CorporateAction] | None = None,
 ) -> str | None:
     """Validate the WHOLE timeline for this instrument, and say what breaks.
 
@@ -4634,7 +4643,8 @@ def _breach(
     outright all break a sell that was fine a moment ago.
     """
     found = queries.balance_breach(
-        _held_trades(db, inst.id), candidate, exclude_ids=exclude_ids
+        _held_trades(db, inst.id), candidate, exclude_ids=exclude_ids,
+        actions=_held_actions(db, inst.id) if actions is None else actions,
     )
     return None if found is None else queries.breach_message(inst.ticker, found)
 
@@ -5463,9 +5473,11 @@ async def dividend_delete(request: Request, dividend_id: RowId):
 def _blocking_trades(db, instruments) -> dict[int, dict]:
     """What stands in the way of removing each instrument from this portfolio:
     its own trades, listed with links so each is one click from being fixed,
-    and its own distributions, counted. Another portfolio's never block it —
-    removing drops the instrument from this portfolio, not from the shared
-    catalogue — and are never mentioned, which would say what they hold."""
+    and its own distributions, counted. Its splits and capital changes are
+    counted for the delete confirm, which takes them too. Another portfolio's
+    never block it — removing drops the instrument from this portfolio, not
+    from the shared catalogue — and are never mentioned, which would say what
+    they hold."""
     ids = [i.id for i in instruments]
     if not ids:
         return {}
@@ -5486,11 +5498,214 @@ def _blocking_trades(db, instruments) -> dict[int, dict]:
         select(Dividend.instrument_id, func.count())
         .where(Dividend.instrument_id.in_(ids)).group_by(Dividend.instrument_id)
     ).all())
+    actions = dict(db.execute(
+        select(CorporateAction.instrument_id, func.count())
+        .where(CorporateAction.instrument_id.in_(ids)).group_by(CorporateAction.instrument_id)
+    ).all())
     return {
         iid: {"mine": mine.get(iid, []),
-              "total": len(mine.get(iid, [])) + dividends.get(iid, 0)}
+              "total": len(mine.get(iid, [])) + dividends.get(iid, 0),
+              "actions": actions.get(iid, 0)}
         for iid in ids
     }
+
+
+# --------------------------------------------------------------------------- #
+# Corporate actions: splits, consolidations and capital changes (#146)
+# --------------------------------------------------------------------------- #
+
+# A ratio is whole units; past a million for one, it is not a split anyone made.
+_RATIO = re.compile(r"[0-9]{1,7}")
+_RATIO_MAX = 1_000_000
+
+
+def _action_for_edit(db: DbSession, action_id: int) -> CorporateAction:
+    action = db.get(CorporateAction, action_id)
+    if action is None or action.portfolio_id != tenancy.current_portfolio_id(db):
+        raise HTTPException(404, "no such action")
+    return action
+
+
+def _action_typed(action: CorporateAction) -> dict:
+    """An action as its form shows it."""
+    amount = action.amount
+    return {"kind": action.kind, "action_date": action.date.isoformat(),
+            "ratio_new": str(action.ratio_new or ""), "ratio_old": str(action.ratio_old or ""),
+            "amount": "" if amount is None else f"{abs(amount).normalize():f}",
+            "direction": "decrease" if amount is not None and amount < 0 else "increase",
+            "fx_rate": "" if action.fx_rate is None else f"{action.fx_rate.normalize():f}",
+            "note": action.note or ""}
+
+
+def _action_from(db: DbSession, inst: Instrument, typed: dict,
+                 editing: CorporateAction | None = None) -> CorporateAction | str:
+    """The action `typed` describes, or why it cannot be. Like a trade, it is
+    checked against the whole timeline: something has to be held on its day,
+    and a consolidation must leave every later sale covered."""
+    kind = typed["kind"]
+    if kind not in ACTION_KINDS:
+        return "Pick what happened."
+    try:
+        date = dt.date.fromisoformat(typed["action_date"].strip())
+    except ValueError:
+        return "The date has to be a date, like 2026-03-02."
+    if date > clock.today():
+        return "That date is in the future."
+    ratio_new = ratio_old = amount = None
+    if kind == "split":
+        raw = (typed["ratio_new"].strip(), typed["ratio_old"].strip())
+        if not all(_RATIO.fullmatch(r) and 1 <= int(r) <= _RATIO_MAX for r in raw):
+            return f"New and old units are whole numbers from 1 to {_RATIO_MAX}."
+        ratio_new, ratio_old = int(raw[0]), int(raw[1])
+        if ratio_new == ratio_old:
+            return "A split changes the number of units: new and old can't be the same."
+    else:
+        try:
+            amount = money.parse(typed["amount"], CorporateAction.amount, "Amount")
+        except money.FigureError as exc:
+            return f"{exc}."
+        if amount <= 0:
+            return "An amount has to be more than zero."
+        if kind == "cost_base" and typed["direction"] == "decrease":
+            amount = -amount
+    fx = Decimal(1) if inst.currency == money.REPORTING else None
+    if fx is None and typed["fx_rate"].strip():
+        try:
+            fx = money.parse(typed["fx_rate"], CorporateAction.fx_rate, "FX rate")
+        except money.FigureError as exc:
+            return f"{exc}."
+        if fx <= 0:
+            return "An FX rate has to be more than zero."
+    try:
+        note = textfield.fit(typed["note"], CorporateAction.note, "Note")
+    except textfield.TextError as exc:
+        return f"{exc}."
+    candidate = CorporateAction(instrument_id=inst.id, date=date, kind=kind,
+                                ratio_new=ratio_new, ratio_old=ratio_old, amount=amount,
+                                fx_rate=fx, note=note or None)
+    candidate.id = editing.id if editing is not None else None
+    others = [a for a in _held_actions(db, inst.id) if editing is None or a.id != editing.id]
+    before = queries.units_through(
+        r for r in queries.timeline(_held_trades(db, inst.id), others)
+        if queries.moment(r) < queries.moment(candidate))
+    if before <= 0:
+        return f"Nothing was held on {date}."
+    return _breach(db, inst, None, actions=[*others, candidate]) or candidate
+
+
+def _action_page(request: Request, ctx, db: DbSession, inst: Instrument, typed: dict,
+                 *, action: CorporateAction | None = None, error: str = "",
+                 status_code: int = 200) -> HTMLResponse:
+    return _render(request, ctx, "action.html", {
+        "active_nav": "holdings", "inst": inst, "action": action, "form": typed,
+        "error": error, "today": clock.today().isoformat(),
+        "back": _holding_page(db, inst)}, status_code=status_code)
+
+
+_ACTION_BLANK = {"kind": "split", "action_date": "", "ratio_new": "", "ratio_old": "",
+                 "amount": "", "direction": "increase", "fx_rate": "", "note": ""}
+
+
+@app.get("/action/new", response_class=HTMLResponse)
+def action_new_form(request: Request, ticker: str = "", exchange: str = ""):
+    with scoped(request) as (ctx, db):
+        _require_write(ctx)
+        found = queries.held_as(db, ticker, exchange or None)
+        if len(found) != 1:
+            raise HTTPException(404, "no such holding")
+        return _action_page(request, ctx, db, found[0], dict(_ACTION_BLANK))
+
+
+@app.post("/action/new")
+async def action_new(
+    request: Request,
+    instrument_id: Annotated[RowId, Form()],
+    kind: str = Form(""),
+    action_date: str = Form(""),
+    ratio_new: str = Form(""),
+    ratio_old: str = Form(""),
+    amount: str = Form(""),
+    direction: str = Form("increase"),
+    fx_rate: str = Form(""),
+    note: str = Form(""),
+):
+    typed = {"kind": kind, "action_date": action_date, "ratio_new": ratio_new,
+             "ratio_old": ratio_old, "amount": amount, "direction": direction,
+             "fx_rate": fx_rate, "note": note}
+    with scoped(request) as (ctx, db):
+        await auth.verify_csrf(request, db)
+        _require_write(ctx)
+        inst = _own_instrument(db, instrument_id)
+        found = _action_from(db, inst, typed)
+        if isinstance(found, str):
+            return _action_page(request, ctx, db, inst, typed, error=found, status_code=400)
+        db.add(tenancy.owned(db, found))
+        db.flush()
+        log.info("corporate action %s recorded on %s: %s", found.id, inst.ticker,
+                 queries.action_label(found))
+        return _redirect(_holding_page(db, inst))
+
+
+@app.get("/action/{action_id}/edit", response_class=HTMLResponse)
+def action_edit_form(request: Request, action_id: RowId):
+    with scoped(request) as (ctx, db):
+        _require_write(ctx)
+        action = _action_for_edit(db, action_id)
+        inst = db.get(Instrument, action.instrument_id)
+        return _action_page(request, ctx, db, inst, _action_typed(action), action=action)
+
+
+@app.post("/action/{action_id}/edit")
+async def action_edit(
+    request: Request,
+    action_id: RowId,
+    kind: str = Form(""),
+    action_date: str = Form(""),
+    ratio_new: str = Form(""),
+    ratio_old: str = Form(""),
+    amount: str = Form(""),
+    direction: str = Form("increase"),
+    fx_rate: str = Form(""),
+    note: str = Form(""),
+):
+    typed = {"kind": kind, "action_date": action_date, "ratio_new": ratio_new,
+             "ratio_old": ratio_old, "amount": amount, "direction": direction,
+             "fx_rate": fx_rate, "note": note}
+    with scoped(request) as (ctx, db):
+        await auth.verify_csrf(request, db)
+        _require_write(ctx)
+        action = _action_for_edit(db, action_id)
+        inst = db.get(Instrument, action.instrument_id)
+        found = _action_from(db, inst, typed, editing=action)
+        if isinstance(found, str):
+            return _action_page(request, ctx, db, inst, typed, action=action, error=found,
+                                status_code=400)
+        for column in ("date", "kind", "ratio_new", "ratio_old", "amount", "fx_rate", "note"):
+            setattr(action, column, getattr(found, column))
+        db.flush()
+        log.info("corporate action %s on %s changed: %s", action.id, inst.ticker,
+                 queries.action_label(action))
+        return _redirect(_holding_page(db, inst))
+
+
+@app.post("/action/{action_id}/delete")
+async def action_delete(request: Request, action_id: RowId):
+    """Refused when a later sale needs it: deleting a split takes away the
+    units it made."""
+    with scoped(request) as (ctx, db):
+        await auth.verify_csrf(request, db)
+        _require_write(ctx)
+        action = _action_for_edit(db, action_id)
+        inst = db.get(Instrument, action.instrument_id)
+        others = [a for a in _held_actions(db, inst.id) if a.id != action.id]
+        problem = _breach(db, inst, None, actions=others)
+        if problem:
+            return _redirect(_holding_page(db, inst, error=problem))
+        log.info("corporate action %s on %s deleted: %s", action.id, inst.ticker,
+                 queries.action_label(action))
+        db.delete(action)
+        db.flush()
+        return _redirect(_back_to_holding(db, inst))
 
 
 @app.get("/holdings", response_class=HTMLResponse)
@@ -5563,6 +5778,9 @@ async def instrument_remove(request: Request, instrument_id: RowId):
             select(HoldingPref).where(HoldingPref.instrument_id == instrument_id)
         ).all():
             db.delete(pref)
+        # With no trades left, an action has nothing to act on (#146).
+        for action in _held_actions(db, instrument_id):
+            db.delete(action)
         # Committed before asking who else has it: the question goes through a
         # session of its own, which cannot see this one's uncommitted delete.
         db.commit()
@@ -5579,7 +5797,7 @@ def _anyone_has(instrument_id: int) -> bool:
     them — the one question here that is not this portfolio's to answer
     alone, because the feed fetches for everybody."""
     with tenancy.unscoped_session(SessionLocal) as everyone:
-        for model in (HoldingPref, Trade, Dividend, InvestmentPlanEntry):
+        for model in (HoldingPref, Trade, Dividend, CorporateAction, InvestmentPlanEntry):
             if everyone.scalar(select(model.id).where(
                     model.instrument_id == instrument_id).limit(1)) is not None:
                 return True
@@ -5594,7 +5812,7 @@ def _shared_elsewhere(instrument_ids, portfolio_id: int) -> set[int]:
         return set()
     with tenancy.unscoped_session(SessionLocal) as everyone:
         found: set[int] = set()
-        for model in (HoldingPref, Trade, Dividend):
+        for model in (HoldingPref, Trade, Dividend, CorporateAction):
             found |= set(everyone.scalars(select(model.instrument_id).where(
                 model.instrument_id.in_(ids), model.portfolio_id != portfolio_id)))
         found |= set(everyone.scalars(
@@ -5620,8 +5838,9 @@ def _catalogue_editable(ctx, instrument_ids) -> set[int]:
 
 @app.post("/holdings/{instrument_id}/delete-trades")
 async def instrument_delete_trades(request: Request, instrument_id: RowId):
-    """Every trade and distribution this portfolio has for an instrument, in
-    one go, so that it can then be removed. Another portfolio's are untouched.
+    """Every trade and distribution this portfolio has for an instrument, and
+    its corporate actions, in one go, so that it can then be removed. Another
+    portfolio's are untouched.
 
     The same steps as deleting each in turn: a reinvested distribution takes
     its trade with it, and a planned buy keeps its history with the link to
@@ -5637,6 +5856,9 @@ async def instrument_delete_trades(request: Request, instrument_id: RowId):
         for dividend in dividends:
             dividend.reinvest_trade = None
             db.delete(dividend)
+        # A split or a capital change means nothing with no trades to act on.
+        for action in _held_actions(db, instrument_id):
+            db.delete(action)
         db.flush()
         trades = db.scalars(select(Trade).where(Trade.instrument_id == instrument_id)).all()
         for trade in trades:

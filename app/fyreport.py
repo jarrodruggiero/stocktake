@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from . import clock, queries
-from .models import Instrument, Price, Trade, trade_order
+from .models import CorporateAction, Instrument, Price, Trade
 
 ZERO = Decimal(0)
 CENTS = Decimal("0.01")
@@ -135,6 +135,10 @@ class Disposal:
     quantity: Decimal
     proceeds: Decimal | None  # AUD, net of sale brokerage; None without a rate
     parcels: list[ParcelUse]
+    # "sale", or the corporate action whose reduction went beyond a parcel's
+    # cost base: what went beyond it is a gain on the day (CGT events G1 and
+    # E10), and `quantity` is the parcel's units, none of them sold (#146).
+    event: str = "sale"
 
     @property
     def known(self) -> bool:
@@ -185,6 +189,22 @@ class _Parcel:
     @property
     def native_held(self) -> Decimal:
         return self.native * self.remaining / self.quantity
+
+    def restart(self, units: Decimal, native: Decimal = ZERO,
+                cost: Decimal | None = ZERO) -> Decimal:
+        """Begin again from what is still held, as `units` of it, with its cost
+        moved by `native` and `cost`, the AUD change (None: unknown). The date
+        stays, so the discount clock does. Returns how far the AUD cost went
+        below nil, which is a capital gain, and the cost base is then nil."""
+        held = self.cost_held
+        self.native = max(self.native_held + native, ZERO)
+        self.cost = None if held is None or cost is None else held + cost
+        self.quantity = self.remaining = units
+        self.cost_allotted = ZERO
+        if self.cost is not None and self.cost < 0:
+            beyond, self.cost = -self.cost, ZERO
+            return beyond
+        return ZERO
 
     def take(self, units: Decimal) -> Decimal | None:
         """Consume `units` from this parcel and return their cost base, or None
@@ -259,9 +279,12 @@ def walk(inst: Instrument, fx_book=None, until: dt.date | None = None) -> Walk:
     # Timeline order, not entry order: two parcels bought on one day at
     # different prices must be consumed in the order they were acquired, or a
     # later sale is matched against the wrong cost base.
-    for t in sorted(inst.trades, key=trade_order):
+    for t in queries.timeline(inst.trades, inst.actions):
         if until is not None and t.date > until:
             break
+        if isinstance(t, CorporateAction):
+            disposals += _act(t, fifo, inst, fx_book)
+            continue
         fx = _rate(t, inst, fx_book)
         if t.type in ("buy", "drp"):
             outlay = t.quantity * t.unit_price + t.brokerage
@@ -329,6 +352,58 @@ def walk(inst: Instrument, fx_book=None, until: dt.date | None = None) -> Walk:
     return Walk(disposals, fifo)
 
 
+def _act(action: CorporateAction, fifo: list[_Parcel], inst: Instrument,
+         fx_book) -> list[Disposal]:
+    """A corporate action on the parcels held on its day (decisions.md #146).
+
+    A split shares the holding's new units between them in proportion, with
+    their costs and dates as they were. A return of capital lowers each one's
+    cost by its share of the units, and an AMIT adjustment raises or lowers it;
+    whatever takes a cost below nil is a gain on the day, as a Disposal."""
+    held = sum((p.remaining for p in fifo), ZERO)
+    if not held:
+        return []
+    if action.kind == "split":
+        total, seen, given = queries.split_units(held, action), ZERO, ZERO
+        for i, parcel in enumerate(fifo):
+            seen += parcel.remaining
+            share = (total if i == len(fifo) - 1
+                     else (total * seen / held).quantize(queries.UNIT)) - given
+            given += share
+            parcel.restart(share)
+        # A parcel too small to keep a unit after a consolidation gives its
+        # cost to the next one, so none of the cost is lost.
+        for i, parcel in reversed(list(enumerate(fifo))):
+            if not parcel.remaining and len(fifo) > 1:
+                into = fifo[i + 1] if i + 1 < len(fifo) else fifo[i - 1]
+                into.native += parcel.native
+                into.cost = (None if into.cost is None or parcel.cost is None
+                             else into.cost + parcel.cost)
+                fifo.pop(i)
+        return []
+    # Paid back, the cash lowers the cost base; an adjustment carries its sign.
+    change = -action.amount if action.kind == "capital_return" else action.amount
+    rate = _rate(action, inst, fx_book)
+    gains, seen, given = [], ZERO, ZERO
+    for parcel in fifo:
+        seen += parcel.remaining
+        part = change * seen / held - given
+        given += part
+        # A reduction with no AUD figure on either side may or may not go
+        # below nil: listed unpriced, so the year names it, as a sale (#5).
+        unpriced = part < 0 and (rate is None or parcel.cost_held is None)
+        beyond = parcel.restart(parcel.remaining, part, None if rate is None else part * rate)
+        if beyond or unpriced:
+            gain = beyond.quantize(CENTS) if beyond else None
+            gains.append(Disposal(
+                instrument=inst, date=action.date, quantity=parcel.remaining, proceeds=gain,
+                parcels=[ParcelUse(acquired=parcel.acquired, quantity=parcel.remaining,
+                                   cost_base=None if unpriced else ZERO, proceeds=gain,
+                                   discountable=action.date > _one_year_after(parcel.acquired))],
+                event=action.kind))
+    return gains
+
+
 @dataclass
 class CgtSummary:
     disposals: list[Disposal] = field(default_factory=list)
@@ -370,7 +445,8 @@ def fy_cgt(session: Session, fy_end_year: int, fx_book=None) -> CgtSummary:
     if warning:
         return CgtSummary(regime_warning=warning)
     instruments = session.scalars(
-        select(Instrument).options(selectinload(Instrument.trades))
+        select(Instrument).options(selectinload(Instrument.trades),
+                                   selectinload(Instrument.actions))
     ).unique().all()
     fx_book = fx_book or queries.FxBook(session)
     sales = [t.date for inst in instruments for t in inst.trades if t.type == "sell"]
@@ -395,7 +471,9 @@ def _year_cgt(instruments, fy_end_year: int, fx_book, carried: Decimal) -> CgtSu
     start, end = fy_bounds(fy_end_year)
     out = CgtSummary(losses_carried_in=carried)
     for inst in instruments:
-        if not any(t.type == "sell" and start <= t.date <= end for t in inst.trades):
+        # A sale, or an action that can take a cost base below nil (#146).
+        if not (any(t.type == "sell" and start <= t.date <= end for t in inst.trades)
+                or any(a.kind != "split" and start <= a.date <= end for a in inst.actions)):
             continue
         try:
             found = instrument_disposals(inst, fx_book, until=end)
@@ -561,7 +639,8 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
     today = clock.today()
     asof = min(end, today)
     instruments = session.scalars(
-        select(Instrument).options(selectinload(Instrument.trades))
+        select(Instrument).options(selectinload(Instrument.trades),
+                                   selectinload(Instrument.actions))
     ).unique().all()
 
     snapshot: list[SnapshotRow] = []
@@ -575,11 +654,15 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
     for inst in instruments:
         units = ZERO
         invested: Decimal | None = ZERO
-        for t in sorted(inst.trades, key=trade_order):
-            fx = _rate(t, inst, fx_book)
-            in_fy = start <= t.date <= end
+        for t in queries.timeline(inst.trades, inst.actions):
             if t.date > asof:
                 continue
+            if isinstance(t, CorporateAction):
+                if t.kind == "split":
+                    units = queries.split_units(units, t)
+                continue
+            fx = _rate(t, inst, fx_book)
+            in_fy = start <= t.date <= end
             if t.type in ("buy", "drp"):
                 units += t.quantity
                 if t.type == "buy":

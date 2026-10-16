@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from appcore import dialect_insert, load_config, make_session_factory
 
 from . import clock, memory, providers, tenancy
-from .models import Dividend, FxRate, Instrument, MarketDividend, Price, Trade
+from .models import CorporateAction, Dividend, FxRate, Instrument, MarketDividend, Price, Trade
 from .queries import FX_REACH_DAYS
 from .settings import PortfolioSettings
 
@@ -379,7 +379,7 @@ def _now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
-def _backfill_rates(session: Session, model) -> int:
+def _backfill_rates(session: Session, model, *conditions) -> int:
     """Fill each `model` row's missing rate from the stored series, on or
     before its date, never after: a rate published later could not have
     applied on the day the money moved. Nor from more than a week before: a
@@ -388,7 +388,7 @@ def _backfill_rates(session: Session, model) -> int:
     How many were filled."""
     filled = 0
     for row in session.scalars(
-        select(model).join(Instrument).where(model.fx_rate.is_(None))
+        select(model).join(Instrument).where(model.fx_rate.is_(None), *conditions)
     ).all():
         rate = session.execute(
             select(FxRate.rate)
@@ -423,7 +423,7 @@ def run_feed(session: Session, settings: PortfolioSettings) -> dict[str, int]:
     memory.log_snapshot("before feed run")
     today = clock.today()
     counts = {"prices": 0, "fx": 0, "dividends": 0, "trade_fx_backfilled": 0,
-              "dividend_fx_backfilled": 0, "names_filled": 0}
+              "dividend_fx_backfilled": 0, "action_fx_backfilled": 0, "names_filled": 0}
     # Who served what, keyed "kind:symbol". Published on the status page so a
     # fallback is visible: a primary that has been quietly dead for a month is
     # the failure this whole provider layer exists to make noticeable.
@@ -546,6 +546,9 @@ def run_feed(session: Session, settings: PortfolioSettings) -> dict[str, int]:
     # the dashboard for good.
     counts["trade_fx_backfilled"] = _backfill_rates(session, Trade)
     counts["dividend_fx_backfilled"] = _backfill_rates(session, Dividend)
+    # A split has no money to convert; a capital change does (#146).
+    counts["action_fx_backfilled"] = _backfill_rates(
+        session, CorporateAction, CorporateAction.amount.is_not(None))
 
     session.commit()
     last_run_sources.update(sources)

@@ -22,8 +22,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 import factories as fac
-from app import tenancy
+from app import queries, tenancy
 from app.models import (
+    CorporateAction,
     Dividend,
     FxRate,
     HoldingPref,
@@ -39,7 +40,8 @@ from app.models import (
 # plus the user-scoped chart. Written out rather than read off
 # tenancy.SCOPED_MODELS on purpose: dropping a model from that tuple has to make
 # a test fail, and a test that imports its own expectation cannot notice.
-PERSONAL_MODELS = [Trade, Dividend, PlannedPurchase, HoldingPref, InvestmentPlan, SavedChart]
+PERSONAL_MODELS = [Trade, Dividend, CorporateAction, PlannedPurchase, HoldingPref,
+                   InvestmentPlan, SavedChart]
 
 
 def _chart(name: str, *, user_id: int | None, portfolio_id: int | None) -> SavedChart:
@@ -83,6 +85,22 @@ def two_portfolios(pf, owner):
 # --------------------------------------------------------------------------- #
 # Fail closed: no portfolio on the session
 # --------------------------------------------------------------------------- #
+
+def test_another_portfolios_corporate_action_is_not_seen(pf, owner):
+    """Its split would double this portfolio's units if it were."""
+    acme = fac.make_instrument(pf, "ACME")
+    fac.add_trade(pf, acme, "2025-01-06", "buy", 10, "5.00")
+    other = fac.make_portfolio(pf, "Neighbour portfolio",
+                               owner=fac.make_user(pf, "neighbour@example.test"))
+    fac.add_action(pf, acme, "2025-02-03", "split", ratio=(2, 1), portfolio_id=other.id)
+    pf.commit()
+    pf.expunge_all()
+
+    held = pf.scalars(select(Instrument).where(Instrument.ticker == "ACME")).one()
+
+    assert (held.actions, pf.scalars(select(CorporateAction)).all()) == ([], [])
+    assert queries.all_holdings(pf)[0].units == 10
+
 
 @pytest.mark.parametrize("model", PERSONAL_MODELS, ids=lambda m: m.__name__)
 def test_selecting_personal_data_with_no_portfolio_raises(db, model):

@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from . import clock, fyreport, queries
-from .models import Dividend, Instrument, Trade
+from .models import CorporateAction, Dividend, Instrument, Trade
 
 ZERO = Decimal(0)
 Report = tuple[list[str], list[list]]
@@ -87,15 +87,27 @@ def transactions(session: Session, ticker: str | None = None, **_) -> Report:
         signed = gross + t.brokerage if t.type in ("buy", "drp") else gross - t.brokerage
         # The FX column shows what the trade actually captured; the AUD column
         # may additionally fall back to the stored series for that date.
-        rows.append([
+        rows.append(((t.date, 1, t.id), [
             t.date.isoformat(), t.instrument.ticker, t.instrument.name or "",
             t.instrument.exchange, t.type, _d(t.quantity, "0.00000001"),
             _d(t.unit_price, "0.000001"), _d(t.brokerage), t.instrument.currency,
             _d(t.fx_rate, "0.000001"),
             _d(_aud(signed, fxbook.of(t, t.instrument.currency))),
             t.user_id or "", t.note or "",
-        ])
-    return headers, rows
+        ]))
+    # Corporate actions in the same ledger, each before its day's trades (#146).
+    for a in session.scalars(select(CorporateAction)
+                             .options(selectinload(CorporateAction.instrument))):
+        if ticker and a.instrument.ticker != ticker:
+            continue
+        money = None if a.amount is None else _aud(a.amount, fxbook.of(a, a.instrument.currency))
+        rows.append(((a.date, 0, a.id), [
+            a.date.isoformat(), a.instrument.ticker, a.instrument.name or "",
+            a.instrument.exchange, queries.action_label(a), "", "", "",
+            a.instrument.currency, _d(a.fx_rate, "0.000001"),
+            "" if a.amount is None else _d(money), a.user_id or "", a.note or "",
+        ]))
+    return headers, [row for _order, row in sorted(rows, key=lambda pair: pair[0])]
 
 
 def holdings(session: Session, **_) -> Report:
@@ -164,6 +176,12 @@ def dividends(session: Session, fy: int | None = None, **_) -> Report:
     return headers, rows
 
 
+# What made a row of the realised gains: a sale, or a capital change beyond a
+# parcel's cost base, which sold nothing (decisions.md #146).
+EVENTS = {"sale": "sale", "capital_return": "return of capital",
+          "cost_base": "cost base decrease"}
+
+
 def realised_cgt(session: Session, fy: int | None = None, **_) -> Report:
     """One row per parcel consumed by a sale — the tax-time report.
 
@@ -175,17 +193,20 @@ def realised_cgt(session: Session, fy: int | None = None, **_) -> Report:
         "Sale date", "Ticker", "Name", "Units", "Acquired", "Days held",
         "Cost base (AUD)", "Proceeds (AUD)", "Gross gain (AUD)",
         "Discount eligible", "CGT discount (AUD)", "Gain after discount (AUD)",
-        "Financial year",
+        "Financial year", "Event",
     ]
     instruments = (
-        session.scalars(select(Instrument).options(selectinload(Instrument.trades)))
+        session.scalars(select(Instrument).options(selectinload(Instrument.trades),
+                                                   selectinload(Instrument.actions)))
         .unique()
         .all()
     )
     fxbook = queries.FxBook(session)
     rows = []
     for inst in instruments:
-        if not any(t.type == "sell" for t in inst.trades):
+        # A sale, or a capital change that can go beyond a cost base (#146).
+        if not (any(t.type == "sell" for t in inst.trades)
+                or any(a.kind != "split" for a in inst.actions)):
             continue
         for disposal in fyreport.instrument_disposals(inst, fxbook):
             year = disposal.date.year + (0 if disposal.date.month <= 6 else 1)
@@ -202,7 +223,7 @@ def realised_cgt(session: Session, fy: int | None = None, **_) -> Report:
                     _d(parcel.cost_base), _d(parcel.proceeds), _d(gain),
                     "yes" if parcel.discountable else "no",
                     _d(discount), _d(None if gain is None else gain - discount),
-                    fyreport.fy_label(year),
+                    fyreport.fy_label(year), EVENTS[disposal.event],
                 ])
     rows.sort(key=lambda r: (r[0], r[1]))
     return headers, rows
@@ -217,7 +238,8 @@ def unrealised_cgt(session: Session, **_) -> Report:
     ]
     today = clock.today()
     instruments = (
-        session.scalars(select(Instrument).options(selectinload(Instrument.trades)))
+        session.scalars(select(Instrument).options(selectinload(Instrument.trades),
+                                                   selectinload(Instrument.actions)))
         .unique()
         .all()
     )
@@ -294,15 +316,18 @@ def closed_positions(session: Session, **_) -> Report:
     for position in closed:
         inst = position.instrument
         disposals = fyreport.instrument_disposals(inst, fxbook)
-        if not disposals:
+        # Sales, and not a return of capital beyond the cost base, whose gain
+        # (#146) is in the gross figure but is not a sale's proceeds.
+        sales = [d for d in disposals if d.event == "sale"]
+        if not sales:
             continue
-        cost_base = _total(d.cost_base for d in disposals)
-        proceeds = _total(d.proceeds for d in disposals)
-        gross = None if cost_base is None or proceeds is None else proceeds - cost_base
+        cost_base = _total(d.cost_base for d in sales)
+        proceeds = _total(d.proceeds for d in sales)
+        gross = _total(d.gain for d in disposals)
         parcels = [p for d in disposals for p in d.parcels]
         discount = (None if any(p.gain is None for p in parcels) else
                     sum((p.gain / 2 for p in parcels if p.discountable and p.gain > 0), ZERO))
-        units = sum((d.quantity for d in disposals), ZERO)
+        units = sum((d.quantity for d in sales), ZERO)
         dividends_aud = _total(
             queries.in_aud(dv.cash_amount, inst.currency, fxbook.of(dv, inst.currency))
             for dv in inst.dividends
@@ -312,7 +337,7 @@ def closed_positions(session: Session, **_) -> Report:
         rows.append([
             inst.ticker, inst.name or "", _d(units, "0.00000001"),
             min(buys).isoformat(),          # a closed position was bought first
-            max(d.date for d in disposals).isoformat(),
+            max(d.date for d in sales).isoformat(),
             _d(cost_base), _d(proceeds), _d(dividends_aud), _d(gross), _d(discount),
             _d(None if gross is None or discount is None else gross - discount),
             _d(None if gross is None or dividends_aud is None else gross + dividends_aud),

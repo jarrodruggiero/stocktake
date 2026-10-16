@@ -20,6 +20,7 @@ from decimal import Decimal
 
 from app import tenancy
 from app.models import (
+    CorporateAction,
     Dividend,
     FxRate,
     HoldingPref,
@@ -232,6 +233,30 @@ def add_dividend(db, inst: Instrument, date, cash_amount, *, fx_rate="auto",
     db.add(dividend)
     db.flush()
     return dividend
+
+
+def add_action(db, inst: Instrument, date, kind: str, *, ratio=None, amount=None,
+               fx_rate="auto", note: str | None = None, portfolio_id: int | None = None,
+               user_id: int | None = None) -> CorporateAction:
+    """A corporate action. `ratio` is (new, old) for a split: (2, 1) doubles a
+    holding, (1, 10) consolidates it; `amount` is a return of capital's cash
+    or a cost base adjustment, for the whole holding."""
+    if fx_rate == "auto":
+        fx_rate = Decimal(1) if inst.currency == "AUD" else None
+    action = CorporateAction(
+        instrument_id=inst.id, date=d(date), kind=kind,
+        ratio_new=ratio[0] if ratio else None, ratio_old=ratio[1] if ratio else None,
+        amount=None if amount is None else dec(amount),
+        fx_rate=None if fx_rate is None else dec(fx_rate), note=note,
+    )
+    if portfolio_id is not None:
+        action.portfolio_id = portfolio_id
+        action.user_id = user_id
+    else:
+        tenancy.owned(db, action)
+    db.add(action)
+    db.flush()
+    return action
 
 
 def add_drp(db, inst: Instrument, date, cash_amount, units, unit_price, **kwargs):

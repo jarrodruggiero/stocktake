@@ -92,6 +92,9 @@ def currency_problem(currency: str) -> str | None:
 
 
 TRADE_TYPES = ("buy", "sell", "drp")
+# What a corporate action can be: a split or consolidation, a return of
+# capital, or an AMIT cost base adjustment (decisions.md #146).
+ACTION_KINDS = ("split", "capital_return", "cost_base")
 PLAN_STATUSES = ("planned", "done", "skipped")
 MEMBER_ROLES = ("owner", "member", "viewer")
 
@@ -715,10 +718,11 @@ class Instrument(Base):
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
 
-    # Both relationships return ONLY the current user's rows: tenancy.py applies
+    # These relationships return ONLY the current user's rows: tenancy.py applies
     # a loader criterion to every select, eager load and lazy load.
     trades: Mapped[list[Trade]] = relationship(back_populates="instrument")
     dividends: Mapped[list[Dividend]] = relationship(back_populates="instrument")
+    actions: Mapped[list[CorporateAction]] = relationship(back_populates="instrument")
 
     __table_args__ = (UniqueConstraint("exchange", "ticker"),)
 
@@ -850,6 +854,50 @@ class Dividend(Base):
 
     instrument: Mapped[Instrument] = relationship(back_populates="dividends")
     reinvest_trade: Mapped[Trade | None] = relationship()
+
+
+class CorporateAction(Base):
+    """Something that happened to a holding with no trade: a split or a
+    consolidation, a return of capital, or an AMIT cost base adjustment
+    (decisions.md #146). Each portfolio records its own, like its trades, and
+    every figure built from trades takes them in, in date order: an action
+    takes effect from the start of its day."""
+
+    __tablename__ = "corporate_action"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    portfolio_id: Mapped[int | None] = mapped_column(
+        ForeignKey("portfolio.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), index=True
+    )
+    instrument_id: Mapped[int] = mapped_column(
+        ForeignKey("instrument.id"), index=True
+    )
+    date: Mapped[dt.date] = mapped_column(Date, index=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    # A split: `ratio_new` units for every `ratio_old` held. 2 for 1 doubles a
+    # holding; 1 for 10 is a consolidation.
+    ratio_new: Mapped[int | None] = mapped_column(Integer)
+    ratio_old: Mapped[int | None] = mapped_column(Integer)
+    # For the whole holding, in its own currency: the cash a return of capital
+    # paid, or a cost base adjustment, positive for an increase.
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 4))
+    fx_rate: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))  # see Trade.fx_rate
+    note: Mapped[str | None] = mapped_column(String(400))
+    updated_at: Mapped[dt.datetime | None] = mapped_column(  # see Trade.updated_at
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    instrument: Mapped[Instrument] = relationship(back_populates="actions")
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('split','capital_return','cost_base')",
+                        name="corporate_action_kind"),
+        CheckConstraint("ratio_new IS NULL OR ratio_new > 0", name="action_ratio_new_positive"),
+        CheckConstraint("ratio_old IS NULL OR ratio_old > 0", name="action_ratio_old_positive"),
+    )
 
 
 class Price(Base):

@@ -155,9 +155,9 @@ def parse_ofx(text: str, *, exchange: str = "ASX", currency: str = "AUD") -> Par
             # Named, not silently dropped: an import whose cash movements
             # vanish looks successful until the numbers stop matching.
             when = _date(_value(block, "DTTRADE") or _value(block, "DTPOSTED"))
-            result.skipped.append(
-                f"{when or 'undated'}: {description} — record it separately"
-            )
+            where = ("on the holding's page" if tag in ("SPLIT", "RETOFCAP")
+                     else "separately")
+            result.skipped.append(f"{when or 'undated'}: {description} — record it {where}")
 
     if not found_any:
         result.errors.append(
