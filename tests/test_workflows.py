@@ -15,8 +15,10 @@ middle of cutting a version.
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -28,6 +30,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
 RELEASE = ROOT / ".github" / "workflows" / "release.yml"
+CI = ROOT / ".github" / "workflows" / "ci.yml"
 
 
 def _steps(workflow: Path):
@@ -369,3 +372,123 @@ def test_appcore_is_tested_at_the_revision_this_app_pins(tmp_path):
         f"rev={pinned['tool']['uv']['sources']['appcore']['rev']}\n")
     assert checkout.get("ref") == "${{ steps.pin.outputs.rev }}"
     assert "appcore" in jobs["dev"]["needs"]
+
+
+# A merge re-runs only what nothing tested: ci.yml's `tree` and `record` jobs.
+
+GATE = "needs.tree.outputs.passed != 'true'"
+
+
+def test_a_merge_skips_only_what_its_pull_request_passed():
+    """Every test job skips on a tree a pull request's run passed, and `record`
+    marks a tree passed only once every one of them has. A job left out of
+    `record` would be skipped on main after failing in the pull request."""
+    jobs = _document(CI)["jobs"]
+    gated = {name for name, job in jobs.items() if job.get("if") == GATE}
+    upload = next(step["with"] for step in jobs["record"]["steps"]
+                  if str(step.get("uses", "")).startswith("actions/upload-artifact@"))
+
+    assert gated == set(jobs) - {"tree", "record", "dev"}
+    assert {jobs[name]["needs"] for name in gated} == {"tree"}
+    assert set(jobs["record"]["needs"]) == set(jobs["dev"]["needs"]) == gated | {"tree"}
+    assert jobs["record"]["if"] == "github.event_name == 'pull_request'"
+    assert upload["name"] == "passed-${{ needs.tree.outputs.hash }}"
+
+
+TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+OURS = {"expired": False, "workflow_run": {"id": 7, "repository_id": 1, "head_repository_id": 1}}
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq stands in for gh's own --jq")
+@pytest.mark.parametrize("artifacts, gh_exit, passed", [
+    ([OURS], 0, "true"),
+    ([], 0, "false"),
+    # A fork's pull request runs the workflow as the fork wrote it, which can
+    # upload the name without testing anything.
+    ([{**OURS, "workflow_run": {**OURS["workflow_run"], "head_repository_id": 2}}], 0, "false"),
+    ([{**OURS, "expired": True}], 0, "false"),
+    # The lookup failed: everything runs, rather than the run failing.
+    ([], 1, "false"),
+], ids=["passed", "untested", "fork", "expired", "api-failed"])
+def test_a_merge_looks_for_the_run_that_passed_its_tree(tmp_path, artifacts, gh_exit, passed):
+    """The lookup's own script, run against a stand-in `gh` as Actions runs it."""
+    step = next(step for job, step in _steps(CI) if job == "tree" and step.get("id") == "passed")
+    listed = tmp_path / "artifacts.json"
+    listed.write_text(json.dumps({"artifacts": artifacts}), encoding="utf-8")
+    fake = tmp_path / "gh"
+    fake.write_text("#!/bin/sh\n"
+                    f"printf '%s\\n' \"$@\" > {tmp_path}/args\n"
+                    f"[ {gh_exit} = 0 ] || exit {gh_exit}\n"
+                    'while [ $# -gt 0 ]; do [ "$1" = --jq ] && filter=$2; shift; done\n'
+                    f'exec jq -r "$filter" {listed}\n', encoding="utf-8")
+    fake.chmod(0o755)
+    output, summary = tmp_path / "output", tmp_path / "summary"
+    output.touch()
+    summary.touch()
+
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]], capture_output=True, text=True,
+        env={"PATH": f"{tmp_path}:{os.environ['PATH']}", "GITHUB_OUTPUT": str(output),
+             "GITHUB_STEP_SUMMARY": str(summary), "GITHUB_REPOSITORY": "o/r",
+             "GITHUB_SERVER_URL": "https://github.com", "TREE": TREE})
+
+    asked = (tmp_path / "args").read_text(encoding="utf-8").splitlines()
+    assert result.returncode == 0, result.stderr
+    assert f"repos/o/r/actions/artifacts?name=passed-{TREE}" in asked
+    assert output.read_text(encoding="utf-8") == f"passed={passed}\n"
+    assert ("https://github.com/o/r/actions/runs/7" in summary.read_text(encoding="utf-8")) == (
+        passed == "true")
+
+
+def _decide(condition: str, values: dict, results: dict, cancelled: bool) -> bool:
+    """A job's `if:` worked out as Actions works it out, for what ci.yml uses:
+    comparisons, `&&`, `||`, `!` (only ever before a call there), success(),
+    cancelled() and contains(). Anything else is refused, not guessed at."""
+    if not re.search(r"\b(success|failure|cancelled|always)\(", condition):
+        condition = f"success() && ({condition})"      # what Actions adds
+    calls = {"success": lambda: set(results.values()) == {"success"},
+             "cancelled": lambda: cancelled,
+             "contains": lambda items, item: item in items}
+    names = {**values, "needs.*.result": list(results.values())}
+    python = []
+    for token in re.finditer(r"\s+|('[^']*')|(==|!=|&&|\|\||!|[(),])|([\w.*]+)|(.)", condition):
+        string, operator, name, stray = token.groups()
+        assert stray is None, f"no rule for {stray!r} in {condition!r}"
+        if string:
+            python.append(string)
+        elif operator:
+            python.append({"&&": "and", "||": "or", "!": "not"}.get(operator, operator))
+        elif name:
+            python.append(f"calls[{name!r}]" if name in calls else repr(names[name]))
+    return bool(eval(" ".join(python), {"__builtins__": {}}, {"calls": calls}))
+
+
+NEEDS = ["tree", "lint", "appcore", "test", "image", "visual", "hostile"]
+GREEN = dict.fromkeys(NEEDS, "success")
+SKIPPED = {**dict.fromkeys(NEEDS, "skipped"), "tree": "success"}
+
+
+@pytest.mark.parametrize("event, passed, results, cancelled, publishes", [
+    ("push", "false", GREEN, False, True),
+    ("push", "false", {**GREEN, "visual": "failure"}, False, False),
+    # A job that ended cancelled, with the run itself not.
+    ("push", "false", {**GREEN, "visual": "cancelled"}, False, False),
+    ("push", "true", SKIPPED, False, True),
+    ("push", "true", SKIPPED, True, False),
+    # The check itself failed, so every test job skipped and nothing passed.
+    ("push", "", {**SKIPPED, "tree": "failure"}, False, False),
+    # A job added later without the skip, which ran and failed.
+    ("push", "true", {**SKIPPED, "image": "failure"}, False, False),
+    ("pull_request", "false", GREEN, False, False),
+], ids=["passed-here", "failed-here", "job-cancelled", "passed-in-its-pull-request", "cancelled",
+        "tree-failed", "ran-anyway-and-failed", "pull-request"])
+def test_dev_publishes_only_a_tree_that_passed(event, passed, results, cancelled, publishes):
+    """A skipped job fails `success()`: that is why a run that skipped the tests
+    needs the second half of the condition, and why the second half needs
+    `!cancelled()`."""
+    dev = _document(CI)["jobs"]["dev"]
+    values = {"github.event_name": event, "github.ref": "refs/heads/main",
+              "needs.tree.outputs.passed": passed}
+
+    assert set(results) == set(dev["needs"])
+    assert _decide(dev["if"], values, results, cancelled) is publishes
