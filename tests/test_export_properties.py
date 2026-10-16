@@ -59,7 +59,7 @@ def _realised(history: History, names: dict) -> list:
                          (d["date"] - p["acquired"]).days, _d(p["cost_base"]),
                          _d(p["proceeds"]), _d(gain), "yes" if p["discountable"] else "no",
                          _d(discount), _d(None if gain is None else gain - discount),
-                         _label(d["date"])])
+                         _label(d["date"]), "sale"])   # no corporate action here
     return sorted(rows, key=lambda r: (r[0], r[1]))
 
 

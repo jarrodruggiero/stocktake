@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from . import clock, money
 from .models import (
+    CorporateAction,
     Dividend,
     FxRate,
     HoldingPref,
@@ -41,6 +42,65 @@ ONE = Decimal(1)
 # feed. Until then the app is AUD-only and says so here rather than in a dozen
 # string literals.
 REPORTING_CURRENCY = "AUD"
+
+
+# A quantity column's last place: a split is rounded to it, once per holding.
+UNIT = Decimal("0.00000001")
+
+
+def timeline(trades, actions=()) -> list:
+    """Trades and corporate actions in the order they happened. An action takes
+    effect from the start of its day, before that day's trades (#146)."""
+    return sorted([*trades, *actions], key=moment)
+
+
+def moment(row) -> tuple:
+    """Where a trade or an action sits in its holding's timeline."""
+    if isinstance(row, CorporateAction):
+        return (row.date, 0, dt.time.min, 0, row.id or 0)
+    return (row.date, 1, *trade_order(row)[1:])
+
+
+def action_label(action: CorporateAction) -> str:
+    """What a corporate action is called in a ledger or an export row."""
+    if action.kind == "split":
+        word = "split" if action.ratio_new > action.ratio_old else "consolidation"
+        return f"{word} {action.ratio_new} for {action.ratio_old}"
+    if action.kind == "capital_return":
+        return "capital return"
+    return f"cost base {'+' if action.amount > 0 else '−'}{abs(action.amount).normalize():f}"
+
+
+def split_units(units: Decimal, action: CorporateAction) -> Decimal:
+    """`units` after a split, rounded once to the quantity column's last place:
+    a holding's parcels then share exactly this between them."""
+    return (units * action.ratio_new / action.ratio_old).quantize(UNIT)
+
+
+def units_through(rows) -> Decimal:
+    """Units held after `rows`, a `timeline`: trades add and take away, a split
+    scales what is held."""
+    units = ZERO
+    for row in rows:
+        if isinstance(row, CorporateAction):
+            if row.kind == "split":
+                units = split_units(units, row)
+        else:
+            units += row.quantity if row.type in ("buy", "drp") else -row.quantity
+    return units
+
+
+def later_splits(rows) -> dict[int, Decimal]:
+    """For each trade in `rows`, a `timeline`, what the splits after it multiply
+    its units by: how many units it is now. Keyed by `id(trade)`."""
+    factor, out = Decimal(1), {}
+    for row in reversed(rows):
+        if isinstance(row, CorporateAction):
+            if row.kind == "split":
+                factor = factor * row.ratio_new / row.ratio_old
+        else:
+            out[id(row)] = factor
+    return out
 
 
 def prefs_by_instrument(session: Session) -> dict[int, HoldingPref]:
@@ -195,13 +255,13 @@ def build_holding(
     fx_book = fx_book or FxBook(session)
     buys = [t for t in inst.trades if t.type == "buy"]
     accumulating = [t for t in inst.trades if t.type in ("buy", "drp")]
-    sells = [t for t in inst.trades if t.type == "sell"]
 
-    units = sum((t.quantity for t in accumulating), ZERO) - sum(
-        (t.quantity for t in sells), ZERO
-    )
+    rows = timeline(inst.trades, inst.actions)
+    units = units_through(rows)
     invested = sum((t.quantity * t.unit_price + t.brokerage for t in buys), ZERO)
-    acc_units = sum((t.quantity for t in accumulating), ZERO)
+    # Over the units each purchase is now, after any split since it.
+    now = later_splits(rows)
+    acc_units = sum((t.quantity * now[id(t)] for t in accumulating), ZERO)
     avg = (
         (sum((t.quantity * t.unit_price for t in accumulating), ZERO) / acc_units)
         if acc_units
@@ -312,7 +372,8 @@ def all_holdings(session: Session) -> list[Holding]:
         session.scalars(
             select(Instrument)
             .where(Instrument.id.in_(portfolio_instrument_ids(session)))
-            .options(selectinload(Instrument.trades), selectinload(Instrument.dividends))
+            .options(selectinload(Instrument.trades), selectinload(Instrument.dividends),
+                     selectinload(Instrument.actions))
             .order_by(Instrument.asset_class, Instrument.ticker)
         )
         .unique()
@@ -429,17 +490,22 @@ class Breach:
 
 
 def _walk(
-    trades: list[Trade], candidate: Trade | None, exclude_ids: frozenset[int]
+    trades: list[Trade], candidate: Trade | None, exclude_ids: frozenset[int],
+    actions=(),
 ) -> tuple[Decimal, Breach | None]:
-    rows = sorted(
+    rows = timeline(
         [
             *(t for t in trades if t.id is None or t.id not in exclude_ids),
             *([candidate] if candidate is not None else []),
         ],
-        key=trade_order,
+        actions,
     )
     units = ZERO
     for t in rows:
+        if isinstance(t, CorporateAction):
+            if t.kind == "split":
+                units = split_units(units, t)
+            continue
         before = units
         units += t.quantity if t.type in ("buy", "drp") else -t.quantity
         if units < 0:
@@ -457,6 +523,7 @@ def balance_after(
     candidate: Trade | None = None,
     *,
     exclude_ids: frozenset[int] | set[int] = frozenset(),
+    actions=(),
 ) -> Decimal | None:
     """Running unit balance walked in timeline order, or None if it ever goes
     negative.
@@ -465,14 +532,15 @@ def balance_after(
     exceeds the parcels held, which leaves the holding out of the FY report's
     capital gains and refuses the CGT exports (`fyreport.Oversold`). Checking
     the *running* balance (not just the total) also catches a backdated sell
-    that only balances because of units bought later.
+    that only balances because of units bought later. `actions` are the
+    holding's corporate actions: a split changes what is held from its day.
 
     `exclude_ids` drops saved rows from the walk, which is how an edit is
     checked: the original comes out, the candidate goes in, and the whole
     timeline is re-walked. Validating only the edited row would miss the case
     that matters — cutting an old buy's quantity strands a sell years later.
     """
-    units, breach = _walk(trades, candidate, frozenset(exclude_ids))
+    units, breach = _walk(trades, candidate, frozenset(exclude_ids), actions)
     return None if breach is not None else units
 
 
@@ -481,6 +549,7 @@ def balance_breach(
     candidate: Trade | None = None,
     *,
     exclude_ids: frozenset[int] | set[int] = frozenset(),
+    actions=(),
 ) -> Breach | None:
     """The first point the timeline goes negative, or None if it never does.
 
@@ -488,7 +557,7 @@ def balance_breach(
     trade breaks and by how much — "that sell would leave a negative balance"
     is true but unhelpful when the offender is a row from three years ago.
     """
-    return _walk(trades, candidate, frozenset(exclude_ids))[1]
+    return _walk(trades, candidate, frozenset(exclude_ids), actions)[1]
 
 
 def _units(value: Decimal) -> str:
@@ -530,9 +599,10 @@ class LedgerEvent:
     # Which row the edit/delete buttons act on. A DRP row shows the trade but
     # points at its DIVIDEND: the pair is one statement event, and editing half
     # of it would leave the units and the cash disagreeing.
-    row_kind: str | None = None  # "trade" | "dividend"
+    row_kind: str | None = None  # "trade" | "dividend" | "action"
     row_id: int | None = None
     time: dt.time | None = None
+    label: str | None = None  # what the row says, where it is not `kind`
 
 
 def ledger(
@@ -546,7 +616,8 @@ def ledger(
         return None
     inst = session.scalars(
         select(Instrument).where(Instrument.id == found[0].id)
-        .options(selectinload(Instrument.trades), selectinload(Instrument.dividends))
+        .options(selectinload(Instrument.trades), selectinload(Instrument.dividends),
+                     selectinload(Instrument.actions))
     ).one()
     from . import fyreport
 
@@ -604,6 +675,20 @@ def ledger(
         )
         for d in inst.dividends
         if d.reinvest_trade_id is None  # DRP cash shows through its trade row
+    ] + [
+        LedgerEvent(
+            date=a.date,
+            kind=a.kind,
+            label=action_label(a),
+            quantity=None,
+            unit_price=None,
+            brokerage=None,
+            cash=a.amount if a.kind == "capital_return" else None,
+            note=a.note,
+            row_kind="action",
+            row_id=a.id,
+        )
+        for a in inst.actions
     ]
     events.sort(key=lambda e: (e.date, e.kind), reverse=True)
     return inst, build_holding(session, inst, pref, fx_book), events
@@ -747,6 +832,7 @@ def _series_fingerprint(session: Session) -> tuple:
                         .select_from(FxRate)).one(),
         *_table_fingerprint(session, Trade),
         *_table_fingerprint(session, Dividend),
+        *_table_fingerprint(session, CorporateAction),
         # A class or currency corrected, and a holding's reinvest flag or note.
         *_table_fingerprint(session, Instrument),
         *_table_fingerprint(session, HoldingPref),
@@ -850,7 +936,8 @@ def grouped_series(session: Session, by: str, filters: dict | None = None) -> di
         session.scalars(
             select(Instrument)
             .where(Instrument.id.in_(portfolio_instrument_ids(session)))
-            .options(selectinload(Instrument.trades), selectinload(Instrument.dividends))
+            .options(selectinload(Instrument.trades), selectinload(Instrument.dividends),
+                     selectinload(Instrument.actions))
         )
         .unique()
         .all()
@@ -885,9 +972,12 @@ def grouped_series(session: Session, by: str, filters: dict | None = None) -> di
         for d in inst.dividends:
             if d.reinvest_trade_id is None:  # reinvested cash is already units
                 events.append((d.date, "d", inst, d))
+        for a in inst.actions:
+            events.append((a.date, "a", inst, a))
     if not events:
         return {"dates": [], "groups": {}, "excluded": excluded}
-    events.sort(key=lambda e: e[0])
+    # An action takes effect from the start of its day (#146).
+    events.sort(key=lambda e: (e[0], e[1] != "a"))
     first = events[0][0]
     dates = sorted(d for d in date_set if d >= first)
 
@@ -924,6 +1014,11 @@ def grouped_series(session: Session, by: str, filters: dict | None = None) -> di
                     units[inst.id] = units.get(inst.id, ZERO) - obj.quantity
                     returned[inst.id] = returned.get(inst.id, ZERO) + (
                         obj.quantity * obj.unit_price - obj.brokerage) * fxr
+            elif kind == "a":
+                if obj.kind == "split":
+                    units[inst.id] = split_units(units.get(inst.id, ZERO), obj)
+                elif obj.kind == "capital_return":      # money back, as a sale's is
+                    returned[inst.id] = returned.get(inst.id, ZERO) + obj.amount * fxr
             else:
                 cash = obj.cash_amount * fxr
                 returned[inst.id] = returned.get(inst.id, ZERO) + cash
@@ -982,7 +1077,8 @@ def portfolio_series(session: Session) -> dict:
     owned = portfolio_instrument_ids(session)
     instruments = session.scalars(
         select(Instrument).where(Instrument.id.in_(owned))
-        .options(selectinload(Instrument.trades), selectinload(Instrument.dividends))
+        .options(selectinload(Instrument.trades), selectinload(Instrument.dividends),
+                     selectinload(Instrument.actions))
     ).unique().all()
     price_rows = session.execute(
         select(Price.instrument_id, Price.date, Price.close)
@@ -1013,17 +1109,20 @@ def portfolio_series(session: Session) -> dict:
         if not fxbook.known(inst.currency) and (inst.trades or inst.dividends)
     }
 
-    events = []  # (date, kind, inst, trade/dividend)
+    events = []  # (date, kind, inst, trade/dividend/action)
     for inst in priced:
         for t in inst.trades:
             events.append((t.date, "t", inst, t))
         for d in inst.dividends:
             events.append((d.date, "d", inst, d))
+        for a in inst.actions:
+            events.append((a.date, "a", inst, a))
     if not events:
         return {"dates": [], "invested": [], "value": [], "gain": [], "gain_pct": [],
                 "flow": [], "flow_in": [], "cash_div": [], "unpriced": [],
                 "excluded": excluded, "excluded_since": excluded_since}
-    events.sort(key=lambda e: e[0])
+    # An action takes effect from the start of its day (#146).
+    events.sort(key=lambda e: (e[0], e[1] != "a"))
     first = events[0][0]
     dates = sorted(d for d in date_set if d >= first)
 
@@ -1057,6 +1156,13 @@ def portfolio_series(session: Session) -> dict:
                 else:
                     units[inst.id] = units.get(inst.id, ZERO) - obj.quantity
                     got = (obj.quantity * obj.unit_price - obj.brokerage) * fxr
+                    proceeds += got
+                    taken[inst.id] = taken.get(inst.id, ZERO) + got
+            elif kind == "a":
+                if obj.kind == "split":
+                    units[inst.id] = split_units(units.get(inst.id, ZERO), obj)
+                elif obj.kind == "capital_return":      # money back, as a sale's is
+                    got = obj.amount * fxr
                     proceeds += got
                     taken[inst.id] = taken.get(inst.id, ZERO) + got
             else:
@@ -1289,19 +1395,22 @@ def instrument_series(session: Session, inst: Instrument) -> dict:
     price_rows = session.execute(
         select(Price.date, Price.close).where(Price.instrument_id == inst.id).order_by(Price.date)
     ).all()
-    trades = sorted(inst.trades, key=trade_order)
-    if not trades or not price_rows:
+    rows = timeline(inst.trades, inst.actions)
+    if not inst.trades or not price_rows:
         return {"dates": [], "invested": [], "value": []}
-    first = trades[0].date
+    first = min(t.date for t in inst.trades)
     units = invested = Decimal(0)
     ti = 0
     dates, inv_out, val_out = [], [], []
     for date, close in price_rows:
         if date < first:
             continue
-        while ti < len(trades) and trades[ti].date <= date:
-            t = trades[ti]
-            if t.type in ("buy", "drp"):
+        while ti < len(rows) and rows[ti].date <= date:
+            t = rows[ti]
+            if isinstance(t, CorporateAction):
+                if t.kind == "split":
+                    units = split_units(units, t)
+            elif t.type in ("buy", "drp"):
                 units += t.quantity
                 if t.type == "buy":
                     invested += t.quantity * t.unit_price + t.brokerage
@@ -1316,12 +1425,13 @@ def instrument_series(session: Session, inst: Instrument) -> dict:
 
 def portfolio_instrument_ids(session: Session) -> set[int]:
     """The instruments this portfolio has: a holding setting, a trade, a
-    dividend, or a place in its plan. The catalogue is shared (decisions.md
+    dividend, a corporate action, or a place in its plan. The catalogue is shared (decisions.md
     #125); what a portfolio is shown of it, and picks from, is its own."""
     plans = select(InvestmentPlan.id)
     return (set(session.scalars(select(HoldingPref.instrument_id)))
             | set(session.scalars(select(Trade.instrument_id).distinct()))
             | set(session.scalars(select(Dividend.instrument_id).distinct()))
+            | set(session.scalars(select(CorporateAction.instrument_id).distinct()))
             | set(session.scalars(select(InvestmentPlanEntry.instrument_id)
                                   .where(InvestmentPlanEntry.plan_id.in_(
                                       list(session.scalars(plans)))))))

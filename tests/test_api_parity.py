@@ -57,6 +57,15 @@ PUBLISHED: dict[str, str] = {
     "dividend.note": "dividends[].note",
     "dividend.period_end": "dividends[].period_end",
     "dividend.withholding_tax": "dividends[].withholding_tax",
+    "corporate_action.id": "actions[].id",
+    "corporate_action.date": "actions[].date",
+    "corporate_action.kind": "actions[].kind",
+    "corporate_action.ratio_new": "actions[].ratio_new",
+    "corporate_action.ratio_old": "actions[].ratio_old",
+    "corporate_action.amount": "actions[].amount",
+    "corporate_action.fx_rate": "actions[].fx_rate",
+    "corporate_action.note": "actions[].note",
+    "corporate_action.instrument_id": "actions[].ticker",
     "price.close": "holdings[].last_price",
     "price.date": "holdings[].price_date",
 }
@@ -79,6 +88,9 @@ WITHHELD: dict[str, str] = {
     "dividend.portfolio_id": "Implied by the key, as with trades.",
     "trade.user_id": "Which member entered the row. Not a fact about the holding.",
     "dividend.user_id": "Which member entered the row, as with trades.",
+    "corporate_action.portfolio_id": "Implied by the key, as with trades.",
+    "corporate_action.user_id": "Which member entered the row, as with trades.",
+    "corporate_action.updated_at": "When the row was last edited, as with trades.",
     "price.instrument_id": "Carried by the holding the price is attached to.",
     "price.source": "Which provider answered. Operational, shown in the app.",
     "price.provisional": (
@@ -226,13 +238,17 @@ def test_every_published_column_appears_in_a_live_response(client, session_facto
         portfolio = fac.make_portfolio(s, "Parity portfolio", owner=user)
         s.commit()
         tenancy.bind(s, portfolio.id, user.id)
-        ref.build_reference(s)
+        held = ref.build_reference(s)
+        # The reference portfolio has no corporate action, and an empty list
+        # shows none of a row's fields.
+        fac.add_action(s, held.alpha, "2025-06-30", "cost_base", amount="1.00")
+        s.commit()
         portfolio_id, user_id = portfolio.id, user.id
     raw = issue_key(session_factory, portfolio_id, created_by=user_id)
 
     seen = set()
     for path in ("/api/v1/portfolio", "/api/v1/holdings", "/api/v1/trades",
-                 "/api/v1/dividends"):
+                 "/api/v1/dividends", "/api/v1/actions"):
         response = client.get(path, headers=bearer(raw))
         assert response.status_code == 200, path
         seen |= _flatten(response.json())

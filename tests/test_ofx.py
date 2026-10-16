@@ -229,6 +229,16 @@ def test_a_transaction_missing_a_figure_says_which_one():
 # What is not a trade
 # --------------------------------------------------------------------------- #
 
+def test_a_split_is_skipped_and_pointed_at_the_holding_page():
+    """There is a form for it now (#146), so the skip says where."""
+    result = ofx.parse_ofx(
+        "<OFX><INVSTMTMSGSRSV1><INVSTMTTRNRS><INVSTMTRS><INVTRANLIST>"
+        "<SPLIT><INVTRAN><DTTRADE>20260302</DTTRADE></INVTRAN></SPLIT>"
+        "</INVTRANLIST></INVSTMTRS></INVSTMTTRNRS></INVSTMTMSGSRSV1></OFX>")
+
+    assert result.skipped == ["2026-03-02: a share split — record it on the holding's page"]
+
+
 def test_income_is_skipped_by_name_rather_than_ignored():
     """A dividend is real money that this importer cannot record as a trade.
     Naming it is the difference between "handled" and "lost"."""

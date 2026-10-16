@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session, with_loader_criteria
 
 from .models import (
     MEMBER_ROLES,
+    CorporateAction,
     Dividend,
     HoldingPref,
     InvestmentPlan,
@@ -40,6 +41,7 @@ from .models import (
 SCOPED_MODELS = (
     Trade,
     Dividend,
+    CorporateAction,
     PlannedPurchase,
     HoldingPref,
     InvestmentPlan,

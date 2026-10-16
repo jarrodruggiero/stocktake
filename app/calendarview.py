@@ -24,8 +24,8 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from . import clock, plans
-from .models import Dividend, Instrument, MarketDividend, Trade
+from . import clock, plans, queries
+from .models import CorporateAction, Dividend, Instrument, MarketDividend, Trade
 
 # Beyond this the projection is noise rather than a forecast.
 PROJECT_AHEAD_DAYS = 400
@@ -75,7 +75,8 @@ def projected_dividends(session: Session, until: dt.date) -> list[CalEvent]:
     instruments = (
         session.scalars(
             select(Instrument)
-            .options(selectinload(Instrument.dividends), selectinload(Instrument.trades))
+            .options(selectinload(Instrument.dividends), selectinload(Instrument.trades),
+                     selectinload(Instrument.actions))
             .order_by(Instrument.ticker)
         )
         .unique()
@@ -91,10 +92,7 @@ def projected_dividends(session: Session, until: dt.date) -> list[CalEvent]:
         market.setdefault(iid, []).append(ex_date)
 
     for inst in instruments:
-        units = sum(
-            (t.quantity if t.type in ("buy", "drp") else -t.quantity for t in inst.trades),
-            Decimal(0),
-        )
+        units = queries.units_through(queries.timeline(inst.trades, inst.actions))
         if units <= 0:  # sold out — nothing to pay
             continue
         own = sorted({d.date for d in inst.dividends})
@@ -121,17 +119,15 @@ def projected_dividends(session: Session, until: dt.date) -> list[CalEvent]:
             # Nothing published, so `dates` were this holder's own payments,
             # at least two of them.
             last = max(inst.dividends, key=lambda d: d.date)
-            prior_units = sum(
-                (
-                    t.quantity if t.type in ("buy", "drp") else -t.quantity
-                    for t in inst.trades
-                    # Before the payment, not on its day: a reinvestment is
-                    # allotted on the payment date, and those units did not
-                    # earn it.
-                    if t.date < last.date
-                ),
-                Decimal(0),
-            )
+            # Before the payment, not on its day: a reinvestment is allotted on
+            # the payment date, and those units did not earn it. Then counted
+            # in today's units: a split since leaves less paid on each.
+            rows = queries.timeline(inst.trades, inst.actions)
+            prior_units = queries.units_through(r for r in rows if r.date < last.date)
+            for later in rows:
+                if (isinstance(later, CorporateAction) and later.kind == "split"
+                        and later.date >= last.date):
+                    prior_units = queries.split_units(prior_units, later)
             per_unit = (last.cash_amount / prior_units) if prior_units > 0 else None
 
         nxt = dates[-1] + dt.timedelta(days=gap)

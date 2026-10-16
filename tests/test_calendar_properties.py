@@ -124,6 +124,26 @@ def test_a_payment_is_projected_on_the_median_cycle(session_factory, portfolio, 
         s.close()
 
 
+def test_a_split_since_the_last_payment_is_counted_in_todays_units(session_factory,
+                                                                   portfolio):
+    """$5 on 100 units was 5 cents each; split 2 for 1 since, the 200 units held
+    now are worth 2.5 cents each, so the next payment is still about $5."""
+    s = session_factory()
+    tenancy.bind(s, *portfolio)
+    try:
+        inst = fac.make_instrument(s, "ALPHA")
+        fac.add_trade(s, inst, "2025-01-02", "buy", 100, "2.00")
+        for day in ("2025-03-01", "2025-06-01", "2025-09-01"):
+            fac.add_dividend(s, inst, day, "5.00")
+        fac.add_action(s, inst, "2025-10-01", "split", ratio=(2, 1))
+        with freeze_time(TODAY):
+            [first, *_] = calendarview.projected_dividends(s, TODAY + dt.timedelta(days=200))
+        assert first.amount == Decimal("5.00")
+    finally:
+        s.rollback()
+        s.close()
+
+
 def test_a_sold_out_holding_projects_nothing(session_factory, portfolio):
     s = session_factory()
     tenancy.bind(s, *portfolio)

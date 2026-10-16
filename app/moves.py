@@ -46,11 +46,19 @@ from . import queries, tenancy
 from .models import (
     MARKET_OPEN,
     WRITE_ROLES,
+    CorporateAction,
     Dividend,
     Instrument,
     Trade,
     trade_order,
 )
+
+
+def _actions(session: Session, instrument_id: int) -> list[CorporateAction]:
+    """The bound portfolio's corporate actions on the holding. They stay where
+    they were recorded: each side's balance is walked with its own (#146)."""
+    return list(session.scalars(
+        select(CorporateAction).where(CorporateAction.instrument_id == instrument_id)))
 
 
 @dataclass(frozen=True)
@@ -220,12 +228,13 @@ def expand(
     held = list(session.scalars(
         select(Trade).where(Trade.instrument_id == instrument_id)
     ))
+    actions = _actions(session, instrument_id)
     # Each pass drops the moving rows and asks what breaks next. Terminates:
     # every iteration adds an id from a finite set, and a row already moving
     # cannot be the breach because it is not in the walk.
     while True:
         remaining = [t for t in held if t.id not in chosen.trades]
-        breach = queries.balance_breach(remaining)
+        breach = queries.balance_breach(remaining, actions=actions)
         if breach is None:
             break
         chosen.trades.add(breach.trade.id)
@@ -250,7 +259,8 @@ def source_problem(
         )
     ))
     instrument = session.get(Instrument, instrument_id)   # catalogue, unscoped
-    breach = queries.balance_breach(sorted(remaining, key=trade_order))
+    breach = queries.balance_breach(sorted(remaining, key=trade_order),
+                                    actions=_actions(session, instrument_id))
     if breach is None:
         return None
     return queries.breach_message(
@@ -294,10 +304,11 @@ def target_problem(
         existing = list(session.scalars(
             select(Trade).where(Trade.instrument_id == instrument_id)
         ))
+        theirs = _actions(session, instrument_id)
     # Rows still belonging to the source are not in `existing` yet, so the walk
     # is the destination's timeline plus what is about to land in it.
     combined = sorted(existing + moving, key=trade_order)
-    breach = queries.balance_breach(combined)
+    breach = queries.balance_breach(combined, actions=theirs)
     return None if breach is None else queries.breach_message(ticker, breach)
 
 

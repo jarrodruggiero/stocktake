@@ -26,7 +26,14 @@ from sqlalchemy.orm import Session
 
 from . import money, queries
 from .markettime import to_market
-from .models import Instrument, Trade, exchange_problem, ticker_problem, trade_order
+from .models import (
+    CorporateAction,
+    Instrument,
+    Trade,
+    exchange_problem,
+    ticker_problem,
+    trade_order,
+)
 from .pricefeed import MARKETS
 from .settings import BrokerFormat, ImportSettings
 from .tenancy import owned
@@ -442,8 +449,33 @@ def _refuse_shortfalls(session: Session, candidates: list[CandidateTrade]) -> No
         inst = _own(session, ticker, exchange, own_ids)
         held = (list(session.scalars(select(Trade).where(Trade.instrument_id == inst.id)))
                 if inst is not None else [])
-        for c, breach in _shortfalls(held, rows):
+        actions = (list(session.scalars(select(CorporateAction)
+                                        .where(CorporateAction.instrument_id == inst.id)))
+                   if inst is not None else [])
+        found = (_shortfalls_walked(held, rows, actions)
+                 if any(a.kind == "split" for a in actions) else _shortfalls(held, rows))
+        for c, breach in found:
             c.status, c.detail = "refused", queries.breach_message(ticker, breach)
+
+
+def _candidate(c: CandidateTrade) -> Trade:
+    return Trade(date=c.date, time=c.time, type=c.type, quantity=c.quantity)
+
+
+def _shortfalls_walked(held: list[Trade], rows: list[CandidateTrade],
+                       actions: list[CorporateAction]) -> list[tuple[CandidateTrade, queries.Breach]]:
+    """`_shortfalls`, for a holding with a split: each row walked as the trade
+    form walks one. The running totals there cannot take a split, which
+    rounds the holding where it falls (#146); such a holding's rows are few."""
+    refused, accepted = [], []
+    for c in sorted(rows, key=lambda c: trade_order(_candidate(c))):
+        candidate = _candidate(c)
+        breach = queries.balance_breach(held + accepted, candidate, actions=actions)
+        if breach is None:
+            accepted.append(candidate)
+        else:
+            refused.append((c, breach))
+    return refused
 
 
 def _shortfalls(held: list[Trade], rows: list[CandidateTrade]) -> list[tuple[CandidateTrade, queries.Breach]]:

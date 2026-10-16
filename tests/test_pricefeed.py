@@ -361,6 +361,28 @@ def test_a_series_that_reaches_the_first_trade_is_only_continued(feed_session, m
     assert asked == [("USDAUD", dt.date(2026, 8, 1), dt.date(2026, 8, 4))]
 
 
+def test_a_capital_change_with_no_rate_is_given_one_and_a_split_is_not(feed_session,
+                                                                         monkeypatch):
+    portfolio = fac.make_portfolio(feed_session, "Owner portfolio")
+    nova = fac.make_instrument(feed_session, "NOVA", exchange="NASDAQ", currency="USD")
+    returned = fac.add_action(feed_session, nova, "2026-03-15", "capital_return",
+                              amount="20.00", portfolio_id=portfolio.id)
+    split = fac.add_action(feed_session, nova, "2026-03-15", "split", ratio=(2, 1),
+                           portfolio_id=portfolio.id)
+    fac.add_fx(feed_session, "USDAUD", "2026-03-13", "1.40")
+    feed_session.commit()
+    stub_closes(monkeypatch, {})
+    stub_yf(monkeypatch)
+    stub_no_fx(monkeypatch)
+
+    counts = pricefeed.run_feed(feed_session, SETTINGS)
+
+    feed_session.refresh(returned)
+    feed_session.refresh(split)
+    assert (counts["action_fx_backfilled"], returned.fx_rate, split.fx_rate) == (
+        1, Decimal("1.400000"), None)
+
+
 def test_a_trade_that_already_has_a_rate_is_left_alone(feed_session, monkeypatch):
     portfolio = fac.make_portfolio(feed_session, "Owner portfolio")
     nova = fac.make_instrument(feed_session, "NOVA", exchange="NASDAQ", currency="USD",

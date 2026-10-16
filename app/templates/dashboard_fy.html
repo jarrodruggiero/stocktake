@@ -187,7 +187,10 @@ units than were held. Correct it or record the missing buy.</p>
       <tr>
         <td>{{ d.date }}</td>
         <td class="tick"><a href="{{ holding_href(d.instrument.ticker, d.instrument.exchange, return=back) }}">{{ d.instrument.ticker }}</a></td>
-        <td class="num">{{ d.quantity | qty }}</td>
+        {# A gain from a return of capital, or an AMIT decrease, beyond the
+           cost base sold nothing: the cell says what it was instead (#146). #}
+        <td class="num">{% if d.event == 'sale' %}{{ d.quantity | qty }}{% else %}<span class="sub">{{
+          'return of capital' if d.event == 'capital_return' else 'cost base decrease' }}</span>{% endif %}</td>
         <td class="num">{{ d.cost_base | money }}</td>
         <td class="num">{{ d.proceeds | money }}</td>
         <td class="num {{ d.gain | trend }}">{{ d.gain | arrow }}{{ d.gain | money }}</td>

@@ -420,6 +420,7 @@ class SimpleInstrument:
         self.trades = [NS(id=i + 1, date=dt.date.fromisoformat(d), time=None, type=k,
                           quantity=Decimal(q), unit_price=ONE, brokerage=ZERO, fx_rate=ONE)
                        for i, (d, k, q) in enumerate(trades)]
+        self.actions = []
 
 
 def test_the_owner_fixture_is_what_the_cases_are_bound_to(session_factory, portfolio):

@@ -93,6 +93,12 @@ Rows can be edited and deleted here. Two rules apply:
 - **A DRP row is edited through its dividend**, because the cash and the units
   are one event.
 
+**Record a split or capital change** covers a split or consolidation, a return
+of capital, and an AMIT cost base adjustment from an annual tax statement. A
+split keeps each parcel's purchase date, so the twelve-month discount clock
+does not restart. A return of capital or an AMIT decrease lowers the cost base
+of the units held, and anything beyond it is a capital gain on the day.
+
 ### Moving a holding to another portfolio
 
 If a trade went into the wrong portfolio, **Move to another portfolio** on the

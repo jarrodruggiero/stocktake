@@ -27,6 +27,7 @@ from sqlalchemy import select
 from . import auth, clock, fyreport, money, plans, pricefeed, queries
 from .models import (
     WRITE_ROLES,
+    CorporateAction,
     Dividend,
     Instrument,
     Portfolio,
@@ -190,6 +191,34 @@ def get_dividends(request: Request, since: str | None = None) -> dict:
                     "note": d.note,
                 }
                 for d in db.scalars(stmt).all()
+            ]
+        }
+
+
+@router.get("/actions")
+def get_actions(request: Request) -> dict:
+    """Splits, consolidations, returns of capital and AMIT cost base
+    adjustments. Every figure the API gives already takes them in (#146): a
+    client counting units from `/trades` needs these too."""
+    with auth.api_session(request) as (access, db):
+        rows = db.scalars(
+            select(CorporateAction).order_by(CorporateAction.date, CorporateAction.id)).all()
+        return {
+            "actions": [
+                {
+                    "id": a.id,
+                    "date": a.date.isoformat(),
+                    "ticker": a.instrument.ticker,
+                    "exchange": a.instrument.exchange,
+                    "kind": a.kind,
+                    "ratio_new": a.ratio_new,
+                    "ratio_old": a.ratio_old,
+                    "amount": _num(a.amount),
+                    "currency": a.instrument.currency,
+                    "fx_rate": _num(a.fx_rate),
+                    "note": a.note,
+                }
+                for a in rows
             ]
         }
 
@@ -403,7 +432,9 @@ def create_trade(request: Request, body: TradeIn) -> dict:
         # drives the running balance negative would later break the FY report's
         # FIFO matcher.
         held = db.scalars(select(Trade).where(Trade.instrument_id == inst.id)).all()
-        breach = queries.balance_breach(list(held), trade)
+        actions = db.scalars(select(CorporateAction)
+                             .where(CorporateAction.instrument_id == inst.id)).all()
+        breach = queries.balance_breach(list(held), trade, actions=list(actions))
         if breach is not None:
             raise HTTPException(409, queries.breach_message(inst.ticker, breach))
         db.add(trade)
