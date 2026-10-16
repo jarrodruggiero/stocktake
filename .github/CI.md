@@ -39,6 +39,15 @@ that stopped working is otherwise discovered at the moment you most want a
 release, and its `test` stage runs the suite against the layers the app actually
 ships from — including OCR, which skips on a runner without Tesseract.
 
+## A merge does not re-run what its pull request passed
+
+A pull request's run tests the pull request merged into main, and once every
+job has passed it records the tree it tested, as an artifact named
+`passed-<tree>`. A push to main that lands that same tree skips the tests and
+publishes `dev`. One that lands anything else, because main moved after the
+run or because the push came from no pull request, runs everything. A fork's
+runs never count: its pull request runs the workflow as the fork wrote it.
+
 ## Two channels, one branch
 
 | Tag | From | For |
@@ -58,5 +67,6 @@ one kept by hand in Chart.yaml said 0.64.0 for five releases (decisions.md #137)
 
 There is deliberately no long-lived `dev` branch. It would be exactly as public
 as `main`, so it would relocate the noisy history rather than remove it. What
-keeps `main` readable is squash-merging a pull request: one commit per change,
-and the twenty commits it took never leave the machine they were written on.
+keeps `main` readable is that a pull request merges as one commit per change,
+squashed or rebased, and the twenty it took to get there never leave the
+machine they were written on.

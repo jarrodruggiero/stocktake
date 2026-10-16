@@ -1,4 +1,5 @@
-# Lint and test on every push and pull request.
+# Lint and test every pull request, and every push to main that a pull
+# request's run has not already tested (see the `tree` job).
 #
 # Written for the PUBLIC repository layout, where this app is the whole repo:
 # `app/` and `tests/` sit at the root. Nothing here depends on
@@ -21,7 +22,54 @@ permissions:
   contents: read
 
 jobs:
+  # Whether this exact tree has already passed every job below.
+  #
+  # A pull request's run tests the pull request merged into its base, and
+  # `record` notes the tree it tested once everything has passed. A merge that
+  # lands that same tree on main has nothing new to test, so the test jobs skip
+  # and `dev` publishes it. A merge that lands anything else, because main moved
+  # after the run or because the push came from no pull request, runs it all.
+  tree:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      hash: ${{ steps.hash.outputs.hash }}
+      passed: ${{ steps.passed.outputs.passed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The tree under test
+        id: hash
+        # The tree, not the commit: a rebase merge makes new commits of the
+        # same files.
+        run: echo "hash=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+      - name: Whether a pull request's run passed it
+        id: passed
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TREE: ${{ steps.hash.outputs.hash }}
+        # Only runs from this repository's own branches count: a fork's pull
+        # request runs the workflow as the fork wrote it, which could upload
+        # the name without testing anything. A failed lookup runs everything.
+        run: |
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=passed-$TREE" --jq '
+            [.artifacts[] | select(.expired | not)
+             | select(.workflow_run.head_repository_id == .workflow_run.repository_id)]
+            | first | .workflow_run.id // empty') || run=""
+          if [ -n "$run" ]; then
+            echo "Every test passed on this tree in [run $run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run)." >> "$GITHUB_STEP_SUMMARY"
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   lint:
+    needs: tree
+    if: needs.tree.outputs.passed != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,6 +91,8 @@ jobs:
   # appcore's CI runs THIS suite for that. What this job catches is the reverse:
   # a change here that assumes something appcore no longer does.
   appcore:
+    needs: tree
+    if: needs.tree.outputs.passed != 'true'
     runs-on: ubuntu-latest
     steps:
       # The revision is read from pyproject.toml, not copied here: without a
@@ -81,6 +131,8 @@ jobs:
         run: uv run pytest
 
   test:
+    needs: tree
+    if: needs.tree.outputs.passed != 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -161,6 +213,8 @@ jobs:
   image:
     # Build the image on every change so a broken Dockerfile is caught here
     # rather than at release time. Nothing is pushed — that is release.yml.
+    needs: tree
+    if: needs.tree.outputs.passed != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -196,6 +250,8 @@ jobs:
   # themselves on a machine without one, which is what makes the same command
   # safe to run inside the image, where there is no browser.
   visual:
+    needs: tree
+    if: needs.tree.outputs.passed != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -229,6 +285,8 @@ jobs:
     # cannot send. Its own job because it is a minute or two of requests, which
     # would slow every leg of `test`; both backends, because SQLite stores what
     # Postgres refuses and the test reads the rows back to see it.
+    needs: tree
+    if: needs.tree.outputs.passed != 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -270,17 +328,42 @@ jobs:
           PGPASSWORD: postgres
         run: uv run pytest tests -m hostile -q
 
+  # Notes that everything above passed on this tree, for `tree` to find when
+  # the tree lands on main. Only a pull request's run: it is the only kind
+  # whose tree is merged later.
+  record:
+    if: github.event_name == 'pull_request'
+    needs: [tree, lint, appcore, test, image, visual, hostile]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Name the tree
+        env:
+          TREE: ${{ needs.tree.outputs.hash }}
+        run: echo "$TREE" > tree
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: passed-${{ needs.tree.outputs.hash }}
+          path: tree
+          # A re-run uploads it again, under the same name.
+          overwrite: true
+
   # The development channel. `dev` moves with main; releases are tagged and
   # publish `latest` (see release.yml). Two channels rather than two long-lived
   # branches: a `dev` branch would be just as public as this one, so it would
-  # relocate the mess rather than remove it — history is kept clean by
-  # squash-merging a pull request, not by where the commits land.
+  # relocate the mess rather than remove it — history is kept clean by how a
+  # pull request is merged, not by where the commits land.
   #
-  # Only on a push to main, and only after everything above is green, so `dev`
+  # Only on a push to main, and only once everything above is green, in this
+  # run or in the pull request's run that passed this same tree, so `dev`
   # always names something that passed the full suite.
   dev:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [lint, appcore, test, image, visual, hostile]
+    # `!cancelled()` because naming `success()` leaves out the check Actions
+    # otherwise adds, and the second half would publish a cancelled run.
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' && !cancelled()
+      && (success() || (needs.tree.outputs.passed == 'true'
+      && !contains(needs.*.result, 'failure')))
+    needs: [tree, lint, appcore, test, image, visual, hostile]
     runs-on: ubuntu-latest
     permissions:
       contents: read
