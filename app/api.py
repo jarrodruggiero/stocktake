@@ -75,7 +75,8 @@ def get_portfolio(request: Request) -> dict:
         return {
             "portfolio": {"id": portfolio.id, "name": portfolio.name,
                           "income_tax_rate": _num(portfolio.income_tax_rate),
-                          "medicare_levy": _num(portfolio.medicare_levy)},
+                          "medicare_levy": _num(portfolio.medicare_levy),
+                          "income_support": portfolio.income_support},
             "as_at": clock.today().isoformat(),
             "currency": "AUD",
             "cost": _num(totals.cost),
@@ -426,14 +427,18 @@ class TaxRatesIn(BaseModel):
     # null clears it.
     income_tax_rate: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
     medicare_levy: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
+    # Whether the taxpayer gets an income support payment this year, which
+    # lifts the minimum tax (decisions.md #151). Never null: it is yes or no.
+    income_support: bool = False
 
 
 @router.put("/portfolio/tax-rates")
 def set_tax_rates(request: Request, body: TaxRatesIn) -> dict:
     """The rates the sale simulator taxes a gain at (decisions.md #147): the
-    taxpayer's top income tax rate, and the Medicare levy. Settings, not
-    records, so the one write here that is not an append (#88); the owner's,
-    as every portfolio setting is (#34)."""
+    taxpayer's top income tax rate, and the Medicare levy; and whether they get
+    income support, which lifts the minimum tax (#151). Settings, not records,
+    so the one write here that is not an append (#88); the owner's, as every
+    portfolio setting is (#34)."""
     with auth.api_session(request, write=True) as (access, db):
         if access.role != "owner":
             raise HTTPException(403, "only the portfolio's owner can change its settings")
@@ -442,7 +447,8 @@ def set_tax_rates(request: Request, body: TaxRatesIn) -> dict:
             setattr(portfolio, field, getattr(body, field))
         db.flush()
         return {"income_tax_rate": _num(portfolio.income_tax_rate),
-                "medicare_levy": _num(portfolio.medicare_levy)}
+                "medicare_levy": _num(portfolio.medicare_levy),
+                "income_support": portfolio.income_support}
 
 
 @router.post("/trades", status_code=201)

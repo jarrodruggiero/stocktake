@@ -3075,6 +3075,7 @@ def _portfolio_settings(typed: dict) -> tuple[str, str, str, dict]:
         fees[column] = figure
     for column, label in _TAX_RATES:
         fees[column] = _tax_rate(typed[column], label)
+    fees["income_support"] = bool(typed["income_support"])
     return cleaned, currency, place, fees
 
 
@@ -3110,10 +3111,12 @@ async def portfolio_settings(
     foreign_brokerage_minimum: str = Form(""),
     income_tax_rate: str = Form(""),
     medicare_levy: str = Form(""),
+    income_support: str = Form(""),
 ):
     """Rename this portfolio, set the currency and jurisdiction it reports in,
     what its broker charges (app/brokerage.py), and the tax rates the
-    sale simulator uses (decisions.md #147).
+    sale simulator uses (decisions.md #147), and whether the minimum tax
+    applies (#151).
 
     **Both are stored and only partly wired.** Totals are still computed in
     `money.REPORTING` and the financial-year logic is still AU's — T28b is the
@@ -3133,7 +3136,8 @@ async def portfolio_settings(
              "foreign_brokerage_flat": foreign_brokerage_flat,
              "foreign_brokerage_percent": foreign_brokerage_percent,
              "foreign_brokerage_minimum": foreign_brokerage_minimum,
-             "income_tax_rate": income_tax_rate, "medicare_levy": medicare_levy}
+             "income_tax_rate": income_tax_rate, "medicare_levy": medicare_levy,
+             "income_support": income_support}
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
         _require_owner(ctx)

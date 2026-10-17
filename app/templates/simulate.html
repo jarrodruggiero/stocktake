@@ -163,6 +163,15 @@ an approximation, and other factors may change them for you: see the ATO on
       <tr><td>{{ rated("Medicare levy", sale.levy, sale.medicare_levy) }}</td>
           <td class="num">{{ signed(sale.levy) }}</td></tr>
       {% endif %}
+      {% if sale.minimum_tax %}
+      {% set minimum_tip %}
+      <p class="tipline">Gains from 1 July 2027 are taxed at 30% at least.
+      <a href="{{ docs_url }}/guides/#capital-gains-from-1-july-2027">More information</a></p>
+      {% endset %}
+      <tr><td>Minimum tax top-up{{ ' saved' if sale.minimum_tax < 0 }}
+            {% with body = minimum_tip, label = "About the minimum tax" %}{% include "_tip.html" %}{% endwith %}</td>
+          <td class="num">{{ signed(sale.minimum_tax) }}</td></tr>
+      {% endif %}
       <tr><td><strong>Take home</strong></td>
           <td class="num"><strong>{{ sale.take_home | money }}</strong></td></tr>
       {% endif %}

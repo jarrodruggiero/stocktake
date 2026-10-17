@@ -1477,7 +1477,8 @@ treats a portfolio as one taxpayer with its own carried losses, and a person
 with their own shares and an SMSF has two sets. The owner sets them (#34), and
 anyone simulating a sale can try others without saving them. They are the one
 thing the API writes in place (`PUT /api/v1/portfolio/tax-rates`): #88 keeps a
-client with a bug from rewriting the ledger, which a setting cannot do.
+client with a bug from rewriting the ledger, which a setting cannot do. Whether
+the taxpayer gets income support is beside them, for the same reasons (#151).
 
 **148. A sale is simulated with the year's own figures, and taxed on what it
 adds to them.** Simulate sale (`simulate.py`) works out what selling some of
@@ -1550,3 +1551,21 @@ after it ends; until then an FY report leaves the sale out (#26), because a
 figure for a tax return never estimates. Simulate sale and the unrealised gains
 export are about a sale today, so the latest published number stands in, and
 the simulator names it.
+
+**151. The minimum tax is worked out at the one income tax rate, for the year,
+unless the taxpayer gets income support.** From 1 July 2027 an individual pays
+extra tax of 30% of the year's minimum tax capital gain, less the basic income
+tax that gain adds, rounded down to a whole dollar, when that is more than nil
+(ITAA 1997 s 119-10). The gain is what is left of the gains from 1 July 2027
+after losses: the deferred gains are not in it, and the losses reduce those
+first (#150), so `fyreport` carries it and the API publishes it. The basic
+income tax the gain adds is taken as the gain at the portfolio's income tax rate,
+the same approximation the simulator makes for the year (#147); the Medicare
+levy is no part of it, which is why the two rates are apart. The extra is
+worked out for the year and rounded down there, so a sale adds the difference
+between the year with it and without it, not its own share rounded. Nobody who
+gets an income support payment in the year pays it (s 119-15), and the app
+cannot know who does, so it is the portfolio's setting, `income_support`, which
+the owner ticks and the API sets beside the rates. It records the fact, not the
+conclusion, so a client that knows the payments sets it without knowing the
+rule.

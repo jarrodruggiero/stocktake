@@ -25,6 +25,8 @@ from .models import Portfolio
 
 ZERO = Decimal(0)
 CENTS = Decimal("0.01")
+# The least the gains from 1 July 2027 are taxed at, in percent (#151).
+MINIMUM_RATE = Decimal(30)
 
 
 @dataclass
@@ -56,14 +58,14 @@ class Sale:
     indexation: Decimal = ZERO
     gain: Decimal | None = ZERO
     # What the sale does to this financial year. None when the year cannot be
-    # worked out: rules this version does not implement, or a sale of more
-    # than was held.
+    # worked out: a sale of more than was held.
     discount: Decimal | None = None
     losses_used: Decimal | None = None
     taxable: Decimal | None = None          # added to the year's net capital gain
     income_tax: Decimal | None = None
     levy: Decimal | None = None             # None when no levy is set
-    tax: Decimal | None = None              # the two together
+    minimum_tax: Decimal | None = None      # what it adds to the year's top-up
+    tax: Decimal | None = None              # the three together
     take_home: Decimal | None = None
     year_so_far: Decimal | None = None      # the year's earlier sales, net
     carried_in: Decimal | None = None       # losses carried in from earlier years
@@ -110,12 +112,14 @@ def fill(holdings: list[queries.Holding], percent: Decimal) -> dict[int, Decimal
 
 def sale(session, units: dict[int, Decimal], *, brokerage: dict[int, Decimal] | None = None,
          income_tax_rate: Decimal | None = None, medicare_levy: Decimal | None = None,
+         income_support: bool | None = None,
          holdings: list[queries.Holding] | None = None) -> Sale:
     """Selling `units` of each holding (by instrument id) today, with the
     brokerage typed for some of them, the trade form's suggestion for the rest,
     and the year's tax at the two rates, in percent. Without an income tax rate
-    there is no tax figure; without a levy, none is added. `holdings` are the
-    open positions, when the caller has them already."""
+    there is no tax figure; without a levy, none is added. The minimum tax is
+    lifted by income support, the portfolio's setting unless given.
+    `holdings` are the open positions, when the caller has them already."""
     today = clock.today()
     fx_book = queries.FxBook(session)
     # A sale today is in a quarter whose CPI is months away: the latest stands in.
@@ -183,9 +187,22 @@ def sale(session, units: dict[int, Decimal], *, brokerage: dict[int, Decimal] | 
         out.income_tax = (out.taxable * income_tax_rate / 100).quantize(CENTS)
         if medicare_levy is not None:
             out.levy = (out.taxable * medicare_levy / 100).quantize(CENTS)
-        out.tax = out.income_tax + (out.levy or ZERO)
+        exempt = portfolio.income_support if income_support is None else income_support
+        out.minimum_tax = ZERO if exempt else (
+            _top_up(after.minimum_tax_gain, income_tax_rate)
+            - _top_up(before.minimum_tax_gain, income_tax_rate))
+        out.tax = out.income_tax + (out.levy or ZERO) + out.minimum_tax
         out.take_home = out.value - out.brokerage - out.tax
     return out
+
+
+def _top_up(gain: Decimal, rate: Decimal) -> Decimal:
+    """The year's minimum tax on `gain`, its gains from 1 July 2027 after
+    losses: 30% of them less the income tax at `rate` on them, rounded down
+    to a dollar, when that is more than nil (ITAA 1997 s 119-10). One rate
+    stands for the tax the gain adds, as it does for the year's (#147)."""
+    extra = gain * (MINIMUM_RATE - rate) / 100
+    return extra.quantize(Decimal(1), rounding=ROUND_DOWN) if extra > 0 else ZERO
 
 
 def _total(parts) -> Decimal | None:
