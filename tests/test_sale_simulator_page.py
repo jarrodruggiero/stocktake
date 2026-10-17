@@ -142,14 +142,43 @@ def test_a_typed_rate_is_used_and_not_saved(client, session_factory, alpha):
         assert s.scalar(select(Portfolio.marginal_tax_rate)) == Decimal("32.00")
 
 
+def _tile(results: str, label: str) -> str:
+    found = re.search(rf'<span class="label">{label}</span>\s*<span class="big">(.*?)</span>\s*</div>',
+                      results, re.S)
+    assert found, f"no {label} tile"
+    return re.sub(r"<[^>]+>", "", found.group(1)).strip()
+
+
+def _row(results: str, label: str) -> str:
+    found = re.search(rf"<td>{label}</td>\s*<td[^>]*>(.*?)</td>", results, re.S)
+    assert found, f"no {label} row"
+    return re.sub(r"<[^>]+>", "", found.group(1)).strip()
+
+
 @freeze_time(TODAY)
-def test_with_no_rate_the_tax_is_left_blank(client, alpha):
+def test_with_no_rate_the_tax_and_take_home_show_blank(client, alpha):
+    """Reported: with no rate the two figures vanished, so the page looked
+    unfinished rather than waiting for a rate."""
     page = client.get(f"{PAGE}?rate=&units_{alpha}=150", headers=HTML).text
     results = _results(page)
 
     assert "383.34" in results
     assert "Set a marginal tax rate to see the tax." in results
-    assert "2,117.33" not in results
+    assert (_tile(results, "Tax"), _tile(results, "Take home")) == ("—", "—")
+    assert (_row(results, "Tax"), _row(results, "<strong>Take home</strong>")) == ("—", "—")
+
+
+@freeze_time(TODAY)
+def test_no_tax_is_written_without_a_sign(client, session_factory, alpha):
+    """A loss with nothing to offset: the tax is nil, not −0.00."""
+    with session_factory() as s:
+        bind_to_only_portfolio(s)
+        fac.add_prices(s, s.get(fac.Instrument, alpha), [(TODAY, "8.00")])
+        s.commit()
+
+    results = _results(client.get(f"{PAGE}?units_{alpha}=100", headers=HTML).text)
+
+    assert _row(results, "Tax at 32%") == "0.00"
 
 
 @freeze_time(TODAY)

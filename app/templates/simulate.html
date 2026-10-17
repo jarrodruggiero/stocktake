@@ -44,6 +44,9 @@
       <th class="num">Brokerage</th><th class="num">Gain ({{ reporting_ccy }})</th>
     </tr></thead>
     <tbody>
+    {# With any foreign holding, every row names its currency in a slot of one
+       width, so the brokerage boxes keep one edge. #}
+    {% set mixed = sale.lines | rejectattr('holding.instrument.currency', 'eq', reporting_ccy) | list %}
     {% for line in sale.lines %}
       {% set h = line.holding %}{% set inst = h.instrument %}
       <tr>
@@ -61,7 +64,7 @@
                                value="{{ typed.get('brokerage_%d' % inst.id, '') }}"
                                placeholder="{{ line.suggested | money_plain if line.suggested is not none else '' }}"
                                aria-label="Brokerage for {{ inst.ticker }}">
-          {%- if inst.currency != reporting_ccy %} <span class="sub">{{ inst.currency }}</span>{% endif %}</td>
+          {%- if mixed %} <span class="sub ccy">{{ inst.currency }}</span>{% endif %}</td>
         <td class="num {{ line.gain | trend if line.units }}">
           {%- if line.units %}{{ line.gain | arrow }}{{ line.gain | money }}{% endif %}</td>
         {% endif %}
@@ -84,16 +87,16 @@
   <p class="note">Totals exclude {{ sale.withheld | join(', ') }} — no exchange rate stored.</p>
   {% endif %}
   {% set taxed = sale.taxable is not none %}
+  {% if sale.tax is none %}{% set tax_label = "Tax" %}
+  {% else %}{% set tax_label = ("Tax saved" if sale.tax < 0 else "Tax") ~ " at " ~ (sale.rate | qty) ~ "%" %}{% endif %}
   <div class="tiles">
     <div class="tile {{ sale.gain | trend }}"><span class="label">Capital gain</span>
       <span class="big">{{ sale.gain | arrow }}{{ sale.gain | cash }}</span></div>
     {% if taxed %}
     <div class="tile"><span class="label">Taxable gain</span>
       <span class="big">{{ sale.taxable | cash }}</span></div>
-    {% endif %}
-    {% if sale.tax is not none %}
-    <div class="tile"><span class="label">{{ 'Tax saved' if sale.tax < 0 else 'Tax' }} at {{ sale.rate | qty }}%</span>
-      <span class="big">{{ sale.tax | abs | cash }}</span></div>
+    <div class="tile"><span class="label">{{ tax_label }}</span>
+      <span class="big">{{ (sale.tax | abs if sale.tax is not none else none) | cash }}</span></div>
     <div class="tile"><span class="label">Take home</span>
       <span class="big">{{ sale.take_home | cash }}</span></div>
     {% endif %}
@@ -129,12 +132,10 @@
       {% if sale.carried_forward %}
       <tr><td>Added to the loss carried forward</td><td class="num">{{ sale.carried_forward | money }}</td></tr>
       {% endif %}
-      {% if sale.tax is not none %}
-      <tr><td>{{ 'Tax saved' if sale.tax < 0 else 'Tax' }} at {{ sale.rate | qty }}%</td>
-          <td class="num">{{ '+' if sale.tax < 0 else '−' }}{{ sale.tax | abs | money }}</td></tr>
+      <tr><td>{{ tax_label }}</td>
+          <td class="num">{% if sale.tax is none %}—{% else %}{{ '+' if sale.tax < 0 else '−' if sale.tax > 0 else '' }}{{ sale.tax | abs | money }}{% endif %}</td></tr>
       <tr><td><strong>Take home</strong></td>
           <td class="num"><strong>{{ sale.take_home | money }}</strong></td></tr>
-      {% endif %}
       {% endif %}
     </tbody>
   </table>
