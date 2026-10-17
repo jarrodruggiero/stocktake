@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from appcore import dialect_insert, load_config, make_session_factory
 
-from . import clock, memory, providers, tenancy
+from . import clock, cpi, memory, providers, tenancy
 from .models import CorporateAction, Dividend, FxRate, Instrument, MarketDividend, Price, Trade
 from .queries import FX_REACH_DAYS
 from .settings import PortfolioSettings
@@ -533,6 +533,16 @@ def run_feed(session: Session, settings: PortfolioSettings) -> dict[str, int]:
                 )
             counts["fx"] += len(result.rows)
             session.commit()
+
+    # The CPI the 2027 CGT rules index by. One failure must not end the run.
+    try:
+        counts["cpi"] = cpi.refresh(session, today)
+    except Exception as exc:
+        session.rollback()
+        counts["cpi"] = 0
+        sources["cpi:ABS"] = str(providers.Attempt("abs", ok=False, error=str(exc)))
+        log.warning("CPI fetch failed: %s", exc)
+    session.commit()
 
     counts["names_filled"] = backfill_names(session)
     session.commit()

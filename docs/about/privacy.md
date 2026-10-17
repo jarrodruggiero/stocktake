@@ -6,7 +6,9 @@ it does, rather than gesturing at "privacy-focused".
 
 ## What leaves your machine
 
-**Ticker symbols, to public market-data services.** That is the complete list.
+**Ticker symbols, to public market-data services**, and from late 2027 a request
+for the published Consumer Price Index, which names the statistic and nothing
+else. That is the complete list.
 
 To fetch a price, the app asks a provider what `ALPHA.AX` closed at. It does not
 say how many you hold, what you paid, when you bought, who you are, or that the
@@ -20,6 +22,7 @@ Providers used by default:
 | Prices, FX, distributions | Yahoo Finance (via `yfinance`) | Broad free coverage including ASX |
 | FX fallback | Frankfurter | Central-bank rates, no key, no quotas |
 | Crypto fallback | CoinGecko | AUD prices natively, no key |
+| The CPI, from the September 2027 quarter | Australian Bureau of Statistics | The index the 2027 capital gains rules use |
 
 You can see exactly which source served each figure — the `source` column is
 stored per row, and the dashboard says so when a fallback was used.
@@ -39,7 +42,7 @@ stored per row, and the dashboard says so when a fallback was used.
 ## No telemetry
 
 No analytics. No crash reporting. No usage statistics. No update check. No
-outbound request that is not fetching a price you asked for.
+outbound request that is not fetching a price you asked for, or the CPI.
 
 There is no build flag or setting for this, because there is nothing to turn
 off.

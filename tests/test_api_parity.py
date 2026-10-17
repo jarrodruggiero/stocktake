@@ -142,6 +142,10 @@ WITHHELD_TABLES: dict[str, str] = {
         "consumer needing raw rates should ask a rate provider, not a "
         "portfolio tracker."
     ),
+    "cpi_quarter": (
+        "The ABS's public CPI series, the same for every portfolio, cached for "
+        "indexing a cost base. Anyone who wants it should ask the ABS."
+    ),
     "market_dividend": (
         "Distribution history for the security, not for this portfolio — it is "
         "the same public data anyone can fetch, cached here for the calendar."

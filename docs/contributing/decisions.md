@@ -1496,3 +1496,19 @@ portfolio is that share of every holding, rounded down, so the sale is never
 more than was asked. A holding with no price, no rate or no FIFO cost is not
 offered. The form is a GET, because nothing changes, so anyone who can see the
 portfolio can use it.
+
+**149. The CPI comes from the ABS, as first published, from the September 2027
+quarter.** The 2027 rules index a cost base by the All Groups CPI for the eight
+capitals: the number for the quarter of the sale over the number for the
+quarter the money was spent, to three places rounding up from 5, and not at
+all at 1 or less (ITAA 1997 ss 960-275(1B), 960-275(5), 960-270(2)). The price
+feed asks the ABS's data API for it, as it asks for exchange rates: the
+request names a public statistic and carries nothing about a portfolio, and
+with the feed off nothing is asked. The number for a quarter is the one first
+published (s 960-280(1)), so a stored quarter is never replaced by a revision;
+a new reference period replaces the series (s 960-280(3)), since numbers on two
+cannot be divided. An asset held through 30 June 2027 is treated as bought
+again on 1 July 2027, so no earlier quarter is ever needed, and nothing is
+asked until the September 2027 quarter has finished, then only while a
+finished quarter is missing. The app knows only what it fetched: a number
+revised before it first asked is stored as revised.
