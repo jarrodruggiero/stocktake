@@ -94,6 +94,12 @@ def test_at_one_or_less_nothing_is_indexed(pf):
     assert book.factor(D(2027, 7, 1), D(2028, 1, 1)) == 1      # 1.0004 is 1.000
 
 
+def test_in_the_same_quarter_the_factor_is_one_without_its_number(pf):
+    """A number over itself: a sale in the September 2027 quarter of a parcel
+    held through 30 June 2027 need not wait for that quarter's CPI."""
+    assert cpi.CpiBook(pf).factor(D(2027, 7, 1), D(2027, 8, 15)) == 1
+
+
 def test_a_quarter_not_yet_published_gives_no_factor(pf):
     _store(pf, {D(2027, 7, 1): "100.00"})
 

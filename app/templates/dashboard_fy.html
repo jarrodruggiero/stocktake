@@ -47,6 +47,12 @@
 {% if r.withheld %}
 <p class="note">Totals exclude {{ r.withheld | join(', ') }} — no exchange rate stored.</p>
 {% endif %}
+{% if r.awaiting_cpi %}
+<p class="note">Totals exclude {{ r.awaiting_cpi | join(', ') }} — no CPI yet for the quarter of the sale.</p>
+{% endif %}
+{% if r.unvalued %}
+<p class="note">Totals exclude {{ r.unvalued | join(', ') }} — no close in the week before 1 July 2027 to value it at.</p>
+{% endif %}
 {% if r.oversold_held %}
 <p class="note">Totals exclude {{ r.oversold_held | join(', ') }} — a sale of more
 units than were held. Correct it or record the missing buy.</p>
@@ -158,17 +164,17 @@ units than were held. Correct it or record the missing buy.</p>
   <h2>Positions closed this year
     {%- if r.cgt.disposals %}
     {% set fifo_tip %}
+    {% if r.new_rules %}
+    <p>A parcel held on 30 June 2027 is valued at that day's close: the gain to then is
+    discounted, and the cost base after it indexed by the CPI.
+    <a href="{{ docs_url }}/guides/#capital-gains-from-1-july-2027">More information</a></p>
+    {% else %}
     <p>Each sale is matched FIFO, and losses, earlier years' too, come off before the discount.
     <a href="{{ docs_url }}/guides/#reports-fy">More information</a></p>
+    {% endif %}
     {% endset %}
     {% with body = fifo_tip, label = "How gains are worked out" %}{% include "_tip.html" %}{% endwith %}
     {%- endif %}</h2>
-  {# The rules changed on 1 July 2027. This version implements the earlier
-     ones and says so rather than applying a repealed discount to a figure
-     somebody is about to put in a tax return. #}
-  {% if r.cgt.regime_warning %}
-  <p class="panel warn">{{ r.cgt.regime_warning }}</p>
-  {% endif %}
   {% if r.cgt.oversold %}
   {% for sale in r.cgt.oversold %}
   <p class="panel warn">Capital gains for {{ r.label }} can't be worked out: <a href="{{ holding_href(sale.instrument.ticker, sale.instrument.exchange, return=back) }}">{{ sale.instrument.ticker }}</a>'s sell of {{ sale.trade.quantity | qty }} units on {{ sale.trade.date }} is more than the {{ sale.held | qty }} units held then. Correct it or record the missing buy.</p>
@@ -181,6 +187,10 @@ units than were held. Correct it or record the missing buy.</p>
       {{ sorth(sorts, 'disposals', 'ticker', 'Ticker', numeric=False) }}
       {{ sorth(sorts, 'disposals', 'quantity', 'Units') }}
       {{ sorth(sorts, 'disposals', 'cost_base', 'Cost base (' ~ reporting_ccy ~ ')') }}
+      {% if r.new_rules %}
+      <th class="num">Value 30 Jun 2027 ({{ reporting_ccy }})</th>
+      <th class="num">Indexation ({{ reporting_ccy }})</th>
+      {% endif %}
       {{ sorth(sorts, 'disposals', 'proceeds', 'Proceeds (' ~ reporting_ccy ~ ')') }}
       {{ sorth(sorts, 'disposals', 'gain', 'Gain (' ~ reporting_ccy ~ ')') }}
       {# Parcels is a list per row, so there is nothing to order by. #}
@@ -195,10 +205,14 @@ units than were held. Correct it or record the missing buy.</p>
            cost base sold nothing: the cell says what it was instead (#146). #}
         <td class="num">{% if d.event == 'sale' %}{{ d.quantity | qty }}{% else %}<span class="sub">{{
           'return of capital' if d.event == 'capital_return' else 'cost base decrease' }}</span>{% endif %}</td>
-        <td class="num">{{ d.cost_base | money }}</td>
+        <td class="num">{{ d.cost | money }}</td>
+        {% if r.new_rules %}
+        <td class="num">{{ d.deferred_proceeds | money }}</td>
+        <td class="num">{{ d.indexation | money }}</td>
+        {% endif %}
         <td class="num">{{ d.proceeds | money }}</td>
         <td class="num {{ d.gain | trend }}">{{ d.gain | arrow }}{{ d.gain | money }}</td>
-        <td class="sub">{% for p in d.parcels %}{{ p.acquired }}{% if p.discountable %} ✓{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+        <td class="sub">{% for p in d.parcels %}{{ p.acquired }}{% if p.discountable %} ✓{% endif %}{% if p.factor is not none %} ×{{ '%.3f' | format(p.factor) }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -208,8 +222,14 @@ units than were held. Correct it or record the missing buy.</p>
   <div class="tablewrap" style="margin-top:1rem">
   <table>
     <tbody>
+      {% if r.new_rules %}
+      <tr><td>Gains to 30 June 2027 on parcels held &gt; 12 months</td><td class="num">{{ r.cgt.gains_discountable | money }}</td></tr>
+      <tr><td>Other gains to 30 June 2027</td><td class="num">{{ r.cgt.gains_other | money }}</td></tr>
+      <tr><td>Gains from 1 July 2027</td><td class="num">{{ r.cgt.gains_from_july_2027 | money }}</td></tr>
+      {% else %}
       <tr><td>Gains on parcels held &gt; 12 months</td><td class="num">{{ r.cgt.gains_discountable | money }}</td></tr>
       <tr><td>Other gains</td><td class="num">{{ r.cgt.gains_other | money }}</td></tr>
+      {% endif %}
       <tr><td>Capital losses</td><td class="num">−{{ r.cgt.losses | money }}</td></tr>
       {% if r.cgt.losses_carried_in %}
       <tr><td>Losses from earlier years</td><td class="num">−{{ r.cgt.losses_carried_applied | money }}</td></tr>

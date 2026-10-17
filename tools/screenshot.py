@@ -314,7 +314,8 @@ def render_all() -> None:
         s.add(Price(instrument_id=int(instrument_id), date=_dt.date.today(),
                     close=_Decimal("101.20")))
         s.commit()
-    save("16f-simulate", client.get(f"/simulate?rate=32&units_{instrument_id}=30",
+    save("16f-simulate", client.get(f"/simulate?income_tax_rate=30&medicare_levy=2"
+                                    f"&units_{instrument_id}=30",
                                     headers=HTML).text)
 
     # In two portfolios, the profile offers where a sign-in lands. Last, since

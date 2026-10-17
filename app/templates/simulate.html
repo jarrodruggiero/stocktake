@@ -95,6 +95,15 @@ an approximation, and other factors may change them for you: see the ATO on
   {% if sale.withheld %}
   <p class="note">Totals exclude {{ sale.withheld | join(', ') }} — no exchange rate stored.</p>
   {% endif %}
+  {% if sale.awaiting_cpi %}
+  <p class="note">Totals exclude {{ sale.awaiting_cpi | join(', ') }} — no CPI yet to index it by.</p>
+  {% endif %}
+  {% if sale.unvalued %}
+  <p class="note">Totals exclude {{ sale.unvalued | join(', ') }} — no close in the week before 1 July 2027 to value it at.</p>
+  {% endif %}
+  {% if sale.cpi_estimate %}
+  <p class="note">Indexation uses the CPI for {{ sale.cpi_estimate | cpi_quarter }}: this quarter's isn't out yet.</p>
+  {% endif %}
   {% set taxed = sale.taxable is not none %}
   {% set tax_label = "Tax saved" if sale.tax is not none and sale.tax < 0 else "Tax" %}
   {% macro rated(name, amount, rate) -%}
@@ -115,7 +124,6 @@ an approximation, and other factors may change them for you: see the ATO on
       <span class="big">{{ sale.take_home | cash }}</span></div>
     {% endif %}
   </div>
-  {% if sale.regime_warning %}<p class="panel warn">{{ sale.regime_warning }}</p>{% endif %}
   {% for sold in sale.oversold %}
   <p class="panel warn">Capital gains can't be worked out: <a href="{{ holding_href(sold.instrument.ticker, sold.instrument.exchange) }}">{{ sold.instrument.ticker }}</a>'s sell of {{ sold.trade.quantity | qty }} units on {{ sold.trade.date }} is more than the {{ sold.held | qty }} units held then. Correct it or record the missing buy.</p>
   {% endfor %}
@@ -129,6 +137,9 @@ an approximation, and other factors may change them for you: see the ATO on
       <tr><td>Sale value</td><td class="num">{{ sale.value | money }}</td></tr>
       <tr><td>Brokerage</td><td class="num">−{{ sale.brokerage | money }}</td></tr>
       <tr><td>Cost base</td><td class="num">−{{ sale.cost_base | money }}</td></tr>
+      {% if sale.indexation %}
+      <tr><td>Indexation</td><td class="num">−{{ sale.indexation | money }}</td></tr>
+      {% endif %}
       <tr><td><strong>Capital gain</strong></td>
           <td class="num"><strong>{{ sale.gain | money }}</strong></td></tr>
       {% if taxed %}
