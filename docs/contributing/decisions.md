@@ -168,15 +168,15 @@ by: a $2 gain on $10 beats a $200 gain on $100,000, and "what made the most" and
 value ↓, % ↓ rather than growing a second control. The state must be *rendered*,
 not just explained — after two clicks nobody can tell which of four they are
 in.
-**26. The CGT module refuses financial years it does not understand.** From
-1 July 2027 the 50% discount is replaced by cost-base indexation plus a 30%
-minimum tax, and an asset held across that date is apportioned on its market
-value at the boundary rather than a time split. It is law (Treasury Laws
-Amendment (Tax Reform No. 1) Act 2026, No. 49, assented 26 June 2026), and the
-years from then are refused until the new rules are built here. Applying
-a repealed discount to an FY2028 disposal would return a confident wrong number
-on a page people use to prepare a tax return, which is worse than refusing.
-`fyreport.CGT_INDEXATION_START` is the boundary.
+**26. The CGT module leaves out what it cannot know, rather than guessing.**
+Until the 2027 rules were built (#150), every year from 1 July 2027 was
+refused: a repealed discount applied to an FY2028 disposal would have been a
+confident wrong number on a page people use to prepare a tax return. Now a sale
+is left out of the year's totals, listed and named, when the rules need
+something the app does not have: the CPI for a quarter not published yet, or a
+close in the week before 1 July 2027 to value a parcel at. That is how a sale
+with no exchange rate is treated (#5), for the same reason.
+`fyreport.NEW_RULES` is the boundary.
 
 **27. The navigation holds places, not controls.** A control belongs beside the
 thing it acts on, not in a list of destinations repeated on every page — so
@@ -1512,3 +1512,41 @@ again on 1 July 2027, so no earlier quarter is ever needed, and nothing is
 asked until the September 2027 quarter has finished, then only while a
 finished quarter is missing. The app knows only what it fetched: a number
 revised before it first asked is stored as revised.
+
+**150. From 1 July 2027 a parcel held through 30 June 2027 is split at its
+value then, and indexed after it.** The 2027 rules (Treasury Laws Amendment
+(Tax Reform No. 1) Act 2026) take an asset held through 30 June 2027 to be sold
+just before 1 July 2027 for its market value and bought again on 1 July 2027
+for that (ITAA 1997 s 112-155). Its gain or loss to then waits for the real
+sale, and is discounted if the asset was held twelve months by it
+(s 112-160). From 1 July 2027 the cost base is indexed instead, for an asset
+acquired twelve months before the sale, counted from the real acquisition
+(s 114-10(9)). `fyreport.walk` deems every parcel at its first row on or after
+1 July 2027, or at the end for a holding with none. A parcel keeps what it
+cost, for the holding and the dashboard, and gains three running shares,
+billed as its units are sold the way its cost is: its value then, its cost
+base then, and its cost base after.
+
+The value is the last close in the week before 1 July 2027, at 30 June 2027's
+rate: the market value, which is what the Act uses until the Minister makes the
+apportioning method s 112-185 allows. With no close that week the parcel is
+not valued, and its sales are named and left out (#26), rather than valued at a
+close months old. Indexing weighs each amount in the cost base from 1 July
+2027 by its own quarter's factor (#149): the value from the September 2027
+quarter, a later increase from its own. What comes back, a return of capital
+or a decrease, comes off unindexed, since a reduced cost base is not indexed,
+and indexing cannot make or grow a loss: proceeds between the cost base and the
+indexed one are neither. The year's losses reduce the deferred gains first,
+those with no discount before the discountable, then the gains from 1 July
+2027 (the amended s 102-5(1)); losses carried in follow the same order; the
+discount comes last. What is left of the gains from 1 July 2027 is the minimum
+tax capital gain (Div 119), which the FY report and the API carry.
+
+Every page and export shows a sale's cost as the holding counts it, what was
+paid moved by what came back, beside its indexation: proceeds less both is the
+gain, whatever happened after 1 July 2027. The cost base from then is a tax
+figure, not what the holding cost. A quarter's CPI is out about four weeks
+after it ends; until then an FY report leaves the sale out (#26), because a
+figure for a tax return never estimates. Simulate sale and the unrealised gains
+export are about a sale today, so the latest published number stands in, and
+the simulator names it.

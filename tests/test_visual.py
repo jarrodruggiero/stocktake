@@ -131,6 +131,20 @@ def probe(page: Path, width: int) -> dict:
         return json.loads(out[marker + 2:out.find("</title>", marker)])
 
 
+def faults(report: dict) -> list[str]:
+    """What the probe found wrong, in words; nothing when nothing is."""
+    found = []
+    if report["overflow"] > 0:
+        found.append(f"the document scrolls sideways by {report['overflow']}px")
+    if report["wide"]:
+        found.append("past the edge: " + ", ".join(report["wide"][:4]))
+    if report["spill"]:
+        found.append("text outside its box: " + ", ".join(report["spill"][:4]))
+    if report.get("panels"):
+        found.append("popups off screen: " + ", ".join(report["panels"][:4]))
+    return found
+
+
 @pytest.mark.parametrize("width_name", sorted(WIDTHS))
 @pytest.mark.parametrize("page", PAGES)
 def test_the_page_has_no_layout_faults(shots: Path, page: str, width_name: str) -> None:
@@ -140,18 +154,9 @@ def test_the_page_has_no_layout_faults(shots: Path, page: str, width_name: str) 
     report = probe(html, WIDTHS[width_name])
     assert not report.get("error"), f"{page}: {report['error']}"
 
-    faults = []
-    if report["overflow"] > 0:
-        faults.append(f"the document scrolls sideways by {report['overflow']}px")
-    if report["wide"]:
-        faults.append("past the edge: " + ", ".join(report["wide"][:4]))
-    if report["spill"]:
-        faults.append("text outside its box: " + ", ".join(report["spill"][:4]))
-    if report.get("panels"):
-        faults.append("popups off screen: " + ", ".join(report["panels"][:4]))
-
-    assert not faults, f"{page} at {width_name} ({WIDTHS[width_name]}px):\n  " + \
-        "\n  ".join(faults)
+    found = faults(report)
+    assert not found, f"{page} at {width_name} ({WIDTHS[width_name]}px):\n  " + \
+        "\n  ".join(found)
 
 
 def test_every_rendered_page_is_listed(shots: Path) -> None:

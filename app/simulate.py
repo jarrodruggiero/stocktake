@@ -20,7 +20,7 @@ from decimal import ROUND_DOWN, Decimal
 from types import SimpleNamespace
 
 from . import brokerage as fees
-from . import clock, fyreport, queries, tenancy
+from . import clock, cpi, fyreport, queries, tenancy
 from .models import Portfolio
 
 ZERO = Decimal(0)
@@ -38,7 +38,8 @@ class Line:
     suggested: Decimal | None = None      # native: what the trade form would offer
     value: Decimal | None = None
     brokerage_aud: Decimal | None = None
-    cost_base: Decimal | None = None
+    cost_base: Decimal | None = None      # what was paid: `Disposal.cost`
+    indexation: Decimal | None = None     # what indexing took off the gain
     gain: Decimal | None = None           # None when a parcel sold has no rate
     # Why it is not offered: any figure for it would be a guess (decisions.md #5).
     why_not: str | None = None
@@ -52,6 +53,7 @@ class Sale:
     value: Decimal = ZERO
     brokerage: Decimal = ZERO
     cost_base: Decimal | None = ZERO
+    indexation: Decimal = ZERO
     gain: Decimal | None = ZERO
     # What the sale does to this financial year. None when the year cannot be
     # worked out: rules this version does not implement, or a sale of more
@@ -67,8 +69,11 @@ class Sale:
     carried_in: Decimal | None = None       # losses carried in from earlier years
     carried_forward: Decimal | None = None  # added to the loss carried on
     withheld: list[str] = field(default_factory=list)
+    awaiting_cpi: list[str] = field(default_factory=list)
+    unvalued: list[str] = field(default_factory=list)
     oversold: list = field(default_factory=list)
-    regime_warning: str | None = None
+    # The quarter whose CPI stood in for the sale's, not published yet (#150).
+    cpi_estimate: dt.date | None = None
 
     @property
     def selling(self) -> list[Line]:
@@ -113,6 +118,8 @@ def sale(session, units: dict[int, Decimal], *, brokerage: dict[int, Decimal] | 
     open positions, when the caller has them already."""
     today = clock.today()
     fx_book = queries.FxBook(session)
+    # A sale today is in a quarter whose CPI is months away: the latest stands in.
+    fx_book.cpi = cpi.CpiBook(session, estimate=True)
     portfolio = session.get(Portfolio, tenancy.current_portfolio_id(session))
     last = {False: queries.last_brokerage(session),
             True: queries.last_brokerage(session, foreign=True)}
@@ -144,12 +151,13 @@ def sale(session, units: dict[int, Decimal], *, brokerage: dict[int, Decimal] | 
         sold = fyreport.walk(standins[inst.id], fx_book).disposals[-1]
         line.value = (line.units * holding.price * fx).quantize(CENTS)
         line.brokerage_aud = line.value - sold.proceeds
-        line.cost_base, line.gain = sold.cost_base, sold.gain
+        line.cost_base, line.indexation, line.gain = sold.cost, sold.indexation, sold.gain
 
     selling = out.selling
     out.value = sum((line.value for line in selling), ZERO)
     out.brokerage = sum((line.brokerage_aud for line in selling), ZERO)
     out.cost_base = _total(line.cost_base for line in selling)
+    out.indexation = sum((line.indexation or ZERO for line in selling), ZERO)
     out.gain = _total(line.gain for line in selling)
 
     fy = fyreport.current_fy(today)
@@ -157,14 +165,14 @@ def sale(session, units: dict[int, Decimal], *, brokerage: dict[int, Decimal] | 
     before = fyreport.fy_cgt(session, fy, fx_book, instruments=instruments)
     after = fyreport.fy_cgt(session, fy, fx_book,
                             instruments=[standins.get(i.id, i) for i in instruments])
-    if before.regime_warning:
-        out.regime_warning = before.regime_warning
-        return out
+    out.cpi_estimate = fx_book.cpi.estimated
     if before.oversold or after.oversold:
         out.oversold = after.oversold or before.oversold
         return out
-    out.withheld = sorted(set(before.withheld) | set(after.withheld))
-    out.year_so_far = before.gains_discountable + before.gains_other - before.losses
+    for name in ("withheld", "awaiting_cpi", "unvalued"):
+        setattr(out, name, sorted(set(getattr(before, name)) | set(getattr(after, name))))
+    out.year_so_far = (before.gains_discountable + before.gains_other
+                       + before.gains_from_july_2027 - before.losses)
     out.carried_in = before.losses_carried_in
     out.taxable = after.net_capital_gain - before.net_capital_gain
     out.discount = after.discount - before.discount

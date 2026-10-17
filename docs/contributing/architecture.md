@@ -35,7 +35,7 @@ Two consequences worth internalising:
 | --- | --- |
 | `models.py` | Tables. Also `trade_order`, the one definition of timeline order. |
 | `queries.py` | The read model: holdings, totals, the daily series, `FxBook`. |
-| `fyreport.py` | Financial years, FIFO parcel matching, CGT, franking. |
+| `fyreport.py` | Financial years, FIFO parcel matching, CGT (the 2027 split and indexation too), franking. |
 | `charts_build.py`, `fields.py`, `chart_templates.py` | The chart vocabulary. |
 | `exports.py` | Every downloadable report. |
 | `plans.py`, `calendarview.py` | The DCA rotation and the month calendar. |

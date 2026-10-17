@@ -210,16 +210,6 @@ def test_without_a_levy_none_is_added(pf, alpha):
                                                       Decimal("115.00"))
 
 
-@freeze_time("2027-07-02")
-def test_the_rules_from_1_july_2027_are_not_guessed(pf, alpha):
-    """decisions.md #26: the discount is replaced from then, and the detail is
-    not settled."""
-    sale = _sell(pf, alpha, 150)
-
-    assert sale.regime_warning and "1 July 2027" in sale.regime_warning
-    assert (sale.taxable, sale.tax, sale.take_home) == (None, None, None)
-
-
 @freeze_time(TODAY)
 def test_selling_everything_costs_what_the_holding_says_it_cost(pf, alpha):
     """The dashboard's cost base and the sale's come from one FIFO walk, a
