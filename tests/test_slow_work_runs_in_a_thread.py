@@ -9,6 +9,7 @@ database test was the same failure (test_setup_wizard.py).
 from __future__ import annotations
 
 import asyncio
+import gc
 import time
 
 import httpx
@@ -40,7 +41,15 @@ def health_during(app, send, *, cookies=None) -> tuple[float, float]:
 
             return tuple(await asyncio.gather(slow(), health()))
 
-    return asyncio.run(both())
+    # A full garbage collection, late in the suite, stopped the loop for 0.7 s
+    # on a CI runner. That is not the slow work holding it, so none runs here.
+    enabled = gc.isenabled()
+    gc.disable()
+    try:
+        return asyncio.run(both())
+    finally:
+        if enabled:
+            gc.enable()
 
 
 def _slowly(answer):
