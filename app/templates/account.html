@@ -341,7 +341,7 @@ GET  /api/v1/fy/2026          FY summary incl. CGT
 GET  /api/v1/schedule         rotation + upcoming buys
 POST /api/v1/trades           {ticker,type,date,units,unit_price,…}   (write)
 POST /api/v1/dividends        {ticker,date,cash_amount,…}             (write)
-PUT  /api/v1/portfolio/tax-rates  {income_tax_rate,medicare_levy}    (owner)
+PUT  /api/v1/portfolio/tax-rates  {income_tax_rate,medicare_levy,income_support}  (owner)
 
 A key that reaches more than one portfolio names one on every
 request: ?portfolio=&lt;id&gt;</pre>
