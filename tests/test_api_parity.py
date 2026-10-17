@@ -31,6 +31,7 @@ from app.models import Base
 PUBLISHED: dict[str, str] = {
     "portfolio.id": "portfolio.id",
     "portfolio.name": "portfolio.name",
+    "portfolio.marginal_tax_rate": "portfolio.marginal_tax_rate",
     "instrument.ticker": "holdings[].ticker",
     "instrument.name": "holdings[].name",
     "instrument.exchange": "holdings[].exchange",
@@ -423,6 +424,29 @@ def test_the_documented_routes_exist():
             if not known(token):
                 bad.append(f"{page.name}: {token}")
     assert not bad, f"documented routes the app does not serve: {sorted(set(bad))}"
+
+
+def test_the_profile_lists_every_api_endpoint():
+    """The Endpoints list beside the API keys is the API's only reference, and
+    `GET /api/v1/actions` was left off it the release it arrived."""
+    from pathlib import Path
+
+    from app import api
+
+    page = (Path(__file__).resolve().parent.parent / "app" / "templates" / "account.html")
+    listed = page.read_text(encoding="utf-8").split("<summary>Endpoints</summary>", 1)[1]
+    listed = re.search(r"<pre[^>]*>(.*?)</pre>", listed, re.S).group(1)
+    served = sorted((method, route.path) for route in api.router.routes
+                    for method in route.methods)
+    assert len(served) >= 10, "no API routes found to check"
+
+    def written(path: str) -> str:
+        return "/".join(r"[^/\s?]+" if part.startswith("{") else re.escape(part)
+                        for part in path.split("/"))
+
+    missing = [f"{method} {path}" for method, path in served
+               if not re.search(rf"^{method}\s+{written(path)}(?=[\s?])", listed, re.M)]
+    assert missing == [], f"endpoints the profile page does not list: {missing}"
 
 
 def test_every_module_appears_on_the_architecture_map():

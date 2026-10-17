@@ -424,6 +424,39 @@ def test_0017_adds_corporate_actions_beside_what_is_there(tmp_path: Path):
     assert trades() == before
 
 
+def test_0018_adds_the_tax_rate_beside_a_portfolios_settings(tmp_path: Path):
+    """A column on `portfolio`, which SQLite rebuilds to drop it again: a rebuild
+    that lost a portfolio or its fees would lose what its owner set."""
+    path = tmp_path / "rate.db"
+    cfg = _config(path)
+    command.upgrade(cfg, "0017")
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO portfolio (id, name, created_at, brokerage_flat) "
+                 "VALUES (1, 'Main', '2026-01-01', 9.5)")
+    conn.commit()
+    conn.close()
+
+    def portfolios(column: str = "brokerage_flat") -> list[tuple]:
+        conn = sqlite3.connect(path)
+        try:
+            return conn.execute(f"SELECT id, name, {column} FROM portfolio").fetchall()
+        finally:
+            conn.close()
+
+    before = portfolios()
+    command.upgrade(cfg, "0018")
+    conn = sqlite3.connect(path)
+    conn.execute("UPDATE portfolio SET marginal_tax_rate = 32.5")
+    conn.commit()
+    conn.close()
+
+    assert (portfolios(), portfolios("marginal_tax_rate")) == (before, [(1, "Main", 32.5)])
+    command.downgrade(cfg, "0017")
+    assert portfolios() == before
+    with pytest.raises(sqlite3.OperationalError):
+        portfolios("marginal_tax_rate")
+
+
 def _tables(path: Path) -> set[str]:
     conn = sqlite3.connect(path)
     try:

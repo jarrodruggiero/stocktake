@@ -686,6 +686,7 @@ class ApiAccess:
     this far: `api_session` refuses it."""
     key: ApiKey
     portfolio_id: int | None   # None only where no portfolio is chosen
+    role: str | None = None    # its creator's role there, for the owner's writes
 
 
 def _chosen_portfolio(request: Request, reach: list[tuple[Portfolio, str | None]]) -> int:
@@ -753,7 +754,7 @@ def api_session(request: Request, write: bool = False,
                     403, "the person who created this key can no longer write to this "
                          "portfolio, so the key is read-only here")
             tenancy.bind(db, portfolio_id, key.created_by)
-            access = ApiAccess(key=key, portfolio_id=portfolio_id)
+            access = ApiAccess(key=key, portfolio_id=portfolio_id, role=role)
         yield access, db
         db.commit()
     except Exception:

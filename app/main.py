@@ -3039,8 +3039,8 @@ _FEE_COLUMNS = ("brokerage_flat", "brokerage_percent", "brokerage_minimum",
 
 
 def _portfolio_settings(typed: dict) -> tuple[str, str, str, dict]:
-    """The settings form's name, currency, country and fees, checked; a 400
-    saying which is wrong otherwise."""
+    """The settings form's name, currency, country, fees and marginal tax rate,
+    checked; a 400 saying which is wrong otherwise."""
     cleaned = typed["name"].strip()
     if not cleaned:
         raise HTTPException(400, "A portfolio needs a name.")
@@ -3070,7 +3070,24 @@ def _portfolio_settings(typed: dict) -> tuple[str, str, str, dict]:
         if percent and figure > 100:
             raise HTTPException(400, "Percentage can't be more than 100.")
         fees[column] = figure
+    fees["marginal_tax_rate"] = _tax_rate(typed["marginal_tax_rate"])
     return cleaned, currency, place, fees
+
+
+def _tax_rate(text: str) -> Decimal | None:
+    """A marginal tax rate as typed, in percent. Blank is not set."""
+    if not text.strip():
+        return None
+    label = "Marginal tax rate"
+    try:
+        figure = money.parse(text, Portfolio.marginal_tax_rate, label)
+    except money.FigureError as exc:
+        raise HTTPException(400, f"{exc}.") from None
+    if figure < 0:
+        raise HTTPException(400, f"{label} can't be negative.")
+    if figure > 100:
+        raise HTTPException(400, f"{label} can't be more than 100.")
+    return figure
 
 
 @app.post("/portfolio/settings")
@@ -3085,9 +3102,11 @@ async def portfolio_settings(
     foreign_brokerage_flat: str = Form(""),
     foreign_brokerage_percent: str = Form(""),
     foreign_brokerage_minimum: str = Form(""),
+    marginal_tax_rate: str = Form(""),
 ):
     """Rename this portfolio, set the currency and jurisdiction it reports in,
-    and what its broker charges (app/brokerage.py).
+    what its broker charges (app/brokerage.py), and the marginal tax rate the
+    sale simulator uses (decisions.md #147).
 
     **Both are stored and only partly wired.** Totals are still computed in
     `money.REPORTING` and the financial-year logic is still AU's — T28b is the
@@ -3106,7 +3125,8 @@ async def portfolio_settings(
              "brokerage_minimum": brokerage_minimum,
              "foreign_brokerage_flat": foreign_brokerage_flat,
              "foreign_brokerage_percent": foreign_brokerage_percent,
-             "foreign_brokerage_minimum": foreign_brokerage_minimum}
+             "foreign_brokerage_minimum": foreign_brokerage_minimum,
+             "marginal_tax_rate": marginal_tax_rate}
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
         _require_owner(ctx)

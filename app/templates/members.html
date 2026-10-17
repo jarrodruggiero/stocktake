@@ -63,6 +63,17 @@ all of them.</p>
           {{ fee("foreign_brokerage_minimum", "Other currencies minimum") }}</tr>
       </tbody>
     </table>
+    {% set rate = portfolio.marginal_tax_rate if portfolio else none %}
+    <label>Marginal tax rate <span class="sub">%</span>
+      {% set rate_tip %}
+      <p class="tipline">Your top income tax rate plus the 2% Medicare levy.
+      <a href="https://www.ato.gov.au/tax-rates-and-codes/tax-rates-australian-residents"
+         target="_blank" rel="noopener">ATO tax rates</a></p>
+      {% endset %}
+      {% with body = rate_tip, label = "About the marginal tax rate" %}{% include "_tip.html" %}{% endwith %}
+      <input name="marginal_tax_rate" inputmode="decimal"
+             value="{{ typed.marginal_tax_rate if typed else (rate | qty if rate is not none else '') }}">
+    </label>
     {# Said plainly rather than implied. A setting that silently does nothing is
        worse than no setting, and totals are still computed in the built-in
        reporting currency until T28b rewires the places that assume it. #}
