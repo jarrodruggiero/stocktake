@@ -31,7 +31,8 @@ from app.models import Base
 PUBLISHED: dict[str, str] = {
     "portfolio.id": "portfolio.id",
     "portfolio.name": "portfolio.name",
-    "portfolio.marginal_tax_rate": "portfolio.marginal_tax_rate",
+    "portfolio.income_tax_rate": "portfolio.income_tax_rate",
+    "portfolio.medicare_levy": "portfolio.medicare_levy",
     "instrument.ticker": "holdings[].ticker",
     "instrument.name": "holdings[].name",
     "instrument.exchange": "holdings[].exchange",

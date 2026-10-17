@@ -29,9 +29,9 @@ from .models import CorporateAction, Instrument, Price, Trade
 ZERO = Decimal(0)
 CENTS = Decimal("0.01")
 
-# The day the rules this module implements stop being the rules. The new regime
-# is announced, not legislated, so years past this are REFUSED rather than
-# computed with a repealed discount — decisions.md #26.
+# The day the rules this module implements stop being the rules. Years past it
+# are REFUSED until the new ones are built, rather than computed with a repealed
+# discount — decisions.md #26.
 CGT_INDEXATION_START = dt.date(2027, 7, 1)
 
 
@@ -45,13 +45,11 @@ def regime_warning(fy_end_year: int) -> str | None:
     if start < CGT_INDEXATION_START:
         return None
     return (
-        f"Capital gains are not calculated for {fy_label(fy_end_year)}. From "
+        f"Capital gains are not calculated for {fy_label(fy_end_year)} yet. From "
         "1 July 2027 the 50% CGT discount is replaced by cost-base indexation "
-        "and a 30% minimum tax rate, and this version implements the earlier "
-        "rules. The change was announced in the 2026-27 Budget and the detail "
-        "is still being settled, so showing a figure here would mean applying "
-        "a repealed rule. Everything else on this page is unaffected. Check "
-        "for an update before lodging."
+        "and a 30% minimum tax (Treasury Laws Amendment (Tax Reform No. 1) Act "
+        "2026), and this version implements only the earlier rules. Everything "
+        "else on this page is unaffected. Check for an update before lodging."
     )
 
 

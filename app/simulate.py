@@ -7,7 +7,7 @@ latest price and today's rate. The sells are plain objects on stand-ins for the
 instruments, so nothing here ever reaches the session.
 
 The tax is what the sale ADDS to this financial year's net capital gain, at the
-marginal rate. The year's sales so far and the losses carried in are counted as
+income tax rate and the Medicare levy. The year's sales so far and the losses carried in are counted as
 the ATO counts them, so a gain a carried loss already covers is not taxed again,
 and a loss that lowers the year's gain lowers its tax.
 """
@@ -47,7 +47,8 @@ class Line:
 @dataclass
 class Sale:
     lines: list[Line] = field(default_factory=list)
-    rate: Decimal | None = None
+    income_tax_rate: Decimal | None = None
+    medicare_levy: Decimal | None = None
     value: Decimal = ZERO
     brokerage: Decimal = ZERO
     cost_base: Decimal | None = ZERO
@@ -58,7 +59,9 @@ class Sale:
     discount: Decimal | None = None
     losses_used: Decimal | None = None
     taxable: Decimal | None = None          # added to the year's net capital gain
-    tax: Decimal | None = None
+    income_tax: Decimal | None = None
+    levy: Decimal | None = None             # None when no levy is set
+    tax: Decimal | None = None              # the two together
     take_home: Decimal | None = None
     year_so_far: Decimal | None = None      # the year's earlier sales, net
     carried_in: Decimal | None = None       # losses carried in from earlier years
@@ -101,18 +104,20 @@ def fill(holdings: list[queries.Holding], percent: Decimal) -> dict[int, Decimal
 
 
 def sale(session, units: dict[int, Decimal], *, brokerage: dict[int, Decimal] | None = None,
-         rate: Decimal | None = None, holdings: list[queries.Holding] | None = None) -> Sale:
+         income_tax_rate: Decimal | None = None, medicare_levy: Decimal | None = None,
+         holdings: list[queries.Holding] | None = None) -> Sale:
     """Selling `units` of each holding (by instrument id) today, with the
     brokerage typed for some of them, the trade form's suggestion for the rest,
-    and the year's tax at `rate` percent. `holdings` are the open positions,
-    when the caller has them already."""
+    and the year's tax at the two rates, in percent. Without an income tax rate
+    there is no tax figure; without a levy, none is added. `holdings` are the
+    open positions, when the caller has them already."""
     today = clock.today()
     fx_book = queries.FxBook(session)
     portfolio = session.get(Portfolio, tenancy.current_portfolio_id(session))
     last = {False: queries.last_brokerage(session),
             True: queries.last_brokerage(session, foreign=True)}
     typed = brokerage or {}
-    out = Sale(rate=rate)
+    out = Sale(income_tax_rate=income_tax_rate, medicare_levy=medicare_levy)
     standins = {}
     if holdings is None:
         holdings = queries.split_positions(queries.all_holdings(session))[0]
@@ -166,8 +171,11 @@ def sale(session, units: dict[int, Decimal], *, brokerage: dict[int, Decimal] | 
     out.carried_forward = after.losses_carried_out - before.losses_carried_out
     if out.gain is not None:
         out.losses_used = out.gain - out.discount - out.taxable
-    if rate is not None:
-        out.tax = (out.taxable * rate / 100).quantize(CENTS)
+    if income_tax_rate is not None:
+        out.income_tax = (out.taxable * income_tax_rate / 100).quantize(CENTS)
+        if medicare_levy is not None:
+            out.levy = (out.taxable * medicare_levy / 100).quantize(CENTS)
+        out.tax = out.income_tax + (out.levy or ZERO)
         out.take_home = out.value - out.brokerage - out.tax
     return out
 

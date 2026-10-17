@@ -74,7 +74,8 @@ def get_portfolio(request: Request) -> dict:
         totals = queries.totals(open_positions)
         return {
             "portfolio": {"id": portfolio.id, "name": portfolio.name,
-                          "marginal_tax_rate": _num(portfolio.marginal_tax_rate)},
+                          "income_tax_rate": _num(portfolio.income_tax_rate),
+                          "medicare_levy": _num(portfolio.medicare_levy)},
             "as_at": clock.today().isoformat(),
             "currency": "AUD",
             "cost": _num(totals.cost),
@@ -410,24 +411,28 @@ def _instrument(request: Request, db, body: TradeIn | DividendIn) -> Instrument:
     return inst
 
 
-class TaxRateIn(BaseModel):
-    # Percent, as the settings form takes it; null clears it.
-    marginal_tax_rate: Decimal | None = Field(ge=0, le=100, decimal_places=2)
+class TaxRatesIn(BaseModel):
+    # Percent, as the settings form takes them. A field left out is kept, and
+    # null clears it.
+    income_tax_rate: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
+    medicare_levy: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
 
 
-@router.put("/portfolio/marginal-tax-rate")
-def set_marginal_tax_rate(request: Request, body: TaxRateIn) -> dict:
-    """The rate the sale simulator taxes a gain at (decisions.md #147): the
-    taxpayer's top rate plus the Medicare levy. A setting, not a record, so the
-    one write here that is not an append (#88); the owner's, as every
-    portfolio setting is (#34)."""
+@router.put("/portfolio/tax-rates")
+def set_tax_rates(request: Request, body: TaxRatesIn) -> dict:
+    """The rates the sale simulator taxes a gain at (decisions.md #147): the
+    taxpayer's top income tax rate, and the Medicare levy. Settings, not
+    records, so the one write here that is not an append (#88); the owner's,
+    as every portfolio setting is (#34)."""
     with auth.api_session(request, write=True) as (access, db):
         if access.role != "owner":
             raise HTTPException(403, "only the portfolio's owner can change its settings")
         portfolio = db.get(Portfolio, access.portfolio_id)
-        portfolio.marginal_tax_rate = body.marginal_tax_rate
+        for field in body.model_fields_set:
+            setattr(portfolio, field, getattr(body, field))
         db.flush()
-        return {"marginal_tax_rate": _num(portfolio.marginal_tax_rate)}
+        return {"income_tax_rate": _num(portfolio.income_tax_rate),
+                "medicare_levy": _num(portfolio.medicare_levy)}
 
 
 @router.post("/trades", status_code=201)

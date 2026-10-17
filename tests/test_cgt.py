@@ -747,6 +747,15 @@ def test_the_first_year_under_the_new_rules_is_refused(pf):
     assert "cost-base indexation" in warning
 
 
+def test_the_notice_says_the_new_rules_are_law():
+    """It said they were announced and being settled; they passed as Act No. 49
+    of 2026, assented 26 June 2026."""
+    warning = fyreport.regime_warning(2028)
+
+    assert "Tax Reform No. 1" in warning and "Act 2026" in warning
+    assert "settled" not in warning and "announced" not in warning
+
+
 def test_a_refused_year_returns_no_figures_at_all(pf):
     """Not "the old numbers plus a caveat" — zero, with the reason. A caveat
     beside a wrong total is still a wrong total, and people read totals."""
