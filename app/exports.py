@@ -23,7 +23,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from . import clock, fyreport, queries
+from . import clock, cpi, fyreport, queries
 from .models import CorporateAction, Dividend, Instrument, Trade
 
 ZERO = Decimal(0)
@@ -186,14 +186,16 @@ def realised_cgt(session: Session, fy: int | None = None, **_) -> Report:
     """One row per parcel consumed by a sale — the tax-time report.
 
     "Gain after discount" is the per-parcel figure: half the gain when the
-    parcel was held more than twelve months. The FY report applies losses
+    parcel was held more than twelve months, and from 1 July 2027 half the gain
+    to 30 June 2027 only (decisions.md #150). The FY report applies losses
     before the discount, so use its total when lodging.
     """
     headers = [
         "Sale date", "Ticker", "Name", "Units", "Acquired", "Days held",
         "Cost base (AUD)", "Proceeds (AUD)", "Gross gain (AUD)",
         "Discount eligible", "CGT discount (AUD)", "Gain after discount (AUD)",
-        "Financial year", "Event",
+        "Financial year", "Event", "Value at 30 Jun 2027 (AUD)", "Gain to 30 Jun 2027 (AUD)",
+        "Indexation factor", "Indexed cost base (AUD)", "Indexation (AUD)",
     ]
     instruments = (
         session.scalars(select(Instrument).options(selectinload(Instrument.trades),
@@ -214,27 +216,32 @@ def realised_cgt(session: Session, fy: int | None = None, **_) -> Report:
                 continue
             for parcel in disposal.parcels:
                 gain = parcel.gain          # None when either side had no rate
-                discount = (None if gain is None else
-                            gain / 2 if parcel.discountable and gain > 0 else ZERO)
+                discount = parcel.discount
                 rows.append([
                     disposal.date.isoformat(), inst.ticker, inst.name or "",
                     _d(parcel.quantity, "0.00000001"), parcel.acquired.isoformat(),
                     (disposal.date - parcel.acquired).days,
-                    _d(parcel.cost_base), _d(parcel.proceeds), _d(gain),
+                    _d(parcel.cost), _d(parcel.proceeds), _d(gain),
                     "yes" if parcel.discountable else "no",
                     _d(discount), _d(None if gain is None else gain - discount),
                     fyreport.fy_label(year), EVENTS[disposal.event],
+                    _d(parcel.deferred_proceeds), _d(parcel.deferred),
+                    _d(parcel.factor, "0.001"),
+                    _d(parcel.indexed_cost if parcel.factor is not None else None),
+                    _d(parcel.indexation),
                 ])
     rows.sort(key=lambda r: (r[0], r[1]))
     return headers, rows
 
 
 def unrealised_cgt(session: Session, **_) -> Report:
-    """What a sale at today's price would realise, per parcel still held."""
+    """What a sale at today's price would realise, per parcel still held:
+    worked as the sale simulator works one, so from 1 July 2027 the latest CPI
+    stands in for the quarter's, which is not out yet (decisions.md #150)."""
     headers = [
         "Ticker", "Name", "Acquired", "Units", "Days held", "Cost base (AUD)",
         "Market value (AUD)", "Unrealised gain (AUD)", "Discount eligible",
-        "Gain after discount (AUD)",
+        "Gain after discount (AUD)", "Indexation (AUD)",
     ]
     today = clock.today()
     instruments = (
@@ -244,6 +251,7 @@ def unrealised_cgt(session: Session, **_) -> Report:
         .all()
     )
     fxbook = queries.FxBook(session)
+    fxbook.cpi = cpi.CpiBook(session, estimate=True)
     rows = []
     for inst in instruments:
         latest = queries._latest_price(session, inst.id)
@@ -263,14 +271,14 @@ def unrealised_cgt(session: Session, **_) -> Report:
             # `cost` is None only for a currency with no rate stored at all,
             # and then there is no rate for `value` either.
             gain = None if value is None or cost is None else value - cost
-            eligible = today > fyreport._one_year_after(parcel.acquired)
-            discount = (gain / 2) if (gain is not None and eligible and gain > 0) else ZERO
+            sold = fyreport.as_if_sold(parcel, value, today, fxbook)
             rows.append([
                 inst.ticker, inst.name or "", parcel.acquired.isoformat(),
                 _d(units, "0.00000001"), (today - parcel.acquired).days,
                 _d(cost), _d(value), _d(gain),
-                "yes" if eligible else "no",
-                "" if gain is None else _d(gain - discount),
+                "yes" if sold.discountable else "no",
+                "" if sold.gain is None else _d(sold.gain - sold.discount),
+                _d(sold.indexation),
             ])
     rows.sort(key=lambda r: (r[0], r[2]))
     return headers, rows
@@ -321,12 +329,13 @@ def closed_positions(session: Session, **_) -> Report:
         sales = [d for d in disposals if d.event == "sale"]
         if not sales:
             continue
-        cost_base = _total(d.cost_base for d in sales)
+        cost_base = _total(d.cost for d in sales)
         proceeds = _total(d.proceeds for d in sales)
         gross = _total(d.gain for d in disposals)
-        parcels = [p for d in disposals for p in d.parcels]
-        discount = (None if any(p.gain is None for p in parcels) else
-                    sum((p.gain / 2 for p in parcels if p.discountable and p.gain > 0), ZERO))
+        discount = _total(p.discount for d in disposals for p in d.parcels)
+        # The return is what came back over what was paid: indexing lowers
+        # the gain taxed, not the money made (decisions.md #150).
+        indexed = sum((d.indexation or ZERO for d in disposals), ZERO)
         units = sum((d.quantity for d in sales), ZERO)
         dividends_aud = _total(
             queries.in_aud(dv.cash_amount, inst.currency, fxbook.of(dv, inst.currency))
@@ -340,7 +349,8 @@ def closed_positions(session: Session, **_) -> Report:
             max(d.date for d in sales).isoformat(),
             _d(cost_base), _d(proceeds), _d(dividends_aud), _d(gross), _d(discount),
             _d(None if gross is None or discount is None else gross - discount),
-            _d(None if gross is None or dividends_aud is None else gross + dividends_aud),
+            _d(None if gross is None or dividends_aud is None
+               else gross + indexed + dividends_aud),
             (pref.note if pref else "") or "",
         ])
     rows.sort(key=lambda r: r[0])
@@ -436,6 +446,18 @@ a gain on a parcel held more than twelve months. The ATO applies capital LOSSES
 before that discount, the year's own and then those carried from earlier years,
 which the FY report in the app does — use the FY report's net figure when
 lodging, and these rows as the working.
+
+From 1 July 2027 the discount is replaced by indexation (Treasury Laws
+Amendment (Tax Reform No. 1) Act 2026). A parcel held through 30 June 2027 is
+taken to be sold just before 1 July 2027 for its value at the last close and
+bought again for it: its gain to then is "Gain to 30 Jun 2027", discounted as
+before. A cost base from 1 July 2027 (that value, for such a parcel) is indexed
+by the CPI when the parcel was held twelve months, counted from when it was
+bought: "Indexed cost base". Where it changed after, the factor is the amounts'
+own factors weighed together. Indexing cannot make a loss. "Cost base" stays
+what the parcel cost, and "Indexation" is what indexing took off its gain, so
+the gross gain is the proceeds less both. Unrealised gains are worked as a sale
+today would be, with the latest CPI for this quarter's, which is not out yet.
 
 Dividends: franking credits are only present where a statement supplied them;
 blank means not recorded, not zero. The grossed-up column is cash plus franking

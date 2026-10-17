@@ -18,10 +18,12 @@ what you should buy or sell.
 - **Australian rules only.** Financial years run July to June, capital gains
   use Australian rules, and franking credits are an Australian concept. If you
   are taxed elsewhere, the tax pages do not apply to you.
-- **The rules are changing.** From 1 July 2027 the 50% CGT discount is
-  scheduled to be replaced by cost-base indexation and a minimum tax rate. This
-  version implements the pre-2027 regime and will tell you rather than guess
-  when asked about a later year.
+- **The rules change on 1 July 2027.** The 50% CGT discount gives way to
+  indexing the cost base, and gains from then carry a 30% minimum tax. This
+  version indexes as the authors read the Act, valuing a holding at the last
+  close before 1 July 2027 until the Minister sets another method, and does not
+  work out the minimum tax yet. See
+  [Capital gains from 1 July 2027](../guides/index.md#capital-gains-from-1-july-2027).
 - **Use the exports as a starting point for your accountant, not as a lodgement.**
 
 ## No warranty

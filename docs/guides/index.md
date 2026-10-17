@@ -49,9 +49,13 @@ eighth decimal place), or all of it.
   bracket is taxed partly at a rate this does not show. See the ATO's
   [tax rates](https://www.ato.gov.au/tax-rates-and-codes/tax-rates-australian-residents)
   and [how to calculate your CGT](https://www.ato.gov.au/individuals-and-families/investments-and-assets/capital-gains-tax/calculating-your-cgt/how-to-calculate-your-cgt).
-- **The discount is an individual's or a trust's.** A complying super fund's
-  is a third and a company gets none, and from 1 July 2027 the discount is
-  being replaced, so a sale from then is not worked out.
+- **The rules are an individual's or a trust's.** A complying super fund's
+  discount is a third, a company gets none, and neither is indexed from
+  1 July 2027.
+- **From 1 July 2027** a sale is worked out under the new rules
+  ([below](#capital-gains-from-1-july-2027)). The CPI for the quarter of a sale
+  today is not published yet, so the latest one stands in, and the page says
+  which.
 
 ## Charts
 
@@ -86,7 +90,8 @@ The Australian tax view for a financial year:
 
 - **Capital gains** — FIFO parcel matching, per-parcel detail, the 50%
   discount where a parcel was held more than twelve months, and losses applied
-  in the taxpayer-favourable order, earlier years' carried forward.
+  in the taxpayer-favourable order, earlier years' carried forward. From
+  1 July 2027, indexation as well (below).
 - **Dividend income** — the cash received, and any foreign tax withheld from
   it. A trust's distribution counts in the year its period ends, when it says
   one, so a June quarter paid in July belongs to the year to 30 June. Leave the
@@ -97,6 +102,52 @@ The Australian tax view for a financial year:
 
 The figures are a starting point for your accountant, not a lodgement. See the
 [disclaimer](../about/disclaimer.md).
+
+### Capital gains from 1 July 2027
+
+From 1 July 2027 the 50% CGT discount gives way to indexing the cost base by
+the Consumer Price Index (Treasury Laws Amendment (Tax Reform No. 1) Act 2026).
+The FY report, Simulate sale and the exports all work out a sale from then this
+way.
+
+- **A holding you have on 30 June 2027** counts as sold just before 1 July 2027
+  for what it was worth, and bought again on 1 July 2027 for the same. Its gain
+  or loss to then waits for the real sale, and is discounted by 50% if by then
+  you have held it for more than 12 months. Stocktake values it at the last
+  close in the week before 1 July 2027, at 30 June 2027's exchange rate for a
+  foreign holding. A holding with no close that week is not valued: the FY
+  report names it, and leaves its sales out of the totals until a price for
+  that week is recorded.
+- **After that, the cost base is indexed** instead of discounted. It is
+  multiplied by the CPI for the quarter of the sale over the CPI for the
+  quarter the money was spent: for a holding you had on 30 June 2027, the
+  September 2027 quarter. The factor is worked to three decimal places and
+  never goes below 1. It applies only to a holding bought at least 12 months
+  before the sale, counted from when you really bought it, not from 1 July
+  2027.
+- **Money spent later is indexed from its own quarter, and money back is not
+  indexed.** A return of capital comes off the cost base as it is. Where the
+  cost base is made of amounts from different quarters, their factors are
+  weighed together.
+- **Indexing cannot make a loss.** A sale between the cost base and the indexed
+  cost base makes no gain and no loss. Below the cost base, the loss is worked
+  out from the cost base.
+- **Losses** come off the gains to 30 June 2027 first and the later gains after
+  them, and the discount comes last, as before.
+- **The CPI** is the ABS's All Groups CPI for the eight capital cities, as first
+  published for each quarter, about four weeks after it ends. The price feed
+  fetches it. Until a quarter's number is out, the FY report names a sale in
+  that quarter and leaves it out of its totals. Simulate sale and the
+  unrealised gains export do not wait: they use the latest number published.
+
+On the FY page each sale shows what it cost, its value on 30 June 2027, its
+indexation and its proceeds: the gain is the proceeds less the cost and the
+indexation. Each parcel shows its factor, as ×1.040, and the realised gains
+export has the working parcel by parcel.
+
+The Act lets the Minister set another way to value a holding at 30 June 2027.
+None has been made, so Stocktake uses the market value. The 30% minimum tax on
+gains from 1 July 2027 is not worked out yet.
 
 ## Imports and exports
 

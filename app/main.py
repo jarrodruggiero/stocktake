@@ -65,6 +65,7 @@ from . import (
     clock,
     columns,
     configfile,
+    cpi,
     exports,
     features,
     federation,
@@ -584,6 +585,7 @@ templates.env.filters["arrow"] = _arrow
 templates.env.filters["money"] = _money
 templates.env.filters["cash"] = _cash
 templates.env.filters["money_plain"] = _money_plain
+templates.env.filters["cpi_quarter"] = cpi.name
 templates.env.filters["qty"] = lambda v: f"{v.normalize():f}" if v is not None else "—"
 # Signed, as a change is, but no change has no sign.
 templates.env.filters["pct"] = (lambda v: "—" if v is None else "0.00%" if v == 0

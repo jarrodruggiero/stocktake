@@ -59,7 +59,10 @@ def _realised(history: History, names: dict) -> list:
                          (d["date"] - p["acquired"]).days, _d(p["cost_base"]),
                          _d(p["proceeds"]), _d(gain), "yes" if p["discountable"] else "no",
                          _d(discount), _d(None if gain is None else gain - discount),
-                         _label(d["date"]), "sale"])   # no corporate action here
+                         _label(d["date"]), "sale",    # no corporate action here
+                         # Every history ends before 1 July 2027, so the 2027
+                         # columns are blank (decisions.md #150).
+                         "", "", "", "", ""])
     return sorted(rows, key=lambda r: (r[0], r[1]))
 
 
@@ -81,7 +84,8 @@ def _unrealised(history: History, names: dict) -> list:
             rows.append([h.ticker, names[h.ticker], acquired.isoformat(),
                          _d(units, "0.00000001"), (TODAY - acquired).days, _d(cost),
                          _d(value), _d(gain), "yes" if eligible else "no",
-                         "" if gain is None else _d(gain - discount)])
+                         "" if gain is None else _d(gain - discount),
+                         ""])       # nothing is indexed before 1 July 2027
     return sorted(rows, key=lambda r: (r[0], r[2]))
 
 

@@ -39,6 +39,12 @@ def quarter(day: dt.date) -> dt.date:
     return dt.date(day.year, (day.month - 1) // 3 * 3 + 1, 1)
 
 
+def name(start: dt.date) -> str:
+    """"the June 2028 quarter", for a page."""
+    end = dt.date(start.year, start.month + 2, 1)
+    return f"the {end.strftime('%B %Y')} quarter"
+
+
 def _label(start: dt.date) -> str:
     return f"{start.year}-Q{(start.month - 1) // 3 + 1}"
 
@@ -49,14 +55,28 @@ def _start(label: str) -> dt.date:
 
 
 class CpiBook:
-    """Every stored quarter, read once."""
+    """Every stored quarter, read once.
 
-    def __init__(self, session: Session):
+    `estimate` is for a sale today, in the simulator or the unrealised gains
+    export: its quarter's number is months away, so the latest published stands
+    in for any later quarter, and `estimated` says which it was. A figure for a
+    tax return never estimates."""
+
+    def __init__(self, session: Session, estimate: bool = False):
         self._numbers = {row.quarter: row.index_number
                          for row in session.scalars(select(CpiQuarter))}
+        self._estimate = estimate
+        self.estimated: dt.date | None = None
 
     def index(self, day: dt.date) -> Decimal | None:
-        return self._numbers.get(quarter(day))
+        start = quarter(day)
+        if start in self._numbers or not self._estimate:
+            return self._numbers.get(start)
+        latest = self.latest
+        if latest is None or start < latest:
+            return None
+        self.estimated = latest
+        return self._numbers[latest]
 
     @property
     def latest(self) -> dt.date | None:
@@ -65,7 +85,9 @@ class CpiBook:
     def factor(self, spent: dt.date, event: dt.date) -> Decimal | None:
         """What money spent on `spent` is multiplied by for a CGT event on
         `event`: 1 when that would not raise it, None when a quarter's number
-        is not published yet."""
+        is not published yet. In one quarter it is 1 whatever the number."""
+        if quarter(spent) == quarter(event):
+            return Decimal(1)
         then, now = self.index(spent), self.index(event)
         if then is None or now is None:
             return None

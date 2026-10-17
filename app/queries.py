@@ -752,6 +752,36 @@ class FxBook:
         # Holdings a figure was converted for at a rate more than
         # FX_REACH_DAYS from its date, for the page to name.
         self.far: set[str] = set()
+        # The other market data a CGT walk from 1 July 2027 needs, read the
+        # first time one asks (decisions.md #150).
+        self._session = session
+        self._cpi = None
+        self._closes: dict[dt.date, dict[int, Decimal]] = {}
+
+    @property
+    def cpi(self):
+        """The CPI series, for indexing a cost base. Settable: the sale
+        simulator puts in one that estimates a quarter not yet out."""
+        if self._cpi is None:
+            from . import cpi
+            self._cpi = cpi.CpiBook(self._session)
+        return self._cpi
+
+    @cpi.setter
+    def cpi(self, book) -> None:
+        self._cpi = book
+
+    def close_before(self, instrument_id: int, day: dt.date) -> Decimal | None:
+        """The last close before `day` within FX_REACH_DAYS of it: a market
+        value "just before" a date is not a close from months earlier."""
+        if day not in self._closes:
+            rows = self._session.execute(
+                select(Price.instrument_id, Price.date, Price.close)
+                .where(Price.date < day, Price.date >= day - dt.timedelta(days=FX_REACH_DAYS))
+                .order_by(Price.date)
+            ).all()
+            self._closes[day] = {instrument_id: close for instrument_id, _d, close in rows}
+        return self._closes[day].get(instrument_id)
 
     def known(self, currency: str) -> bool:
         """Whether an AUD figure can be produced for this currency at all."""

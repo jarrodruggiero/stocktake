@@ -272,6 +272,12 @@ def get_fy(request: Request, year: int) -> dict:
                     "disposals": len(cgt.disposals),
                     "gains_discountable": _num(cgt.gains_discountable),
                     "gains_other": _num(cgt.gains_other),
+                    # From 1 July 2027 the two above are the gains to 30 June
+                    # 2027, deferred to the sale, and these the gains after it,
+                    # which the 30% minimum tax is worked on once losses are
+                    # off (decisions.md #150).
+                    "gains_from_july_2027": _num(cgt.gains_from_july_2027),
+                    "minimum_tax_gain": _num(cgt.minimum_tax_gain),
                     "losses": _num(cgt.losses),
                     "discount": _num(cgt.discount),
                     "net_capital_gain": _num(cgt.net_capital_gain),
@@ -281,6 +287,10 @@ def get_fy(request: Request, year: int) -> dict:
                     "losses_carried_in": _num(cgt.losses_carried_in),
                     "losses_carried_applied": _num(cgt.losses_carried_applied),
                     "losses_carried_forward": _num(cgt.losses_carried_out),
+                    # Holdings the totals leave out for want of the CPI for a
+                    # quarter, or of a close in the week before 1 July 2027.
+                    "awaiting_cpi": cgt.awaiting_cpi,
+                    "unvalued": cgt.unvalued,
                 }.items()},
                 "oversold": [
                     {
