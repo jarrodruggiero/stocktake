@@ -458,6 +458,8 @@ own factors weighed together. Indexing cannot make a loss. "Cost base" stays
 what the parcel cost, and "Indexation" is what indexing took off its gain, so
 the gross gain is the proceeds less both. Unrealised gains are worked as a sale
 today would be, with the latest CPI for this quarter's, which is not out yet.
+The gains from 1 July 2027 left after losses carry a 30% minimum tax: the FY
+report gives them as the minimum tax capital gain.
 
 Dividends: franking credits are only present where a statement supplied them;
 blank means not recorded, not zero. The grossed-up column is cash plus franking

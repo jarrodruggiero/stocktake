@@ -55,7 +55,8 @@ eighth decimal place), or all of it.
 - **From 1 July 2027** a sale is worked out under the new rules
   ([below](#capital-gains-from-1-july-2027)). The CPI for the quarter of a sale
   today is not published yet, so the latest one stands in, and the page says
-  which.
+  which. Below a 30% income tax rate, the **minimum tax top-up** is what the
+  sale adds to the year's minimum tax.
 
 ## Charts
 
@@ -134,6 +135,15 @@ way.
   out from the cost base.
 - **Losses** come off the gains to 30 June 2027 first and the later gains after
   them, and the discount comes last, as before.
+- **The gains from 1 July 2027 are taxed at 30% at least.** What is left of them
+  after losses is the year's minimum tax capital gain, on the FY page. Where
+  income tax on it comes to less than 30%, the difference is added, rounded
+  down to a dollar. With one income tax rate (see
+  [Simulate a sale](#simulate-a-sale)), Simulate sale works that out as the
+  30% less your rate, for the year, and shows what the sale adds. The Medicare
+  levy does not count towards the 30%. Nobody who gets an income support
+  payment during the year, such as the Age Pension, JobSeeker, the Disability
+  Support Pension or Austudy, pays it: tick that in the portfolio's settings.
 - **The CPI** is the ABS's All Groups CPI for the eight capital cities, as first
   published for each quarter, about four weeks after it ends. The price feed
   fetches it. Until a quarter's number is out, the FY report names a sale in
@@ -146,8 +156,7 @@ indexation. Each parcel shows its factor, as ×1.040, and the realised gains
 export has the working parcel by parcel.
 
 The Act lets the Minister set another way to value a holding at 30 June 2027.
-None has been made, so Stocktake uses the market value. The 30% minimum tax on
-gains from 1 July 2027 is not worked out yet.
+None has been made, so Stocktake uses the market value.
 
 ## Imports and exports
 

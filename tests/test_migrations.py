@@ -560,3 +560,27 @@ def test_0020_adds_the_cpi_beside_what_is_there(tmp_path: Path):
     assert kept == [(1, 30)]
     command.downgrade(cfg, "0019")
     assert "cpi_quarter" not in _tables(path)
+
+
+def test_0021_adds_income_support_to_every_portfolio_as_not(tmp_path: Path):
+    """The minimum tax applies unless a portfolio says otherwise (#151)."""
+    path = tmp_path / "support.db"
+    cfg = _config(path)
+    command.upgrade(cfg, "0020")
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO portfolio (id, name, created_at, income_tax_rate) "
+                 "VALUES (1, 'Main', '2026-01-01', 30)")
+    conn.commit()
+    conn.close()
+
+    command.upgrade(cfg, "0021")
+    conn = sqlite3.connect(path)
+    kept = conn.execute("SELECT id, income_tax_rate, income_support FROM portfolio").fetchall()
+    conn.close()
+
+    assert kept == [(1, 30, 0)]
+    command.downgrade(cfg, "0020")
+    conn = sqlite3.connect(path)
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(portfolio)")]
+    conn.close()
+    assert "income_support" not in columns and "income_tax_rate" in columns

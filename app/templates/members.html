@@ -84,6 +84,17 @@ all of them.</p>
                value="{{ typed[column] if typed else (saved | qty if saved is not none else '') }}"></label>
       {% endfor %}
     </div>
+    {% set support_tip %}
+    <p class="tipline">The 30% minimum tax on capital gains doesn't apply in a year you get one,
+    such as the Age Pension or JobSeeker.
+    <a href="{{ docs_url }}/guides/#capital-gains-from-1-july-2027" target="_blank"
+       rel="noopener">More information</a></p>
+    {% endset %}
+    {% set supported = typed.income_support if typed else (portfolio and portfolio.income_support) %}
+    <label class="check"><input type="checkbox" name="income_support" value="1"
+                                {% if supported %}checked{% endif %}>
+      Gets an income support payment this year
+      {% with body = support_tip, label = "About income support" %}{% include "_tip.html" %}{% endwith %}</label>
     {# Said plainly rather than implied. A setting that silently does nothing is
        worse than no setting, and totals are still computed in the built-in
        reporting currency until T28b rewires the places that assume it. #}

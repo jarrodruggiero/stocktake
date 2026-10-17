@@ -240,6 +240,15 @@ units than were held. Correct it or record the missing buy.</p>
       {% else %}
       <tr><th>Net capital gain</th><th class="num">{{ r.cgt.net_capital_gain | money }}</th></tr>
       {% endif %}
+      {% if r.new_rules %}
+      {% set minimum_tip %}
+      <p class="tipline">The gains from 1 July 2027 left after losses, which the 30% minimum
+      tax is worked on. <a href="{{ docs_url }}/guides/#capital-gains-from-1-july-2027">More
+      information</a></p>
+      {% endset %}
+      <tr><td>Minimum tax capital gain
+            {% with body = minimum_tip, label = "About the minimum tax capital gain" %}{% include "_tip.html" %}{% endwith %}</td><td class="num">{{ r.cgt.minimum_tax_gain | money }}</td></tr>
+      {% endif %}
     </tbody>
   </table>
   </div>

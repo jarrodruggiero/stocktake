@@ -21,8 +21,8 @@ what you should buy or sell.
 - **The rules change on 1 July 2027.** The 50% CGT discount gives way to
   indexing the cost base, and gains from then carry a 30% minimum tax. This
   version indexes as the authors read the Act, valuing a holding at the last
-  close before 1 July 2027 until the Minister sets another method, and does not
-  work out the minimum tax yet. See
+  close before 1 July 2027 until the Minister sets another method, and works out
+  the minimum tax at the one income tax rate you give it. See
   [Capital gains from 1 July 2027](../guides/index.md#capital-gains-from-1-july-2027).
 - **Use the exports as a starting point for your accountant, not as a lodgement.**
 

@@ -110,10 +110,11 @@ def test_the_owners_write_key_sets_either_and_leaves_the_other(client, session_f
 
     both = client.put(RATES, headers=key, json={"income_tax_rate": 30, "medicare_levy": 2})
     assert (both.status_code, both.json()) == (
-        200, {"income_tax_rate": 30.0, "medicare_levy": 2.0})
+        200, {"income_tax_rate": 30.0, "medicare_levy": 2.0, "income_support": False})
 
     one = client.put(RATES, headers=key, json={"income_tax_rate": 37})
-    assert one.json() == {"income_tax_rate": 37.0, "medicare_levy": 2.0}
+    assert one.json() == {"income_tax_rate": 37.0, "medicare_levy": 2.0,
+                          "income_support": False}
 
     cleared = client.put(RATES, headers=key, json={"medicare_levy": None})
     assert (cleared.status_code, _stored(session_factory)) == (200, (Decimal("37.00"), None))
