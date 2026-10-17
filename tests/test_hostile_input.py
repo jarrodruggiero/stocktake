@@ -185,7 +185,8 @@ BY_HAND: dict[str, list[Field]] = {
     # The query is the form, a units and a brokerage field per holding, named
     # by its instrument's id: `_send` puts the world's ACME in.
     "/simulate": [Field(n, "query") for n in (
-        "rate", "percent", "fill", "units_{instrument_id}", "brokerage_{instrument_id}")],
+        "income_tax_rate", "medicare_levy", "percent", "fill", "units_{instrument_id}",
+        "brokerage_{instrument_id}")],
 }
 
 
@@ -472,8 +473,8 @@ def _typed(world: World, route: APIRoute, n: int, made: dict) -> dict:
         "mapping": json.dumps({"net_amount": {"after": ["Net Payment"], "type": "money"}}),
         "body": STATEMENT_TEMPLATE, "filename": f"careful-{n}",
         "ticker__ALPHA": "ALPHA",
-        # Simulate sale: ten of ACME's hundred, at a 32% rate.
-        "rate": "32", "percent": "50", "fill": "", "marginal_tax_rate": "32",
+        # Simulate sale: ten of ACME's hundred, at 30% and the 2% levy.
+        "income_tax_rate": "30", "medicare_levy": "2", "percent": "50", "fill": "",
         "units_{instrument_id}": "10", "brokerage_{instrument_id}": "9.50",
     }
     values.update(made)

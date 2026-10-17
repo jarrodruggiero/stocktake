@@ -63,18 +63,27 @@ all of them.</p>
           {{ fee("foreign_brokerage_minimum", "Other currencies minimum") }}</tr>
       </tbody>
     </table>
-    {% set rate = portfolio.marginal_tax_rate if portfolio else none %}
-    <label>Marginal tax rate <span class="sub">%</span>
-      {% set rate_tip %}
-      <p class="tipline">The rate Simulate sale taxes a gain at: your top income tax rate
-      plus the 2% Medicare levy.
-      <a href="{{ docs_url }}/guides/#simulate-a-sale" target="_blank" rel="noopener">More
-      information</a></p>
-      {% endset %}
-      {% with body = rate_tip, label = "About the marginal tax rate" %}{% include "_tip.html" %}{% endwith %}
-      <input name="marginal_tax_rate" inputmode="decimal"
-             value="{{ typed.marginal_tax_rate if typed else (rate | qty if rate is not none else '') }}">
-    </label>
+    {% set rate_tip %}
+    <p class="tipline">The rate Simulate sale taxes a gain at: your top income tax rate,
+    without the Medicare levy.
+    <a href="{{ docs_url }}/guides/#simulate-a-sale" target="_blank" rel="noopener">More
+    information</a></p>
+    {% endset %}
+    {% set levy_tip %}
+    <p class="tipline">2% for most people, less on a low income.
+    <a href="https://www.ato.gov.au/individuals-and-families/medicare-and-private-health-insurance/medicare-levy"
+       target="_blank" rel="noopener">Medicare levy</a></p>
+    {% endset %}
+    <div class="row">
+      {% for column, label, tip in [("income_tax_rate", "Income tax rate", rate_tip),
+                                     ("medicare_levy", "Medicare levy", levy_tip)] %}
+      {% set saved = portfolio[column] if portfolio else none %}
+      <label>{{ label }} <span class="sub">%</span>
+        {% with body = tip, label = "About the " ~ label | lower %}{% include "_tip.html" %}{% endwith %}
+        <input name="{{ column }}" inputmode="decimal"
+               value="{{ typed[column] if typed else (saved | qty if saved is not none else '') }}"></label>
+      {% endfor %}
+    </div>
     {# Said plainly rather than implied. A setting that silently does nothing is
        worse than no setting, and totals are still computed in the built-in
        reporting currency until T28b rewires the places that assume it. #}

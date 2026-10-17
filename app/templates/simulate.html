@@ -6,14 +6,20 @@
 <a class="backlink button secondary" href="/">&larr; Portfolio</a>
 
 <h1>Simulate a sale</h1>
-<p class="panel warn">A calculator only, not financial or tax advice.</p>
+<p class="panel warn">A calculator only, not financial or tax advice. Its figures are
+an approximation, and other factors may change them for you: see the ATO on
+<a href="https://www.ato.gov.au/individuals-and-families/investments-and-assets/capital-gains-tax" target="_blank" rel="noopener">capital gains tax</a> and
+<a href="https://www.ato.gov.au/tax-rates-and-codes/tax-rates-australian-residents" target="_blank" rel="noopener">tax rates</a>.</p>
 
 {% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
 
 {% set rate_tip %}
-<p class="tipline">Your top income tax rate plus the 2% Medicare levy.
-<a href="https://www.ato.gov.au/tax-rates-and-codes/tax-rates-australian-residents"
-   target="_blank" rel="noopener">ATO tax rates</a></p>
+<p class="tipline">Your top income tax rate, without the Medicare levy.
+<a href="https://www.ato.gov.au/tax-rates-and-codes/tax-rates-australian-residents" target="_blank" rel="noopener">ATO tax rates</a></p>
+{% endset %}
+{% set levy_tip %}
+<p class="tipline">2% for most people, less on a low income.
+<a href="https://www.ato.gov.au/individuals-and-families/medicare-and-private-health-insurance/medicare-levy" target="_blank" rel="noopener">Medicare levy</a></p>
 {% endset %}
 
 {# A GET: nothing is recorded, and the query is the whole form. #}
@@ -23,9 +29,12 @@
   <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">Calculate</button>
   <div class="panel">
     <div class="row">
-      <label>Marginal tax rate <span class="sub">%</span>
-        {% with body = rate_tip, label = "About the marginal tax rate" %}{% include "_tip.html" %}{% endwith %}
-        <input name="rate" inputmode="decimal" value="{{ typed.rate }}"></label>
+      <label>Income tax rate <span class="sub">%</span>
+        {% with body = rate_tip, label = "About the income tax rate" %}{% include "_tip.html" %}{% endwith %}
+        <input name="income_tax_rate" inputmode="decimal" value="{{ typed.income_tax_rate }}"></label>
+      <label>Medicare levy <span class="sub">%</span>
+        {% with body = levy_tip, label = "About the Medicare levy" %}{% include "_tip.html" %}{% endwith %}
+        <input name="medicare_levy" inputmode="decimal" value="{{ typed.medicare_levy }}"></label>
       <label>Sell <span class="sub">% of the portfolio</span>
         <input name="percent" inputmode="decimal" value="{{ typed.percent or '' }}"></label>
       <div class="fillbuttons">
@@ -87,8 +96,13 @@
   <p class="note">Totals exclude {{ sale.withheld | join(', ') }} — no exchange rate stored.</p>
   {% endif %}
   {% set taxed = sale.taxable is not none %}
-  {% if sale.tax is none %}{% set tax_label = "Tax" %}
-  {% else %}{% set tax_label = ("Tax saved" if sale.tax < 0 else "Tax") ~ " at " ~ (sale.rate | qty) ~ "%" %}{% endif %}
+  {% set tax_label = "Tax saved" if sale.tax is not none and sale.tax < 0 else "Tax" %}
+  {% macro rated(name, amount, rate) -%}
+    {{ name }}{{ ' saved' if amount is not none and amount < 0 }}{{ ' at %s%%' % (rate | qty) if amount is not none }}
+  {%- endmacro %}
+  {% macro signed(amount) -%}
+    {% if amount is none %}—{% else %}{{ '+' if amount < 0 else '−' if amount > 0 else '' }}{{ amount | abs | money }}{% endif %}
+  {%- endmacro %}
   <div class="tiles">
     <div class="tile {{ sale.gain | trend }}"><span class="label">Capital gain</span>
       <span class="big">{{ sale.gain | arrow }}{{ sale.gain | cash }}</span></div>
@@ -106,7 +120,7 @@
   <p class="panel warn">Capital gains can't be worked out: <a href="{{ holding_href(sold.instrument.ticker, sold.instrument.exchange) }}">{{ sold.instrument.ticker }}</a>'s sell of {{ sold.trade.quantity | qty }} units on {{ sold.trade.date }} is more than the {{ sold.held | qty }} units held then. Correct it or record the missing buy.</p>
   {% endfor %}
   {% if taxed and sale.tax is none %}
-  <p class="note">Set a marginal tax rate to see the tax.</p>
+  <p class="note">Set an income tax rate to see the tax.</p>
   {% endif %}
 
   <div class="tablewrap">
@@ -132,8 +146,12 @@
       {% if sale.carried_forward %}
       <tr><td>Added to the loss carried forward</td><td class="num">{{ sale.carried_forward | money }}</td></tr>
       {% endif %}
-      <tr><td>{{ tax_label }}</td>
-          <td class="num">{% if sale.tax is none %}—{% else %}{{ '+' if sale.tax < 0 else '−' if sale.tax > 0 else '' }}{{ sale.tax | abs | money }}{% endif %}</td></tr>
+      <tr><td>{{ rated("Income tax", sale.income_tax, sale.income_tax_rate) }}</td>
+          <td class="num">{{ signed(sale.income_tax) }}</td></tr>
+      {% if sale.levy is not none %}
+      <tr><td>{{ rated("Medicare levy", sale.levy, sale.medicare_levy) }}</td>
+          <td class="num">{{ signed(sale.levy) }}</td></tr>
+      {% endif %}
       <tr><td><strong>Take home</strong></td>
           <td class="num"><strong>{{ sale.take_home | money }}</strong></td></tr>
       {% endif %}
