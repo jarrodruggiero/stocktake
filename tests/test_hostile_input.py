@@ -182,6 +182,10 @@ BY_HAND: dict[str, list[Field]] = {
         "carry-0", "date-0", "advice_date", "filename")],
     "/imports-exports/broker/design": [Field(n, "form") for n in (
         "col_date", "col_action", "col_ticker", "col_units", "col_price")],
+    # The query is the form, a units and a brokerage field per holding, named
+    # by its instrument's id: `_send` puts the world's ACME in.
+    "/simulate": [Field(n, "query") for n in (
+        "rate", "percent", "fill", "units_{instrument_id}", "brokerage_{instrument_id}")],
 }
 
 
@@ -468,6 +472,9 @@ def _typed(world: World, route: APIRoute, n: int, made: dict) -> dict:
         "mapping": json.dumps({"net_amount": {"after": ["Net Payment"], "type": "money"}}),
         "body": STATEMENT_TEMPLATE, "filename": f"careful-{n}",
         "ticker__ALPHA": "ALPHA",
+        # Simulate sale: ten of ACME's hundred, at a 32% rate.
+        "rate": "32", "percent": "50", "fill": "", "marginal_tax_rate": "32",
+        "units_{instrument_id}": "10", "brokerage_{instrument_id}": "9.50",
     }
     values.update(made)
     path = route.path
@@ -513,6 +520,7 @@ def _typed(world: World, route: APIRoute, n: int, made: dict) -> dict:
 # hostile values are sent once per way, so each branch meets them.
 WAYS = {
     "/trade/new": [{}, {"instrument_id": "new"}],
+    "/simulate": [{}, {"fill": "percent"}],
 }
 
 # The control is refused on these for a reason a form cannot type its way past,
@@ -681,8 +689,14 @@ def _send(world: World, route: APIRoute, fields: list[Field], values: dict):
     for f in fields:
         if f.where == "path":
             path = path.replace("{" + f.name + "}", quote(str(values[f.name]), safe=""))
-    query = {f.name: values[f.name] for f in fields if f.where == "query" and f.name in values}
-    form = {f.name: values[f.name] for f in fields if f.where == "form" and f.name in values}
+
+    def named(name: str) -> str:
+        return name.format(instrument_id=world.instrument_id) if "{" in name else name
+
+    query = {named(f.name): values[f.name] for f in fields
+             if f.where == "query" and f.name in values}
+    form = {named(f.name): values[f.name] for f in fields
+            if f.where == "form" and f.name in values}
     body = {f.name: values[f.name] for f in fields if f.where == "json" and f.name in values}
     headers = dict(HTML)
     token = world.csrf()

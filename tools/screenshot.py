@@ -304,6 +304,19 @@ def render_all() -> None:
                 headers=HTML, follow_redirects=True)
     save("16e-fy", client.get("/?fy=2026", headers=HTML).text)
 
+    # Simulate sale with a sale typed in, so its results show: they need a
+    # price, which the feed would have stored by now.
+    import datetime as _dt
+    from decimal import Decimal as _Decimal
+
+    from app.models import Price
+    with main.app.state.session_factory() as s:
+        s.add(Price(instrument_id=int(instrument_id), date=_dt.date.today(),
+                    close=_Decimal("101.20")))
+        s.commit()
+    save("16f-simulate", client.get(f"/simulate?rate=32&units_{instrument_id}=30",
+                                    headers=HTML).text)
+
     # In two portfolios, the profile offers where a sign-in lands. Last, since
     # making a portfolio opens it, and every page after would show it empty.
     client.post("/portfolio/new", data={

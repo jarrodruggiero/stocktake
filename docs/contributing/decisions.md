@@ -1475,3 +1475,21 @@ without saving it. It is the one thing the API writes in place
 (`PUT /api/v1/portfolio/marginal-tax-rate`): #88 keeps a client with a bug from
 rewriting the ledger, which a setting cannot do, and the apps that know a
 person's income are the ones that would keep the rate current.
+
+**148. A sale is simulated with the year's own figures, and taxed on what it
+adds to them.** Simulate sale (`simulate.py`) works out what selling some of
+each holding today would bring home after tax, and records nothing. Each sell is
+a plain object on a stand-in for its instrument, dated today at the latest price
+and today's rate, after anything recorded for today, and goes through the same
+`fyreport.walk` and `fy_cgt` as a recorded one. The ATO taxes the year's net
+capital gain at the marginal rate, after the year's losses, the losses carried
+in and the discount. So the tax is the difference the sale makes to that
+figure, not its own gain halved: a carried loss covers the first of the gain,
+and a loss that lowers the year's gain lowers its tax, which counts in what the
+sale brings home. One rate covers the whole gain (#147), and the guide says that
+a gain crossing a bracket is taxed partly higher. Brokerage is the trade form's
+suggestion (`brokerage.for_trade`) unless one is typed. A percentage of the
+portfolio is that share of every holding, rounded down, so the sale is never
+more than was asked. A holding with no price, no rate or no FIFO cost is not
+offered. The form is a GET, because nothing changes, so anyone who can see the
+portfolio can use it.

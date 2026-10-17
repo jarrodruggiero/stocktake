@@ -901,6 +901,10 @@ a.backlink.button { margin: 0 0 0.4rem; font-size: 0.8rem; padding: 0.3rem 0.7re
   padding: 0.2rem 0.5rem 0.2rem 0; color: var(--text); }
 .feetable th[scope="row"] { width: 32%; }
 .feetable td input { width: 100%; margin-top: 0; }
+.fillbuttons { display: flex; gap: var(--sp-2); }
+.saleform .panel .row label { flex: 0 1 14rem; }
+.saleform .tablewrap, .saleresult .tiles + * { margin-top: var(--sp-3); }
+.saletable td input { width: 7rem; margin-top: 0; text-align: right; }
 .optline label.check { margin: 0; font-size: 0.95rem; }
 label.check { display: flex; align-items: center; gap: 0.4rem; margin: 0.2rem 0; font-size: 0.85rem; }
 label.check input { width: auto; margin: 0; }

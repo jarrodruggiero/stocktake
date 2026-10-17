@@ -49,12 +49,13 @@ def test_refresh_prices_is_ready_when_nothing_runs(holding, app_module, monkeypa
 
 
 def test_the_header_reads_quietest_to_loudest(holding):
-    """Refresh prices, View charts, then the one primary action, last."""
+    """Refresh prices, Simulate sale, View charts, then the one primary
+    action, last."""
     page = holding.get("/", headers=HTML).text
     head = re.search(r'<div class="headactions">.*?</div>', page, re.S).group(0)
     # A button, or a link drawn as one.
     labels = re.findall(r'<(?:button|a class="button[^"]*")[^>]*>\s*([^<]+?)\s*</(?:button|a)>', head)
-    assert labels == ["Refresh prices", "View charts", "Record trade"], labels
+    assert labels == ["Refresh prices", "Simulate sale", "View charts", "Record trade"], labels
 
 
 def _chooser(page: str) -> list[tuple[str, bool, str]]:

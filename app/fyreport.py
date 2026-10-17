@@ -434,20 +434,30 @@ class CgtSummary:
     oversold: list[Oversold] = field(default_factory=list)
 
 
-def fy_cgt(session: Session, fy_end_year: int, fx_book=None) -> CgtSummary:
+def cgt_instruments(session: Session) -> list[Instrument]:
+    """Every instrument with its trades and actions: what `fy_cgt` walks."""
+    return session.scalars(
+        select(Instrument).options(selectinload(Instrument.trades),
+                                   selectinload(Instrument.actions))
+    ).unique().all()
+
+
+def fy_cgt(session: Session, fy_end_year: int, fx_book=None,
+           instruments=None) -> CgtSummary:
     """This financial year's capital gains, with every earlier year's net
     capital loss carried in: each year is worked out in turn from the first
-    sale, so a loss left over reaches the years after it (decisions.md #77)."""
+    sale, so a loss left over reaches the years after it (decisions.md #77).
+
+    `instruments` replaces what is walked: the sale simulator passes stand-ins
+    carrying a sell that is never recorded (decisions.md #148)."""
     # A year under rules this version does not implement returns an empty
     # summary carrying the reason, rather than numbers computed under the wrong
     # regime — decisions.md #26.
     warning = regime_warning(fy_end_year)
     if warning:
         return CgtSummary(regime_warning=warning)
-    instruments = session.scalars(
-        select(Instrument).options(selectinload(Instrument.trades),
-                                   selectinload(Instrument.actions))
-    ).unique().all()
+    if instruments is None:
+        instruments = cgt_instruments(session)
     fx_book = fx_book or queries.FxBook(session)
     sales = [t.date for inst in instruments for t in inst.trades if t.type == "sell"]
     first = min(current_fy(min(sales)), fy_end_year) if sales else fy_end_year

@@ -86,6 +86,7 @@ from . import (
     providers,
     queries,
     setupwizard,
+    simulate,
     sorting,
     statements,
     submissions,
@@ -3750,7 +3751,7 @@ def _brokerage_context(db, ctx) -> dict:
     def cents(v):
         return f"{v:.2f}" if v is not None else None
 
-    start = local.on(Decimal(0)) if local.is_set else last_local
+    start = brokerage.for_trade(portfolio, money.REPORTING, Decimal(0), last_local)
     return {
         "brokerage_fees": {"local": local.as_json(), "foreign": foreign.as_json(),
                            "last": {"local": cents(last_local),
@@ -3932,6 +3933,76 @@ def charts(request: Request):
                 "excluded": queries.cached_portfolio_series(db).get("excluded", []),
             },
         )
+
+
+@app.get("/simulate", response_class=HTMLResponse)
+def simulate_page(request: Request):
+    """What selling some of each holding today would bring home after tax
+    (decisions.md #148). It records nothing, so it is a GET whose query is the
+    form: anyone who can see the portfolio can use it, and a refusal comes back
+    holding what was typed."""
+    with scoped(request) as (ctx, db):
+        portfolio = db.get(Portfolio, ctx.active_portfolio_id)
+        holdings = queries.split_positions(queries.all_holdings(db))[0]
+        typed = dict(request.query_params)
+        if "rate" not in typed:
+            saved = portfolio.marginal_tax_rate
+            typed["rate"] = "" if saved is None else f"{saved.normalize():f}"
+        error, status = "", 200
+        try:
+            rate, units, fees = _sale_asked(typed, holdings)
+        except HTTPException as exc:
+            (rate, units, fees), error, status = (None, {}, {}), exc.detail, exc.status_code
+        sale = simulate.sale(db, units, brokerage=fees, rate=rate, holdings=holdings)
+        return _render(request, ctx, "simulate.html", {
+            "active_nav": "portfolio",
+            "sale": sale,
+            "typed": typed,
+            "error": error,
+            "fy_label": fyreport.fy_label(fyreport.current_fy(clock.today())),
+        }, status_code=status)
+
+
+def _sale_asked(typed: dict, holdings) -> tuple[Decimal | None, dict, dict]:
+    """The Simulate sale form's rate, units and brokerage, checked; a 400
+    saying what is wrong otherwise. Fill and Sell all write the units they work
+    out into `typed`, so the form shows them."""
+    rate = _tax_rate(typed.get("rate", ""))
+    if typed.get("fill") in ("all", "percent"):
+        percent = Decimal(100)
+        if typed["fill"] == "percent":
+            percent = _sale_figure(typed.get("percent", "") or "0",
+                                   Portfolio.marginal_tax_rate, "Percentage")
+            if not 0 < percent <= 100:
+                raise HTTPException(400, "Sell a percentage above 0 and up to 100.")
+        for inst_id, figure in simulate.fill(holdings, percent).items():
+            typed[f"units_{inst_id}"] = f"{figure.normalize():f}"
+    units, fees = {}, {}
+    for holding in holdings:
+        inst = holding.instrument
+        text = typed.get(f"units_{inst.id}", "").strip()
+        if text:
+            figure = _sale_figure(text, Trade.quantity, inst.ticker)
+            if figure < 0:
+                raise HTTPException(400, f"{inst.ticker}: units can't be negative.")
+            if figure > holding.units:
+                raise HTTPException(400, f"{inst.ticker}: {figure.normalize():f} is more than "
+                                         f"the {holding.units.normalize():f} units held.")
+            units[inst.id] = figure
+        text = typed.get(f"brokerage_{inst.id}", "").strip()
+        if text:
+            figure = _sale_figure(text, Trade.brokerage, f"{inst.ticker} brokerage")
+            if figure < 0:
+                raise HTTPException(400, f"{inst.ticker} brokerage can't be negative.")
+            fees[inst.id] = figure
+    return rate, units, fees
+
+
+def _sale_figure(text: str, column, name: str) -> Decimal:
+    try:
+        return money.parse(text, column, name)
+    except money.FigureError as exc:
+        raise HTTPException(400, f"{exc}.") from None
 
 
 def _seed_charts(db: DbSession, ctx) -> None:
