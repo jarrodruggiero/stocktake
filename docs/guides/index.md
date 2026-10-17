@@ -55,7 +55,8 @@ The Australian tax view for a financial year:
   in the taxpayer-favourable order, earlier years' carried forward.
 - **Dividend income** — the cash received, and any foreign tax withheld from
   it. A trust's distribution counts in the year its period ends, when it says
-  one, so a June quarter paid in July belongs to the year to 30 June. Franking
+  one, so a June quarter paid in July belongs to the year to 30 June. Leave the
+  period empty for a company's dividend, which counts when it is paid. Franking
   credits, and the gross-up, are in the dividends export rather than on the
   page.
 - **A snapshot** of what was held at year end.
@@ -93,11 +94,21 @@ Rows can be edited and deleted here. Two rules apply:
 - **A DRP row is edited through its dividend**, because the cash and the units
   are one event.
 
-**Record a split or capital change** covers a split or consolidation, a return
-of capital, and an AMIT cost base adjustment from an annual tax statement. A
-split keeps each parcel's purchase date, so the twelve-month discount clock
-does not restart. A return of capital or an AMIT decrease lowers the cost base
-of the units held, and anything beyond it is a capital gain on the day.
+### Splits and capital changes
+
+**Record a split or capital change**, on a holding's page, covers a split or
+consolidation, a return of capital, and an AMIT cost base adjustment from an
+annual tax statement.
+
+- **A split** is new units for old: 2 for 1 doubles the holding, 1 for 10
+  consolidates it. Each parcel keeps its cost and its purchase date, so the
+  twelve-month discount clock does not restart.
+- **A return of capital** is the cash paid back for the whole holding, in its
+  own currency. It lowers the cost base of the units held, and anything beyond
+  it is a capital gain on the day.
+- **An AMIT adjustment** raises or lowers the cost base, for the whole holding.
+  A decrease beyond the cost base is a capital gain on the day, as a return of
+  capital is.
 
 ### Moving a holding to another portfolio
 

@@ -16,11 +16,8 @@
   <div class="row">
     <label>What happened
       {% set kind_tip %}
-      <p>A split or a consolidation changes how many units are held, not what
-      they cost or when they were bought.</p>
-      <p>A return of capital, and an AMIT cost base decrease, lower the cost of
-      the units held; an increase raises it. What takes it below nil is a
-      capital gain on the day.</p>
+      <p>A split keeps each parcel's cost and date; a capital change moves the cost base.
+      <a href="{{ docs_url }}/guides/#splits-and-capital-changes">More information</a></p>
       {% endset %}
       {% with body = kind_tip, label = "About these" %}{% include "_tip.html" %}{% endwith %}
       <select name="kind" required>
@@ -44,7 +41,6 @@
       <label>New <input name="ratio_new" inputmode="numeric" value="{{ form.ratio_new }}"></label>
       <label>Old <input name="ratio_old" inputmode="numeric" value="{{ form.ratio_old }}"></label>
     </div>
-    <p class="sub">2 for 1 doubles the holding.</p>
   </fieldset>
 
   <fieldset data-kinds="capital_return cost_base">

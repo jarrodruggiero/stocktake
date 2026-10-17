@@ -38,10 +38,8 @@ it bought. Both save together or not at all.</p>
     </label>
     <label>Period ended <span class="sub">optional</span>
       {% set period_tip %}
-      <p>For a trust, as most ETFs are: the end of the period this distribution
-      is for. It is income of the year that date is in, so a June quarter paid
-      in July belongs to the year to 30 June.</p>
-      <p>Leave it empty for a company's dividend, which counts when it is paid.</p>
+      <p>A trust's distribution counts in the year its period ends.
+      <a href="{{ docs_url }}/guides/#reports-fy">More information</a></p>
       {% endset %}
       {% with body = period_tip, label = "About the period end" %}{% include "_tip.html" %}{% endwith %}
       <input type="date" name="period_end" value="{{ dividend.period_end or '' }}">
