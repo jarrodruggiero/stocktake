@@ -236,6 +236,8 @@ def render_all() -> None:
     # A split or capital change: every kind's fields show until the script
     # hides the others, so the page has to fit at phone width either way.
     save("16b-action", client.get("/action/new?ticker=ALPHA", headers=HTML).text)
+    save("16c-holding", client.get("/holding/ALPHA", headers=HTML).text)
+    save("16d-distribution", client.get("/dividend/new?ticker=ALPHA", headers=HTML).text)
     save("16-dashboard-holdings", client.get("/", headers=HTML).text)
     # Sorted, so the arrow and the active-header styling are visible.
     save("17-dashboard-sorted",
@@ -292,6 +294,15 @@ def render_all() -> None:
     # The editor open, since it holds half the page's controls and renders
     # only when a dialog is open — which no default screenshot would show.
     save("21-plan-editing", client.get("/schedule?edit=1", headers=HTML).text)
+
+    # The FY page with a sale, which is when its capital gains table, and the
+    # (?) on how they are worked out, appear. Late, so no page above has it.
+    client.post("/trade/new",
+                data={"_csrf": token("/trade/new"), "instrument_id": instrument_id,
+                      "trade_date": "2026-03-02", "type": "sell", "quantity": "40",
+                      "unit_price": "95.00", "brokerage": "9.50"},
+                headers=HTML, follow_redirects=True)
+    save("16e-fy", client.get("/?fy=2026", headers=HTML).text)
 
     # In two portfolios, the profile offers where a sign-in lands. Last, since
     # making a portfolio opens it, and every page after would show it empty.

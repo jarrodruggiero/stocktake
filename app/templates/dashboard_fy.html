@@ -155,7 +155,14 @@ units than were held. Correct it or record the missing buy.</p>
 </div>
 
 <section>
-  <h2>Positions closed this year</h2>
+  <h2>Positions closed this year
+    {%- if r.cgt.disposals %}
+    {% set fifo_tip %}
+    <p>Each sale is matched FIFO, and losses, earlier years' too, come off before the discount.
+    <a href="{{ docs_url }}/guides/#reports-fy">More information</a></p>
+    {% endset %}
+    {% with body = fifo_tip, label = "How gains are worked out" %}{% include "_tip.html" %}{% endwith %}
+    {%- endif %}</h2>
   {# The rules changed on 1 July 2027. This version implements the earlier
      ones and says so rather than applying a repealed discount to a figure
      somebody is about to put in a tax return. #}
@@ -167,9 +174,6 @@ units than were held. Correct it or record the missing buy.</p>
   <p class="panel warn">Capital gains for {{ r.label }} can't be worked out: <a href="{{ holding_href(sale.instrument.ticker, sale.instrument.exchange, return=back) }}">{{ sale.instrument.ticker }}</a>'s sell of {{ sale.trade.quantity | qty }} units on {{ sale.trade.date }} is more than the {{ sale.held | qty }} units held then. Correct it or record the missing buy.</p>
   {% endfor %}
   {% elif r.cgt.disposals %}
-  <p class="note">Each sale matched FIFO to the parcels it consumed. The discount halves a
-  gain on a parcel held over twelve months, and losses, this year's and then
-  earlier years', are applied before it — the order the ATO uses.</p>
   <div class="tablewrap">
   <table>
     <thead><tr>

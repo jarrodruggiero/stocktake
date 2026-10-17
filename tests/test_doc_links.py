@@ -19,6 +19,7 @@ otherwise it would pass just as happily on a repository with no links at all.
 from __future__ import annotations
 
 import re
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -41,7 +42,9 @@ def _as_source(url_path: str) -> Path:
 
     Directory URLs: `guides/market-data/` is built from
     `docs/guides/market-data.md`, and a bare `guides/` from its `index.md`.
+    A `#heading` names a place on the page, not a page.
     """
+    url_path = url_path.partition("#")[0]
     trimmed = url_path.strip("/")
     if not trimmed:
         return DOCS / "index.md"
@@ -105,6 +108,38 @@ def test_every_linked_page_is_in_the_nav(where, url_path):
     assert relative in _nav_paths(), (
         f"{where} links to {url_path!r} ({relative}), which mkdocs.yml does not list"
     )
+
+
+def _slug(heading: str) -> str:
+    """The id mkdocs gives a heading: Python-Markdown's toc slugify."""
+    value = unicodedata.normalize("NFKD", heading).encode("ascii", "ignore").decode("ascii")
+    value = re.sub(r"[^\w\s-]", "", value).strip().lower()
+    return re.sub(r"[-\s]+", "-", value)
+
+
+def _headings(page: Path) -> set[str]:
+    return {_slug(line.lstrip("#").strip())
+            for line in page.read_text(encoding="utf-8").splitlines()
+            if re.match(r"#{1,6} ", line)}
+
+
+ANCHORED = [(where, path) for where, path in all_doc_links() if "#" in path]
+
+
+@pytest.mark.parametrize("where, url_path", ANCHORED, ids=[f"{w}:{p}" for w, p in ANCHORED])
+def test_every_anchor_is_a_heading_on_its_page(where, url_path):
+    """A tip's link to a section lands at the top of the page when the heading
+    is renamed, which looks like it worked."""
+    anchor = url_path.partition("#")[2]
+
+    assert anchor in _headings(_as_source(url_path)), (
+        f"{where} links to {url_path!r}, and that page has no heading {anchor!r}")
+
+
+def test_a_heading_is_given_the_id_mkdocs_gives_it():
+    """Checked against Python-Markdown's own output for these two."""
+    assert (_slug("Reports → FY"), _slug("Splits and capital changes")) == (
+        "reports-fy", "splits-and-capital-changes")
 
 
 def _nav_paths() -> set[str]:
