@@ -68,12 +68,13 @@ def get_portfolio(request: Request) -> dict:
     `cost` is what the units held cost, the oldest sold first, and `gain` is
     the unrealised gain on them (decisions.md #54)."""
     with auth.api_session(request) as (access, db):
+        portfolio = db.get(Portfolio, access.portfolio_id)
         holdings = queries.all_holdings(db)
         open_positions, closed = queries.split_positions(holdings)
         totals = queries.totals(open_positions)
         return {
-            "portfolio": {"id": access.portfolio_id,
-                          "name": db.get(Portfolio, access.portfolio_id).name},
+            "portfolio": {"id": portfolio.id, "name": portfolio.name,
+                          "marginal_tax_rate": _num(portfolio.marginal_tax_rate)},
             "as_at": clock.today().isoformat(),
             "currency": "AUD",
             "cost": _num(totals.cost),
@@ -407,6 +408,26 @@ def _instrument(request: Request, db, body: TradeIn | DividendIn) -> Instrument:
     inst.active = True
     db.flush()
     return inst
+
+
+class TaxRateIn(BaseModel):
+    # Percent, as the settings form takes it; null clears it.
+    marginal_tax_rate: Decimal | None = Field(ge=0, le=100, decimal_places=2)
+
+
+@router.put("/portfolio/marginal-tax-rate")
+def set_marginal_tax_rate(request: Request, body: TaxRateIn) -> dict:
+    """The rate the sale simulator taxes a gain at (decisions.md #147): the
+    taxpayer's top rate plus the Medicare levy. A setting, not a record, so the
+    one write here that is not an append (#88); the owner's, as every
+    portfolio setting is (#34)."""
+    with auth.api_session(request, write=True) as (access, db):
+        if access.role != "owner":
+            raise HTTPException(403, "only the portfolio's owner can change its settings")
+        portfolio = db.get(Portfolio, access.portfolio_id)
+        portfolio.marginal_tax_rate = body.marginal_tax_rate
+        db.flush()
+        return {"marginal_tax_rate": _num(portfolio.marginal_tax_rate)}
 
 
 @router.post("/trades", status_code=201)

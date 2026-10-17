@@ -685,7 +685,8 @@ away two years of schedule.
 cannot, and there is no PATCH or DELETE to find. A key is a long-lived
 credential held by another program, and the blast radius of a loop with a bug in
 it is very different for "wrote a duplicate trade" than for "rewrote the last
-three years". Corrections are a human sitting in front of the ledger.
+three years". Corrections are a human sitting in front of the ledger. One
+setting is the exception, the marginal tax rate (#147): it is not a record.
 
 **89. The theme designer exposes six colours, not every token.** Exposing all
 of them lets somebody set their page background to the colour of their text. The
@@ -1463,3 +1464,14 @@ for the days before it, so a holding added after its split charts low before
 that day. Actions stay in the portfolio they were recorded in when trades move,
 each side walked with its own. A CSV import walks a holding with a split row by
 row, since its running totals cannot take a step that rounds.
+
+**147. The marginal tax rate is the portfolio's, and the API may set it.** The
+sale simulator taxes the gain a sale adds at one rate: the taxpayer's top rate
+plus the 2% Medicare levy. It is stored on the portfolio, beside its brokerage,
+because the FY report already treats a portfolio as one taxpayer with its own
+carried losses, and a person with their own shares and an SMSF has two rates.
+Its owner sets it (#34), and anyone simulating a sale can try another rate
+without saving it. It is the one thing the API writes in place
+(`PUT /api/v1/portfolio/marginal-tax-rate`): #88 keeps a client with a bug from
+rewriting the ledger, which a setting cannot do, and the apps that know a
+person's income are the ones that would keep the rate current.
