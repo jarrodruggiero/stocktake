@@ -25,7 +25,7 @@ PAGE = "/simulate"
 
 @pytest.fixture
 def alpha(client, session_factory) -> int:
-    """Signed in, with 200 ALPHA at $15 and a 32% marginal rate saved."""
+    """Signed in, with 200 ALPHA at $15, and 30% income tax and a 2% levy saved."""
     make_login(client, session_factory)
     with session_factory() as s:
         portfolio = bind_to_only_portfolio(s)
@@ -33,7 +33,7 @@ def alpha(client, session_factory) -> int:
         fac.add_trade(s, inst, "2025-01-06", "buy", 100, "10.00", brokerage="10")
         fac.add_trade(s, inst, "2026-03-02", "buy", 100, "12.00", brokerage="10")
         fac.add_prices(s, inst, [("2026-10-16", "15.00")])
-        portfolio.marginal_tax_rate = Decimal(32)
+        portfolio.income_tax_rate, portfolio.medicare_levy = Decimal(30), Decimal(2)
         s.commit()
         return inst.id
 
@@ -75,25 +75,34 @@ def test_a_viewer_can_simulate_a_sale_too(client, session_factory, alpha):
 
 
 @freeze_time(TODAY)
-def test_the_page_says_it_is_a_calculator_before_anything_else(client, alpha):
+def test_the_page_says_it_is_an_approximation_before_anything_else(client, alpha):
+    """Asked for: not advice, an approximation, other factors may apply, and
+    where the ATO explains it."""
     page = client.get(PAGE, headers=HTML).text
     content = page.split("<h1>", 1)[1]
+    notice = content.split("</p>", 1)[0]
 
-    assert content.index("A calculator only, not financial or tax advice.") < content.index(
-        "<form")
+    assert notice.index("not financial or tax advice") < content.index("<form")
+    assert "an approximation" in notice and "other factors" in notice
+    assert ('href="https://www.ato.gov.au/individuals-and-families/investments-and-assets/'
+            'capital-gains-tax"') in notice
+    assert 'href="https://www.ato.gov.au/tax-rates-and-codes/tax-rates-australian-residents"' in (
+        notice)
 
 
 @freeze_time(TODAY)
 def test_a_sale_is_worked_out_from_the_form(client, alpha):
     """Value 2,250, brokerage 10, cost base 1,615: a 625 gain, 383.34 of it
-    taxable after the discount, 122.67 tax at the saved 32%."""
+    taxable after the discount, 115.00 income tax and 7.67 levy at the saved
+    30% and 2%."""
     page = client.get(f"{PAGE}?units_{alpha}=150", headers=HTML)
     results = _results(page.text)
 
     for figure in ("2,250.00", "10.00", "1,615.00", "625.00", "241.66", "383.34", "122.67",
                    "2,117.33"):
         assert figure in results, figure
-    assert "Tax at 32%" in results
+    assert (_row(results, "Income tax at 30%"), _row(results, "Medicare levy at 2%")) == (
+        "−115.00", "−7.67")
 
 
 @freeze_time(TODAY)
@@ -117,7 +126,8 @@ def test_sell_all_and_a_percentage_fill_the_units(client, alpha, query, units):
     ("units_{id}=-1", "ALPHA: units can&#39;t be negative."),
     ("units_{id}=abc", "ALPHA: &#39;abc&#39; is not a number."),
     ("units_{id}=10&brokerage_{id}=-1", "ALPHA brokerage can&#39;t be negative."),
-    ("units_{id}=10&rate=150", "Marginal tax rate can&#39;t be more than 100."),
+    ("units_{id}=10&income_tax_rate=150", "Income tax rate can&#39;t be more than 100."),
+    ("units_{id}=10&medicare_levy=-2", "Medicare levy can&#39;t be negative."),
     ("fill=percent&percent=0", "Sell a percentage above 0 and up to 100."),
 ])
 def test_what_cannot_be_worked_out_is_refused_and_comes_back(client, alpha, query, message):
@@ -132,14 +142,18 @@ def test_what_cannot_be_worked_out_is_refused_and_comes_back(client, alpha, quer
 
 
 @freeze_time(TODAY)
-def test_a_typed_rate_is_used_and_not_saved(client, session_factory, alpha):
+def test_typed_rates_are_used_and_not_saved(client, session_factory, alpha):
     start = client.get(PAGE, headers=HTML).text
-    page = client.get(f"{PAGE}?rate=40&units_{alpha}=150", headers=HTML).text
+    page = client.get(f"{PAGE}?income_tax_rate=40&medicare_levy=1&units_{alpha}=150",
+                      headers=HTML).text
 
-    assert 'value="32"' in _input(start, "rate")
-    assert "Tax at 40%" in _results(page) and "153.33" in _results(page)
+    assert 'value="30"' in _input(start, "income_tax_rate")
+    assert 'value="2"' in _input(start, "medicare_levy")
+    assert (_row(_results(page), "Income tax at 40%"),
+            _row(_results(page), "Medicare levy at 1%")) == ("−153.33", "−3.83")
     with session_factory() as s:
-        assert s.scalar(select(Portfolio.marginal_tax_rate)) == Decimal("32.00")
+        assert s.execute(select(Portfolio.income_tax_rate, Portfolio.medicare_levy)).one() == (
+            Decimal("30.00"), Decimal("2.00"))
 
 
 def _tile(results: str, label: str) -> str:
@@ -159,13 +173,14 @@ def _row(results: str, label: str) -> str:
 def test_with_no_rate_the_tax_and_take_home_show_blank(client, alpha):
     """Reported: with no rate the two figures vanished, so the page looked
     unfinished rather than waiting for a rate."""
-    page = client.get(f"{PAGE}?rate=&units_{alpha}=150", headers=HTML).text
+    page = client.get(f"{PAGE}?income_tax_rate=&units_{alpha}=150", headers=HTML).text
     results = _results(page)
 
     assert "383.34" in results
-    assert "Set a marginal tax rate to see the tax." in results
+    assert "Set an income tax rate to see the tax." in results
     assert (_tile(results, "Tax"), _tile(results, "Take home")) == ("—", "—")
-    assert (_row(results, "Tax"), _row(results, "<strong>Take home</strong>")) == ("—", "—")
+    assert (_row(results, "Income tax"), _row(results, "<strong>Take home</strong>")) == (
+        "—", "—")
 
 
 @freeze_time(TODAY)
@@ -178,7 +193,7 @@ def test_no_tax_is_written_without_a_sign(client, session_factory, alpha):
 
     results = _results(client.get(f"{PAGE}?units_{alpha}=100", headers=HTML).text)
 
-    assert _row(results, "Tax at 32%") == "0.00"
+    assert _row(results, "Income tax at 30%") == "0.00"
 
 
 @freeze_time(TODAY)

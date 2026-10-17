@@ -457,6 +457,36 @@ def test_0018_adds_the_tax_rate_beside_a_portfolios_settings(tmp_path: Path):
         portfolios("marginal_tax_rate")
 
 
+def test_0019_takes_the_levy_out_of_the_one_rate(tmp_path: Path):
+    """0018's rate was asked for with the 2% Medicare levy in it. 0019 keeps
+    the levy apart, so 32 becomes 30 and 2; a rate too small to hold the levy
+    is left as it was. Down again, they add back up."""
+    path = tmp_path / "levy.db"
+    cfg = _config(path)
+    command.upgrade(cfg, "0018")
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        INSERT INTO portfolio (id, name, created_at, marginal_tax_rate)
+        VALUES (1, 'Mine', '2026-01-01', 32), (2, 'Unset', '2026-01-01', NULL),
+               (3, 'Small', '2026-01-01', 1.5);
+    """)
+    conn.commit()
+    conn.close()
+
+    def rates(columns: str) -> list[tuple]:
+        conn = sqlite3.connect(path)
+        try:
+            return conn.execute(f"SELECT id, {columns} FROM portfolio ORDER BY id").fetchall()
+        finally:
+            conn.close()
+
+    command.upgrade(cfg, "0019")
+    assert rates("income_tax_rate, medicare_levy") == [(1, 30, 2), (2, None, None),
+                                                       (3, 1.5, None)]
+    command.downgrade(cfg, "0018")
+    assert rates("marginal_tax_rate") == [(1, 32), (2, None), (3, 1.5)]
+
+
 def _tables(path: Path) -> set[str]:
     conn = sqlite3.connect(path)
     try:

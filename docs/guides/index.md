@@ -42,11 +42,11 @@ eighth decimal place), or all of it.
   carried losses counted. A loss lowers the year's tax when there are gains to
   offset, and that saving counts in what the sale brings home; otherwise it
   carries forward.
-- **The marginal tax rate** is your top income tax rate plus the 2% Medicare
-  levy. The portfolio's owner saves it in the portfolio's settings, and it can
-  be changed for one calculation. One rate covers the whole gain, so a gain
-  big enough to cross into a higher tax bracket is taxed partly at a rate this
-  does not show. See the ATO's
+- **The income tax rate** is your top rate, and the **Medicare levy** is kept
+  apart from it (2% for most people). The portfolio's owner saves both in the
+  portfolio's settings, and either can be changed for one calculation. One rate
+  covers the whole gain, so a gain big enough to cross into a higher tax
+  bracket is taxed partly at a rate this does not show. See the ATO's
   [tax rates](https://www.ato.gov.au/tax-rates-and-codes/tax-rates-australian-residents)
   and [how to calculate your CGT](https://www.ato.gov.au/individuals-and-families/investments-and-assets/capital-gains-tax/calculating-your-cgt/how-to-calculate-your-cgt).
 - **The discount is an individual's or a trust's.** A complying super fund's
