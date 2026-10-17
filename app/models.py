@@ -311,6 +311,11 @@ class Portfolio(Base):
     # minimum tax leaves out. NULL is not set (decisions.md #147).
     income_tax_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     medicare_levy: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    # Whether its taxpayer gets an income support payment this year, such as
+    # the Age Pension, which lifts the 2027 minimum tax (decisions.md #151).
+    income_support: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow
     )

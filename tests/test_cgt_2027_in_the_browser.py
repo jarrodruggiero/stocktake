@@ -57,13 +57,15 @@ def pages(client, session_factory, tmp_path) -> dict[str, Path]:
                 fac.add_prices(s, inst, [("2027-06-30", "15.00"), ("2029-01-14", "20.00")])
             fac.add_trade(s, made["ALPHA"], "2028-08-01", "sell", 60, "20.00", brokerage="10")
             fac.add_trade(s, made["GAMMA"], "2028-09-01", "sell", 100, "16.00", brokerage="10")
-            portfolio.income_tax_rate, portfolio.medicare_levy = Decimal(30), Decimal(2)
+            # Under 30%, so the minimum tax's row is drawn too.
+            portfolio.income_tax_rate, portfolio.medicare_levy = Decimal(15), Decimal(2)
             s.commit()
             selling = {f"units_{made[t].id}": "40" for t in ("ALPHA", "DELTA")}
         rendered = {"fy": client.get("/", params={"fy": 2029}, headers=HTML).text,
                     "simulate": client.get("/simulate", params=selling, headers=HTML).text}
     assert "Indexation (AUD)" in rendered["fy"]
     assert "<td>Indexation</td>" in rendered["simulate"]
+    assert "Minimum tax top-up" in rendered["simulate"]
     out = {}
     for name, page in rendered.items():
         out[name] = tmp_path / f"{name}.html"
