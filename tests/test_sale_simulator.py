@@ -5,8 +5,9 @@ less its cost base, brokerage included; the year's gains are reduced by its
 losses and then by losses carried in from earlier years, non-discountable gains
 first; the 50% discount applies to what is left of gains on parcels held over
 twelve months; and the resulting net capital gain is taxed at the marginal
-rate. So the tax a sale costs is what it ADDS to the year's net capital gain,
-times the rate. Every figure below is worked out by hand.
+rate, and the Medicare levy on top. So the tax a sale costs is what it ADDS to
+the year's net capital gain, times each. Every figure below is worked out by
+hand.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from app import queries, simulate, tenancy
 from app.models import Portfolio, Trade
 
 TODAY = "2026-10-17"          # FY2027: 1 July 2026 to 30 June 2027
-RATE = Decimal(32)            # 30% plus the 2% Medicare levy
+RATES = {"income_tax_rate": Decimal(30), "medicare_levy": Decimal(2)}
 
 
 @pytest.fixture
@@ -35,8 +36,8 @@ def alpha(pf):
     return inst
 
 
-def _sell(pf, inst, units, *, rate=RATE, **kwargs):
-    return simulate.sale(pf, {inst.id: Decimal(units)}, rate=rate, **kwargs)
+def _sell(pf, inst, units, *, rates=RATES, **kwargs):
+    return simulate.sale(pf, {inst.id: Decimal(units)}, **rates, **kwargs)
 
 
 @freeze_time(TODAY)
@@ -52,7 +53,8 @@ def test_a_sale_is_matched_fifo_and_taxed_on_what_it_adds(pf, alpha):
         150, Decimal("2250.00"), Decimal("10.00"), Decimal("1615.00"), Decimal("625.00"))
     assert (sale.gain, sale.discount, sale.losses_used, sale.taxable) == (
         Decimal("625.00"), Decimal("241.665"), 0, Decimal("383.335"))
-    assert (sale.tax, sale.take_home) == (Decimal("122.67"), Decimal("2117.33"))
+    assert (sale.income_tax, sale.levy, sale.tax, sale.take_home) == (
+        Decimal("115.00"), Decimal("7.67"), Decimal("122.67"), Decimal("2117.33"))
 
 
 @freeze_time(TODAY)
@@ -125,9 +127,9 @@ def test_brokerage_is_what_the_trade_form_would_suggest(pf, alpha):
     fac.add_prices(pf, nova, [("2026-10-16", "120.00")])
     fac.add_fx(pf, "USDAUD", "2026-10-16", "1.50")
 
-    sale = simulate.sale(pf, {alpha.id: Decimal(150), nova.id: Decimal(10)}, rate=RATE)
+    sale = simulate.sale(pf, {alpha.id: Decimal(150), nova.id: Decimal(10)}, **RATES)
     typed = simulate.sale(pf, {alpha.id: Decimal(150)}, brokerage={alpha.id: Decimal(0)},
-                          rate=RATE)
+                          **RATES)
 
     lines = {line.holding.instrument.ticker: line for line in sale.lines}
     assert (lines["ALPHA"].brokerage, lines["NOVA"].brokerage) == (Decimal("15.00"),
@@ -161,7 +163,7 @@ def test_a_holding_that_cannot_be_valued_is_not_offered(pf, alpha):
     fac.add_trade(pf, nova, "2025-01-06", "buy", 10, "100.00", fx_rate="1.60")
     fac.add_prices(pf, nova, [("2026-10-16", "120.00")])
 
-    sale = simulate.sale(pf, {}, rate=RATE)
+    sale = simulate.sale(pf, {}, **RATES)
 
     assert {line.holding.instrument.ticker: line.why_not for line in sale.lines} == {
         "ALPHA": None, "NOVA": "no exchange rate", "OMEGA": "no price"}
@@ -186,7 +188,7 @@ def test_a_holding_with_a_sale_of_more_than_was_held_is_not_offered(pf, alpha):
     fac.add_trade(pf, beta, "2025-04-01", "buy", 20, "22.00")
     fac.add_prices(pf, beta, [("2026-10-16", "23.00")])
 
-    sale = simulate.sale(pf, {beta.id: Decimal(5)}, rate=RATE)
+    sale = simulate.sale(pf, {beta.id: Decimal(5)}, **RATES)
 
     assert {line.holding.instrument.ticker: (line.why_not, line.units)
             for line in sale.lines} == {
@@ -195,9 +197,17 @@ def test_a_holding_with_a_sale_of_more_than_was_held_is_not_offered(pf, alpha):
 
 @freeze_time(TODAY)
 def test_without_a_rate_there_is_no_tax_figure(pf, alpha):
-    sale = _sell(pf, alpha, 150, rate=None)
+    sale = _sell(pf, alpha, 150, rates={})
 
     assert (sale.taxable, sale.tax, sale.take_home) == (Decimal("383.335"), None, None)
+
+
+@freeze_time(TODAY)
+def test_without_a_levy_none_is_added(pf, alpha):
+    sale = _sell(pf, alpha, 150, rates={"income_tax_rate": Decimal(30)})
+
+    assert (sale.income_tax, sale.levy, sale.tax) == (Decimal("115.00"), None,
+                                                      Decimal("115.00"))
 
 
 @freeze_time("2027-07-02")

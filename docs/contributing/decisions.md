@@ -171,8 +171,9 @@ in.
 **26. The CGT module refuses financial years it does not understand.** From
 1 July 2027 the 50% discount is replaced by cost-base indexation plus a 30%
 minimum tax, and an asset held across that date is apportioned on its market
-value at the boundary rather than a time split — announced, not legislated, with
-the CPI series and the approved apportionment method still unsettled. Applying
+value at the boundary rather than a time split. It is law (Treasury Laws
+Amendment (Tax Reform No. 1) Act 2026, No. 49, assented 26 June 2026), and the
+years from then are refused until the new rules are built here. Applying
 a repealed discount to an FY2028 disposal would return a confident wrong number
 on a page people use to prepare a tax return, which is worse than refusing.
 `fyreport.CGT_INDEXATION_START` is the boundary.
@@ -1465,16 +1466,18 @@ that day. Actions stay in the portfolio they were recorded in when trades move,
 each side walked with its own. A CSV import walks a holding with a split row by
 row, since its running totals cannot take a step that rounds.
 
-**147. The marginal tax rate is the portfolio's, and the API may set it.** The
-sale simulator taxes the gain a sale adds at one rate: the taxpayer's top rate
-plus the 2% Medicare levy. It is stored on the portfolio, beside its brokerage,
-because the FY report already treats a portfolio as one taxpayer with its own
-carried losses, and a person with their own shares and an SMSF has two rates.
-Its owner sets it (#34), and anyone simulating a sale can try another rate
-without saving it. It is the one thing the API writes in place
-(`PUT /api/v1/portfolio/marginal-tax-rate`): #88 keeps a client with a bug from
-rewriting the ledger, which a setting cannot do, and the apps that know a
-person's income are the ones that would keep the rate current.
+**147. The tax rates are the portfolio's, and the API may set them.** The sale
+simulator taxes the gain a sale adds at two rates kept apart: the taxpayer's
+top income tax rate, and the Medicare levy. Apart because from 1 July 2027 the
+minimum tax on capital gains compares 30% with income tax alone (#26); 0019
+split the one rate 0018 stored, which had the 2% levy in it. One rate, not
+brackets, on purpose: the simulator is an approximation and says so. They are
+stored on the portfolio, beside its brokerage, because the FY report already
+treats a portfolio as one taxpayer with its own carried losses, and a person
+with their own shares and an SMSF has two sets. The owner sets them (#34), and
+anyone simulating a sale can try others without saving them. They are the one
+thing the API writes in place (`PUT /api/v1/portfolio/tax-rates`): #88 keeps a
+client with a bug from rewriting the ledger, which a setting cannot do.
 
 **148. A sale is simulated with the year's own figures, and taxed on what it
 adds to them.** Simulate sale (`simulate.py`) works out what selling some of

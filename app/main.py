@@ -3040,7 +3040,7 @@ _FEE_COLUMNS = ("brokerage_flat", "brokerage_percent", "brokerage_minimum",
 
 
 def _portfolio_settings(typed: dict) -> tuple[str, str, str, dict]:
-    """The settings form's name, currency, country, fees and marginal tax rate,
+    """The settings form's name, currency, country, fees and tax rates,
     checked; a 400 saying which is wrong otherwise."""
     cleaned = typed["name"].strip()
     if not cleaned:
@@ -3071,17 +3071,20 @@ def _portfolio_settings(typed: dict) -> tuple[str, str, str, dict]:
         if percent and figure > 100:
             raise HTTPException(400, "Percentage can't be more than 100.")
         fees[column] = figure
-    fees["marginal_tax_rate"] = _tax_rate(typed["marginal_tax_rate"])
+    for column, label in _TAX_RATES:
+        fees[column] = _tax_rate(typed[column], label)
     return cleaned, currency, place, fees
 
 
-def _tax_rate(text: str) -> Decimal | None:
-    """A marginal tax rate as typed, in percent. Blank is not set."""
+_TAX_RATES = (("income_tax_rate", "Income tax rate"), ("medicare_levy", "Medicare levy"))
+
+
+def _tax_rate(text: str, label: str) -> Decimal | None:
+    """A tax rate as typed, in percent. Blank is not set."""
     if not text.strip():
         return None
-    label = "Marginal tax rate"
     try:
-        figure = money.parse(text, Portfolio.marginal_tax_rate, label)
+        figure = money.parse(text, Portfolio.income_tax_rate, label)
     except money.FigureError as exc:
         raise HTTPException(400, f"{exc}.") from None
     if figure < 0:
@@ -3103,10 +3106,11 @@ async def portfolio_settings(
     foreign_brokerage_flat: str = Form(""),
     foreign_brokerage_percent: str = Form(""),
     foreign_brokerage_minimum: str = Form(""),
-    marginal_tax_rate: str = Form(""),
+    income_tax_rate: str = Form(""),
+    medicare_levy: str = Form(""),
 ):
     """Rename this portfolio, set the currency and jurisdiction it reports in,
-    what its broker charges (app/brokerage.py), and the marginal tax rate the
+    what its broker charges (app/brokerage.py), and the tax rates the
     sale simulator uses (decisions.md #147).
 
     **Both are stored and only partly wired.** Totals are still computed in
@@ -3127,7 +3131,7 @@ async def portfolio_settings(
              "foreign_brokerage_flat": foreign_brokerage_flat,
              "foreign_brokerage_percent": foreign_brokerage_percent,
              "foreign_brokerage_minimum": foreign_brokerage_minimum,
-             "marginal_tax_rate": marginal_tax_rate}
+             "income_tax_rate": income_tax_rate, "medicare_levy": medicare_levy}
     with scoped(request) as (ctx, db):
         await auth.verify_csrf(request, db)
         _require_owner(ctx)
@@ -3945,15 +3949,16 @@ def simulate_page(request: Request):
         portfolio = db.get(Portfolio, ctx.active_portfolio_id)
         holdings = queries.split_positions(queries.all_holdings(db))[0]
         typed = dict(request.query_params)
-        if "rate" not in typed:
-            saved = portfolio.marginal_tax_rate
-            typed["rate"] = "" if saved is None else f"{saved.normalize():f}"
+        for column, _label in _TAX_RATES:
+            if column not in typed:
+                saved = getattr(portfolio, column)
+                typed[column] = "" if saved is None else f"{saved.normalize():f}"
         error, status = "", 200
         try:
-            rate, units, fees = _sale_asked(typed, holdings)
+            rates, units, fees = _sale_asked(typed, holdings)
         except HTTPException as exc:
-            (rate, units, fees), error, status = (None, {}, {}), exc.detail, exc.status_code
-        sale = simulate.sale(db, units, brokerage=fees, rate=rate, holdings=holdings)
+            (rates, units, fees), error, status = ({}, {}, {}), exc.detail, exc.status_code
+        sale = simulate.sale(db, units, brokerage=fees, holdings=holdings, **rates)
         return _render(request, ctx, "simulate.html", {
             "active_nav": "portfolio",
             "sale": sale,
@@ -3963,16 +3968,16 @@ def simulate_page(request: Request):
         }, status_code=status)
 
 
-def _sale_asked(typed: dict, holdings) -> tuple[Decimal | None, dict, dict]:
-    """The Simulate sale form's rate, units and brokerage, checked; a 400
+def _sale_asked(typed: dict, holdings) -> tuple[dict, dict, dict]:
+    """The Simulate sale form's tax rates, units and brokerage, checked; a 400
     saying what is wrong otherwise. Fill and Sell all write the units they work
     out into `typed`, so the form shows them."""
-    rate = _tax_rate(typed.get("rate", ""))
+    rates = {column: _tax_rate(typed.get(column, ""), label) for column, label in _TAX_RATES}
     if typed.get("fill") in ("all", "percent"):
         percent = Decimal(100)
         if typed["fill"] == "percent":
             percent = _sale_figure(typed.get("percent", "") or "0",
-                                   Portfolio.marginal_tax_rate, "Percentage")
+                                   Portfolio.income_tax_rate, "Percentage")
             if not 0 < percent <= 100:
                 raise HTTPException(400, "Sell a percentage above 0 and up to 100.")
         for inst_id, figure in simulate.fill(holdings, percent).items():
@@ -3995,7 +4000,7 @@ def _sale_asked(typed: dict, holdings) -> tuple[Decimal | None, dict, dict]:
             if figure < 0:
                 raise HTTPException(400, f"{inst.ticker} brokerage can't be negative.")
             fees[inst.id] = figure
-    return rate, units, fees
+    return rates, units, fees
 
 
 def _sale_figure(text: str, column, name: str) -> Decimal:

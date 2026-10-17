@@ -306,9 +306,11 @@ class Portfolio(Base):
     foreign_brokerage_flat: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     foreign_brokerage_percent: Mapped[Decimal | None] = mapped_column(Numeric(7, 4))
     foreign_brokerage_minimum: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
-    # The rate, in percent, the sale simulator taxes a gain at: the taxpayer's
-    # top rate plus the Medicare levy. NULL is not set (decisions.md #147).
-    marginal_tax_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    # The rates, in percent, the sale simulator taxes a gain at: the taxpayer's
+    # top income tax rate, and the Medicare levy apart from it, which the 2027
+    # minimum tax leaves out. NULL is not set (decisions.md #147).
+    income_tax_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    medicare_levy: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow
     )
