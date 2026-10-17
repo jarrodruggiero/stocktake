@@ -19,6 +19,40 @@ If a holding cannot be converted to AUD — no stored exchange rate for its
 currency — it is **excluded from the totals and named**, rather than being
 quietly counted at 1:1. It reappears once the feed has the rate.
 
+### Simulate a sale
+
+**Simulate sale** works out what selling some of each holding today would bring
+home after capital gains tax. Nothing is recorded. It is a calculator, not
+financial or tax advice.
+
+Type the units to sell for each holding, or sell a percentage of the portfolio
+(that share of every holding, rounded down to whole units, or to a coin's
+eighth decimal place), or all of it.
+
+- **The sale** is at the latest price and today's exchange rate. Brokerage is
+  what the trade form would suggest, the portfolio's fee or else the last
+  trade's of that kind; type one in to replace it.
+- **The cost base** of the units sold is worked out as the FY report does,
+  oldest parcels first.
+- **The tax** follows the ATO's method: the year's gains, less its losses and
+  then losses carried in from earlier years (non-discount gains first), less
+  the 50% discount on what is left of gains on units held for at least 12
+  months, taxed at your marginal rate. So the sale's tax is what it adds to
+  this financial year's net capital gain, with the year's sales so far and
+  carried losses counted. A loss lowers the year's tax when there are gains to
+  offset, and that saving counts in what the sale brings home; otherwise it
+  carries forward.
+- **The marginal tax rate** is your top income tax rate plus the 2% Medicare
+  levy. The portfolio's owner saves it in the portfolio's settings, and it can
+  be changed for one calculation. One rate covers the whole gain, so a gain
+  big enough to cross into a higher tax bracket is taxed partly at a rate this
+  does not show. See the ATO's
+  [tax rates](https://www.ato.gov.au/tax-rates-and-codes/tax-rates-australian-residents)
+  and [how to calculate your CGT](https://www.ato.gov.au/individuals-and-families/investments-and-assets/capital-gains-tax/calculating-your-cgt/how-to-calculate-your-cgt).
+- **The discount is an individual's or a trust's.** A complying super fund's
+  is a third and a company gets none, and from 1 July 2027 the discount is
+  being replaced, so a sale from then is not worked out.
+
 ## Charts
 
 The charts page is a grid of cards you own. Drag a card by its handle to

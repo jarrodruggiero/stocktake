@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Simulate a sale — Stocktake{% endblock %}
+{% block content %}
+
+{# A spoke off the Portfolio page, like Charts, so it says where it came from. #}
+<a class="backlink button secondary" href="/">&larr; Portfolio</a>
+
+<h1>Simulate a sale</h1>
+<p class="panel warn">A calculator only, not financial or tax advice.</p>
+
+{% if error %}<p role="alert" class="panel error">{{ error }}</p>{% endif %}
+
+{% set rate_tip %}
+<p class="tipline">Your top income tax rate plus the 2% Medicare levy.
+<a href="https://www.ato.gov.au/tax-rates-and-codes/tax-rates-australian-residents"
+   target="_blank" rel="noopener">ATO tax rates</a></p>
+{% endset %}
+
+{# A GET: nothing is recorded, and the query is the whole form. #}
+<form method="get" action="/simulate" class="saleform">
+  {# Enter submits with the form's FIRST submit button, which would otherwise
+     be Fill. This one is Calculate, clipped from view and from the tab order. #}
+  <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">Calculate</button>
+  <div class="panel">
+    <div class="row">
+      <label>Marginal tax rate <span class="sub">%</span>
+        {% with body = rate_tip, label = "About the marginal tax rate" %}{% include "_tip.html" %}{% endwith %}
+        <input name="rate" inputmode="decimal" value="{{ typed.rate }}"></label>
+      <label>Sell <span class="sub">% of the portfolio</span>
+        <input name="percent" inputmode="decimal" value="{{ typed.percent or '' }}"></label>
+      <div class="fillbuttons">
+        <button type="submit" name="fill" value="percent" class="secondary">Fill</button>
+        <button type="submit" name="fill" value="all" class="secondary">Sell all</button>
+      </div>
+    </div>
+  </div>
+
+  {% if sale.lines %}
+  <div class="tablewrap">
+  <table class="saletable">
+    <thead><tr>
+      <th>Holding</th><th class="num">Units</th><th class="num">Price</th>
+      <th class="num">Value ({{ reporting_ccy }})</th><th class="num">Sell</th>
+      <th class="num">Brokerage</th><th class="num">Gain ({{ reporting_ccy }})</th>
+    </tr></thead>
+    <tbody>
+    {% for line in sale.lines %}
+      {% set h = line.holding %}{% set inst = h.instrument %}
+      <tr>
+        <td><a href="{{ holding_href(inst.ticker, inst.exchange) }}">{{ inst.ticker }}</a></td>
+        <td class="num">{{ h.units | qty }}</td>
+        <td class="num">{{ h.price | cash(inst.currency) if h.price is not none else '—' }}</td>
+        <td class="num">{{ h.value_aud | money }}</td>
+        {% if line.why_not %}
+        <td colspan="3" class="sub">{{ line.why_not }}</td>
+        {% else %}
+        <td class="num"><input name="units_{{ inst.id }}" inputmode="decimal"
+                               value="{{ typed.get('units_%d' % inst.id, '') }}"
+                               aria-label="Units of {{ inst.ticker }} to sell"></td>
+        <td class="num"><input name="brokerage_{{ inst.id }}" inputmode="decimal"
+                               value="{{ typed.get('brokerage_%d' % inst.id, '') }}"
+                               placeholder="{{ line.suggested | money_plain if line.suggested is not none else '' }}"
+                               aria-label="Brokerage for {{ inst.ticker }}">
+          {%- if inst.currency != reporting_ccy %} <span class="sub">{{ inst.currency }}</span>{% endif %}</td>
+        <td class="num {{ line.gain | trend if line.units }}">
+          {%- if line.units %}{{ line.gain | arrow }}{{ line.gain | money }}{% endif %}</td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="sub">Nothing is held to sell.</p>
+  {% endif %}
+
+  <div class="commitbar"><button type="submit">Calculate</button></div>
+</form>
+
+{% if sale.selling %}
+<section class="saleresult">
+  <h2>If sold today</h2>
+  {% if sale.withheld %}
+  <p class="note">Totals exclude {{ sale.withheld | join(', ') }} — no exchange rate stored.</p>
+  {% endif %}
+  {% set taxed = sale.taxable is not none %}
+  <div class="tiles">
+    <div class="tile {{ sale.gain | trend }}"><span class="label">Capital gain</span>
+      <span class="big">{{ sale.gain | arrow }}{{ sale.gain | cash }}</span></div>
+    {% if taxed %}
+    <div class="tile"><span class="label">Taxable gain</span>
+      <span class="big">{{ sale.taxable | cash }}</span></div>
+    {% endif %}
+    {% if sale.tax is not none %}
+    <div class="tile"><span class="label">{{ 'Tax saved' if sale.tax < 0 else 'Tax' }} at {{ sale.rate | qty }}%</span>
+      <span class="big">{{ sale.tax | abs | cash }}</span></div>
+    <div class="tile"><span class="label">Take home</span>
+      <span class="big">{{ sale.take_home | cash }}</span></div>
+    {% endif %}
+  </div>
+  {% if sale.regime_warning %}<p class="panel warn">{{ sale.regime_warning }}</p>{% endif %}
+  {% for sold in sale.oversold %}
+  <p class="panel warn">Capital gains can't be worked out: <a href="{{ holding_href(sold.instrument.ticker, sold.instrument.exchange) }}">{{ sold.instrument.ticker }}</a>'s sell of {{ sold.trade.quantity | qty }} units on {{ sold.trade.date }} is more than the {{ sold.held | qty }} units held then. Correct it or record the missing buy.</p>
+  {% endfor %}
+  {% if taxed and sale.tax is none %}
+  <p class="note">Set a marginal tax rate to see the tax.</p>
+  {% endif %}
+
+  <div class="tablewrap">
+  <table>
+    <tbody>
+      <tr><td>Sale value</td><td class="num">{{ sale.value | money }}</td></tr>
+      <tr><td>Brokerage</td><td class="num">−{{ sale.brokerage | money }}</td></tr>
+      <tr><td>Cost base</td><td class="num">−{{ sale.cost_base | money }}</td></tr>
+      <tr><td><strong>Capital gain</strong></td>
+          <td class="num"><strong>{{ sale.gain | money }}</strong></td></tr>
+      {% if taxed %}
+      {% if sale.gain and sale.gain > 0 %}
+      {% if sale.discount %}<tr><td>CGT discount</td><td class="num">−{{ sale.discount | money }}</td></tr>{% endif %}
+      {% if sale.losses_used %}<tr><td>Losses used</td><td class="num">−{{ sale.losses_used | money }}</td></tr>{% endif %}
+      {% endif %}
+      {% set taxable_tip %}
+      <p class="tipline">What the sale adds to this year's net capital gain.
+      <a href="{{ docs_url }}/guides/#simulate-a-sale">More information</a></p>
+      {% endset %}
+      <tr><td><strong>Taxable gain</strong>
+            {% with body = taxable_tip, label = "About the taxable gain" %}{% include "_tip.html" %}{% endwith %}</td>
+          <td class="num"><strong>{{ sale.taxable | money }}</strong></td></tr>
+      {% if sale.carried_forward %}
+      <tr><td>Added to the loss carried forward</td><td class="num">{{ sale.carried_forward | money }}</td></tr>
+      {% endif %}
+      {% if sale.tax is not none %}
+      <tr><td>{{ 'Tax saved' if sale.tax < 0 else 'Tax' }} at {{ sale.rate | qty }}%</td>
+          <td class="num">{{ '+' if sale.tax < 0 else '−' }}{{ sale.tax | abs | money }}</td></tr>
+      <tr><td><strong>Take home</strong></td>
+          <td class="num"><strong>{{ sale.take_home | money }}</strong></td></tr>
+      {% endif %}
+      {% endif %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if sale.year_so_far or sale.carried_in %}
+  <h3>Already in {{ fy_label }}</h3>
+  <div class="tablewrap">
+  <table>
+    <tbody>
+      {% if sale.year_so_far %}<tr><td>Sales so far</td>
+        <td class="num {{ sale.year_so_far | trend }}">{{ sale.year_so_far | arrow }}{{ sale.year_so_far | money }}</td></tr>{% endif %}
+      {% if sale.carried_in %}<tr><td>Losses carried from earlier years</td>
+        <td class="num">{{ sale.carried_in | money }}</td></tr>{% endif %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{% endblock %}

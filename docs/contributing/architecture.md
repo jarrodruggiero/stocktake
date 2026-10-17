@@ -42,6 +42,7 @@ Two consequences worth internalising:
 | `moves.py` | Handing a holding's rows to another portfolio: what has to travel with what. |
 | `money.py` | Rendering an amount so it says which currency it is, and reading one in: a figure that is finite and fits its column. |
 | `brokerage.py` | What a portfolio's broker charges, for the trade form to suggest. |
+| `simulate.py` | Selling today, worked out and never recorded: what a sale would bring home after tax. |
 
 ### Getting data in
 

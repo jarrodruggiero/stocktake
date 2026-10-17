@@ -38,6 +38,7 @@
         <button type="submit" class="secondary"{% if feed.running %} disabled aria-busy="true"{% endif %}>Refresh prices</button>
       </form>
       {% endif %}
+      <a class="button secondary" href="/simulate">Simulate sale</a>
       <a class="button secondary" href="/charts">View charts</a>
       {# Not on a first run: the panel below offers it, as the page's one primary. #}
       {% if auth.can_write and not first_run %}

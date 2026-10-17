@@ -65,3 +65,13 @@ def foreign(portfolio: Portfolio | None) -> Fee:
 
 def is_foreign(currency: str | None) -> bool:
     return bool(currency) and currency != money.REPORTING
+
+
+def for_trade(portfolio: Portfolio | None, currency: str, value: Decimal,
+              last: Decimal | None) -> Decimal | None:
+    """What the trade form offers for a trade of `value` in `currency`: the
+    portfolio's fee for that kind of trade, or else `last`, the brokerage on
+    the last trade of that kind (queries.last_brokerage). The sale simulator
+    offers the same."""
+    fee = foreign(portfolio) if is_foreign(currency) else local(portfolio)
+    return fee.on(value) if fee.is_set else last
