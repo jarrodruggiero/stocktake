@@ -46,8 +46,9 @@ does.
   naive datetimes, Postgres aware ones; the raw comparison raises on one.
 - **Never fabricate a number.** An unconvertible AUD figure is blank, not
   converted at 1:1. A missing rate excludes the holding and says so.
-- **Only ticker symbols may leave the machine.** No quantities, no holdings, no
-  telemetry. This is the app's headline promise.
+- **Only ticker symbols may leave the machine**, and the request for the ABS's
+  public CPI series, which carries nothing at all. No quantities, no holdings,
+  no telemetry. This is the app's headline promise.
 - **The test suite must not touch the network.** `conftest._no_network` blocks
   it; stub `providers._get_json` with a canned payload.
 

@@ -536,3 +536,27 @@ def test_a_migration_that_fails_part_way_leaves_nothing_behind(tmp_path: Path):
 
     assert "api_key_portfolio" in _tables(path)
     assert _revision(path) != [("0009",)]
+
+
+def test_0020_adds_the_cpi_beside_what_is_there(tmp_path: Path):
+    """A new table of public data: nothing already stored moves either way."""
+    path = tmp_path / "cpi.db"
+    cfg = _config(path)
+    command.upgrade(cfg, "0019")
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO portfolio (id, name, created_at, income_tax_rate) "
+                 "VALUES (1, 'Main', '2026-01-01', 30)")
+    conn.commit()
+    conn.close()
+
+    command.upgrade(cfg, "0020")
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO cpi_quarter (quarter, index_number, reference_period, fetched_at) "
+                 "VALUES ('2027-07-01', 103.12, 'Sep 2025 = 100.0', '2027-10-29')")
+    conn.commit()
+    kept = conn.execute("SELECT id, income_tax_rate FROM portfolio").fetchall()
+    conn.close()
+
+    assert kept == [(1, 30)]
+    command.downgrade(cfg, "0019")
+    assert "cpi_quarter" not in _tables(path)

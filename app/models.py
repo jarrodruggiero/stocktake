@@ -972,6 +972,22 @@ class FxRate(Base):
     )
 
 
+class CpiQuarter(Base):
+    """The All Groups CPI for the eight capitals, for one quarter: what the
+    2027 CGT rules index a cost base by (decisions.md #149). Market data, the
+    same for every portfolio, as prices and rates are."""
+
+    __tablename__ = "cpi_quarter"
+
+    quarter: Mapped[dt.date] = mapped_column(Date, primary_key=True)   # its first day
+    # As first published: a revision never replaces it (ITAA97 s 960-280(1)).
+    index_number: Mapped[Decimal] = mapped_column(Numeric(9, 3))
+    # The ABS's reference period, "Sep 2025 = 100.0": numbers on two of them
+    # cannot be divided by each other (s 960-280(3)).
+    reference_period: Mapped[str] = mapped_column(String(40))
+    fetched_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class InvestmentPlan(Base):
     """A repeating buy rotation, edited in the app rather than configured.
 
