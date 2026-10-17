@@ -12,6 +12,11 @@ identification can be offered later without schema changes. Rules applied:
   * a year's net capital loss carries forward, and is applied in later years
     after their own losses and before the discount (s102-5(1)); the app sees
     only the sales recorded in it
+  * from 1 July 2027 (decisions.md #150): a parcel held through 30 June 2027 is
+    taken to be sold just before 1 July 2027 for its market value and bought
+    again on it, the gain to then deferred to the real sale and discounted;
+    after it, the cost base is indexed by the CPI instead of discounted, and
+    the year's losses reduce the deferred gains first (s102-5(1) as amended)
 """
 
 from __future__ import annotations
@@ -23,34 +28,16 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from . import clock, queries
+from . import clock, cpi, queries
 from .models import CorporateAction, Instrument, Price, Trade
 
 ZERO = Decimal(0)
 CENTS = Decimal("0.01")
 
-# The day the rules this module implements stop being the rules. Years past it
-# are REFUSED until the new ones are built, rather than computed with a repealed
-# discount — decisions.md #26.
-CGT_INDEXATION_START = dt.date(2027, 7, 1)
-
-
-def regime_warning(fy_end_year: int) -> str | None:
-    """Why this financial year's capital gains are not computed, or None.
-
-    Returned rather than raised: the rest of an FY report — dividend income,
-    franking, the holdings snapshot — is unaffected and still worth showing.
-    """
-    start, _end = fy_bounds(fy_end_year)
-    if start < CGT_INDEXATION_START:
-        return None
-    return (
-        f"Capital gains are not calculated for {fy_label(fy_end_year)} yet. From "
-        "1 July 2027 the 50% CGT discount is replaced by cost-base indexation "
-        "and a 30% minimum tax (Treasury Laws Amendment (Tax Reform No. 1) Act "
-        "2026), and this version implements only the earlier rules. Everything "
-        "else on this page is unaffected. Check for an update before lodging."
-    )
+# The day the 2027 rules start (Treasury Laws Amendment (Tax Reform No. 1) Act
+# 2026): an asset held through 30 June 2027 is taken to be sold just before it
+# and bought again on it, and a cost base is indexed from it. decisions.md #150.
+NEW_RULES = dt.date(2027, 7, 1)
 
 
 def fy_bounds(fy_end_year: int) -> tuple[dt.date, dt.date]:
@@ -115,15 +102,83 @@ def _one_year_after(d: dt.date) -> dt.date:
 class ParcelUse:
     acquired: dt.date
     quantity: Decimal
-    cost_base: Decimal | None  # AUD; None when the parcel's purchase had no rate
+    # AUD; None when the parcel's purchase had no rate. From 1 July 2027, for a
+    # parcel held through 30 June 2027, what it was worth then (#150).
+    cost_base: Decimal | None
     proceeds: Decimal | None  # AUD; None when the sale had no rate
     discountable: bool  # held > 12 months at disposal
+    # A sale from 1 July 2027 (decisions.md #150):
+    new_rules: bool = False
+    held_through_2027: bool = False
+    deferred_proceeds: Decimal | None = None   # its value just before 1 July 2027
+    deferred_cost: Decimal | None = None       # its cost base then
+    factor: Decimal | None = None              # indexation; None when not indexed
+    awaiting_cpi: dt.date | None = None        # a quarter whose CPI is not out yet
+
+    @property
+    def deferred(self) -> Decimal | None:
+        """The gain or loss to 30 June 2027, taxed when the parcel is sold."""
+        if self.deferred_proceeds is None or self.deferred_cost is None:
+            return None
+        return self.deferred_proceeds - self.deferred_cost
+
+    @property
+    def indexed_cost(self) -> Decimal | None:
+        if self.cost_base is None or self.factor is None:
+            return self.cost_base
+        return (self.cost_base * self.factor).quantize(CENTS)
+
+    @property
+    def indexed_gain(self) -> Decimal | None:
+        """The gain from 1 July 2027, over the indexed cost base. Indexing
+        cannot make a loss: a loss is worked from the cost base as it was, and
+        between the two there is neither (s 110-36(1A), the reduced cost base)."""
+        if self.cost_base is None or self.proceeds is None or self.awaiting_cpi:
+            return None
+        if self.proceeds >= self.indexed_cost:
+            return self.proceeds - self.indexed_cost
+        if self.proceeds < self.cost_base:
+            return self.proceeds - self.cost_base
+        return ZERO
 
     @property
     def gain(self) -> Decimal | None:
-        if self.cost_base is None or self.proceeds is None:
+        if not self.new_rules:
+            if self.cost_base is None or self.proceeds is None:
+                return None
+            return self.proceeds - self.cost_base
+        after = self.indexed_gain
+        if after is None or not self.held_through_2027:
+            return after
+        return None if self.deferred is None else self.deferred + after
+
+    @property
+    def cost(self) -> Decimal | None:
+        """What the units cost, as their holding counts it. A parcel held
+        through 30 June 2027 has a cost base from its value then, so this
+        differs from it; proceeds − cost − indexation is the gain (#150)."""
+        if not self.held_through_2027:
+            return self.cost_base
+        if None in (self.deferred_cost, self.cost_base, self.deferred_proceeds):
             return None
-        return self.proceeds - self.cost_base
+        return self.deferred_cost + self.cost_base - self.deferred_proceeds
+
+    @property
+    def indexation(self) -> Decimal | None:
+        """How far indexing lowered the gain, which can be less than it raised
+        the cost base; None when the cost base was not indexed."""
+        if self.factor is None or self.indexed_gain is None:
+            return None
+        return self.proceeds - self.cost_base - self.indexed_gain
+
+    @property
+    def discount(self) -> Decimal | None:
+        """The 50% discount on this parcel's own gain, before any loss: from
+        1 July 2027, on its gain to 30 June 2027 only (#150)."""
+        if self.gain is None:
+            return None
+        halved = self.deferred if self.new_rules else self.gain
+        return halved / 2 if self.discountable and halved and halved > 0 else ZERO
 
 
 @dataclass
@@ -142,7 +197,7 @@ class Disposal:
     def known(self) -> bool:
         """Whether every figure converts: the sale and each parcel it used had
         a rate. One that does not is listed but left out of the totals."""
-        return self.proceeds is not None and all(p.cost_base is not None for p in self.parcels)
+        return self.proceeds is not None and all(p.gain is not None for p in self.parcels)
 
     @property
     def cost_base(self) -> Decimal | None:
@@ -151,8 +206,85 @@ class Disposal:
         return sum((p.cost_base for p in self.parcels), ZERO)
 
     @property
+    def cost(self) -> Decimal | None:
+        """What its units cost, as their holding counts it (`ParcelUse.cost`)."""
+        if any(p.cost is None for p in self.parcels):
+            return None
+        return sum((p.cost for p in self.parcels), ZERO)
+
+    @property
     def gain(self) -> Decimal | None:
-        return self.proceeds - self.cost_base if self.known else None
+        return sum((p.gain for p in self.parcels), ZERO) if self.known else None
+
+    @property
+    def deferred_proceeds(self) -> Decimal | None:
+        """What its parcels held through 30 June 2027 were worth then (#150);
+        None when it had none, or one could not be valued."""
+        held = [p for p in self.parcels if p.held_through_2027]
+        if not held or any(p.deferred_proceeds is None for p in held):
+            return None
+        return sum((p.deferred_proceeds for p in held), ZERO)
+
+    @property
+    def indexation(self) -> Decimal | None:
+        """How far indexing lowered its gain; None when none of it was indexed."""
+        indexed = [p.indexation for p in self.parcels if p.factor is not None]
+        if not indexed or None in indexed:
+            return None
+        return sum(indexed, ZERO)
+
+
+@dataclass
+class _Share:
+    """An amount a parcel's units owe between them, billed by running total as
+    they go so the pieces add up to the whole (see `_Parcel`)."""
+
+    total: Decimal | None
+    allotted: Decimal = ZERO
+
+    @property
+    def held(self) -> Decimal | None:
+        return None if self.total is None else self.total - self.allotted
+
+    def bill(self, consumed: Decimal, quantity: Decimal) -> Decimal | None:
+        if self.total is None:
+            return None
+        owed = (self.total * consumed / quantity).quantize(CENTS)
+        billed = owed - self.allotted
+        self.allotted = owed
+        return billed
+
+    def restart(self, change: Decimal | None = ZERO) -> Decimal:
+        """Begin again from what is held, moved by `change` (None: unknown).
+        Returns how far that took it below nil, and it is then nil."""
+        held = self.held
+        self.total = None if held is None or change is None else held + change
+        self.allotted = ZERO
+        if self.total is not None and self.total < 0:
+            beyond, self.total = -self.total, ZERO
+            return beyond
+        return ZERO
+
+
+@dataclass
+class _Deemed:
+    """A parcel held through 30 June 2027, as taken to be sold just before
+    1 July 2027 and bought again on it (ITAA 1997 s 112-155)."""
+
+    value: _Share   # its market value then: the deferred gain's proceeds
+    cost: _Share    # its cost base then: the deferred gain's cost
+    after: _Share   # its cost base from 1 July 2027: that value, moved by later changes
+
+
+@dataclass
+class _Billed:
+    """What a parcel's units owe as they go: the cost (what was paid), and for
+    a parcel held through 30 June 2027 its three 2027 amounts."""
+
+    cost: Decimal | None
+    value: Decimal | None = None
+    deferred_cost: Decimal | None = None
+    after: Decimal | None = None
 
 
 @dataclass
@@ -178,6 +310,10 @@ class _Parcel:
     cost_allotted: Decimal = ZERO
     native: Decimal = ZERO     # the same outlay in the instrument's own currency
     trade_id: int | None = None
+    deemed: _Deemed | None = None
+    # The amounts in the cost base from 1 July 2027, as (when, AUD, indexed):
+    # what its indexation factor is weighed over (#150). None: one is unknown.
+    spent: list[tuple[dt.date, Decimal, bool]] | None = field(default_factory=list)
 
     @property
     def cost_held(self) -> Decimal | None:
@@ -189,31 +325,62 @@ class _Parcel:
         return self.native * self.remaining / self.quantity
 
     def restart(self, units: Decimal, native: Decimal = ZERO,
-                cost: Decimal | None = ZERO) -> Decimal:
+                cost: Decimal | None = ZERO, on: dt.date | None = None) -> Decimal:
         """Begin again from what is still held, as `units` of it, with its cost
-        moved by `native` and `cost`, the AUD change (None: unknown). The date
-        stays, so the discount clock does. Returns how far the AUD cost went
-        below nil, which is a capital gain, and the cost base is then nil."""
+        moved by `native` and `cost`, the AUD change (None: unknown) made on
+        `on`. The date stays, so the discount clock does. Returns how far the
+        cost base went below nil, which is a capital gain, and it is then nil:
+        from 1 July 2027 a deemed parcel's cost base is the one from then."""
         held = self.cost_held
+        share = self.remaining / self.quantity
         self.native = max(self.native_held + native, ZERO)
         self.cost = None if held is None or cost is None else held + cost
         self.quantity = self.remaining = units
         self.cost_allotted = ZERO
+        beyond = ZERO
         if self.cost is not None and self.cost < 0:
             beyond, self.cost = -self.cost, ZERO
+        if self.spent is not None:
+            self.spent = [(when, amount * share, indexed)
+                          for when, amount, indexed in self.spent]
+            if cost is None:
+                self.spent = None
+            elif cost and on is not None and on >= NEW_RULES:
+                # What is spent is indexed; what comes back is not (#150).
+                self.spent.append((on, cost, cost > 0))
+        if self.deemed is None:
             return beyond
-        return ZERO
+        self.deemed.value.restart()
+        self.deemed.cost.restart()
+        return self.deemed.after.restart(cost)
 
-    def take(self, units: Decimal) -> Decimal | None:
-        """Consume `units` from this parcel and return their cost base, or None
-        when the parcel's cost is not known."""
+    def absorb(self, other: _Parcel) -> None:
+        """Take on the cost of a parcel a consolidation left without a unit."""
+        self.native += other.native
+        self.cost = None if self.cost is None or other.cost is None else self.cost + other.cost
+        if self.spent is not None:
+            self.spent = None if other.spent is None else self.spent + other.spent
+        if self.deemed is not None and other.deemed is not None:
+            for mine, theirs in ((self.deemed.value, other.deemed.value),
+                                 (self.deemed.cost, other.deemed.cost),
+                                 (self.deemed.after, other.deemed.after)):
+                mine.total = (None if mine.total is None or theirs.held is None
+                              else mine.total + theirs.held)
+
+    def take(self, units: Decimal) -> _Billed:
+        """Consume `units` from this parcel and bill them their cost (None when
+        it is not known), and their 2027 amounts if it has them."""
         self.remaining -= units
-        if self.cost is None:
-            return None
         consumed = self.quantity - self.remaining
-        owed = (self.cost * consumed / self.quantity).quantize(CENTS)
-        billed = owed - self.cost_allotted
-        self.cost_allotted = owed
+        billed = _Billed(None)
+        if self.cost is not None:
+            owed = (self.cost * consumed / self.quantity).quantize(CENTS)
+            billed.cost = owed - self.cost_allotted
+            self.cost_allotted = owed
+        if self.deemed is not None:
+            billed.value = self.deemed.value.bill(consumed, self.quantity)
+            billed.deferred_cost = self.deemed.cost.bill(consumed, self.quantity)
+            billed.after = self.deemed.after.bill(consumed, self.quantity)
         return billed
 
 
@@ -277,23 +444,31 @@ def walk(inst: Instrument, fx_book=None, until: dt.date | None = None) -> Walk:
     # Timeline order, not entry order: two parcels bought on one day at
     # different prices must be consumed in the order they were acquired, or a
     # later sale is matched against the wrong cost base.
+    deemed = False
     for t in queries.timeline(inst.trades, inst.actions):
         if until is not None and t.date > until:
             break
+        if not deemed and t.date >= NEW_RULES:
+            _deem(fifo, inst, fx_book)
+            deemed = True
         if isinstance(t, CorporateAction):
             disposals += _act(t, fifo, inst, fx_book)
             continue
         fx = _rate(t, inst, fx_book)
         if t.type in ("buy", "drp"):
             outlay = t.quantity * t.unit_price + t.brokerage
+            cost = None if fx is None else outlay * fx
             fifo.append(
                 _Parcel(
                     acquired=t.date,
                     remaining=t.quantity,
                     quantity=t.quantity,
-                    cost=None if fx is None else outlay * fx,
+                    cost=cost,
                     native=outlay,
                     trade_id=t.id,
+                    # Bought from 1 July 2027: indexed from its own quarter.
+                    spent=(None if cost is None else
+                           [(t.date, cost, True)] if t.date >= NEW_RULES else []),
                 )
             )
             continue
@@ -308,15 +483,17 @@ def walk(inst: Instrument, fx_book=None, until: dt.date | None = None) -> Walk:
         while remaining > 0 and fifo:
             parcel = fifo[0]
             take = min(parcel.remaining, remaining)
-            uses.append(
-                ParcelUse(
-                    acquired=parcel.acquired,
-                    quantity=take,
-                    cost_base=parcel.take(take),
-                    proceeds=ZERO,   # apportioned below, once they are all known
-                    discountable=t.date > _one_year_after(parcel.acquired),
-                )
+            billed = parcel.take(take)
+            use = ParcelUse(
+                acquired=parcel.acquired,
+                quantity=take,
+                cost_base=billed.cost,
+                proceeds=ZERO,   # apportioned below, once they are all known
+                discountable=t.date > _one_year_after(parcel.acquired),
             )
+            if t.date >= NEW_RULES:
+                _split(use, parcel, billed, t.date, fx_book)
+            uses.append(use)
             remaining -= take
             if parcel.remaining <= 0:
                 fifo.pop(0)
@@ -347,7 +524,80 @@ def walk(inst: Instrument, fx_book=None, until: dt.date | None = None) -> Walk:
                 parcels=uses,
             )
         )
+    # Held past 1 July 2027 with nothing since: what is held is still deemed,
+    # for whatever sells it later.
+    if not deemed and (until or clock.today()) >= NEW_RULES:
+        _deem(fifo, inst, fx_book)
     return Walk(disposals, fifo)
+
+
+def _deem(fifo: list[_Parcel], inst, fx_book) -> None:
+    """Every parcel held through 30 June 2027, taken to be sold just before
+    1 July 2027 for its market value and bought again on it (ITAA 1997
+    s 112-155): its units at the last close in the week before, at that day's
+    rate. Unknown without one, which the year names (#150)."""
+    eve = NEW_RULES - dt.timedelta(days=1)
+    close = fx_book.close_before(inst.id, NEW_RULES) if fx_book is not None else None
+    rate = fx_book.rate(inst.currency, eve, inst.ticker) if fx_book is not None else None
+    for parcel in fifo:
+        parcel.restart(parcel.remaining)
+        value = None if close is None or rate is None else parcel.remaining * close * rate
+        parcel.deemed = _Deemed(value=_Share(value), cost=_Share(parcel.cost_held),
+                                after=_Share(value))
+        parcel.spent = None if value is None else [(NEW_RULES, value, True)]
+
+
+def _split(use: ParcelUse, parcel: _Parcel, billed: _Billed, sold_on: dt.date,
+           fx_book) -> None:
+    """A sale from 1 July 2027: the parcel's deferred gain to then, if it was
+    held through 30 June 2027, and its cost base from then, indexed if it was
+    acquired a year before the sale, counting from the real acquisition
+    (s 114-10(9))."""
+    use.new_rules = True
+    if parcel.deemed is not None:
+        use.held_through_2027 = True
+        use.deferred_proceeds, use.deferred_cost = billed.value, billed.deferred_cost
+        use.cost_base = billed.after
+    if use.discountable:
+        use.factor, use.awaiting_cpi = _indexation(parcel, sold_on, fx_book)
+
+
+def as_if_sold(parcel: _Parcel, value: Decimal | None, on: dt.date, fx_book) -> ParcelUse:
+    """A parcel still held, worked out as if sold whole on `on` for `value`
+    (AUD), by the rules of that day: what a sale would realise."""
+    use = ParcelUse(acquired=parcel.acquired, quantity=parcel.remaining,
+                    cost_base=parcel.cost_held, proceeds=value,
+                    discountable=on > _one_year_after(parcel.acquired))
+    if on >= NEW_RULES:
+        deemed = parcel.deemed
+        billed = _Billed(parcel.cost_held) if deemed is None else _Billed(
+            parcel.cost_held, deemed.value.held, deemed.cost.held, deemed.after.held)
+        _split(use, parcel, billed, on, fx_book)
+    return use
+
+
+def _indexation(parcel: _Parcel, sold_on: dt.date,
+                fx_book) -> tuple[Decimal | None, dt.date | None]:
+    """The factor a parcel's cost base from 1 July 2027 is indexed by: each
+    amount spent by its own quarter's, weighed by the amounts, and what came
+    back not at all. With it, the quarter whose CPI is missing, if one is."""
+    if parcel.spent is None:
+        return None, None
+    book = fx_book.cpi if fx_book is not None else None
+    weighed = total = ZERO
+    for when, amount, indexed in parcel.spent:
+        factor = Decimal(1)
+        if indexed:
+            factor = None if book is None else book.factor(when, sold_on)
+            if factor is None:
+                missing = (cpi.quarter(sold_on) if book is None or book.index(sold_on) is None
+                           else cpi.quarter(when))
+                return None, missing
+        weighed += amount * factor
+        total += amount
+    if total <= 0:
+        return None, None
+    return weighed / total, None
 
 
 def _act(action: CorporateAction, fifo: list[_Parcel], inst: Instrument,
@@ -374,9 +624,7 @@ def _act(action: CorporateAction, fifo: list[_Parcel], inst: Instrument,
         for i, parcel in reversed(list(enumerate(fifo))):
             if not parcel.remaining and len(fifo) > 1:
                 into = fifo[i + 1] if i + 1 < len(fifo) else fifo[i - 1]
-                into.native += parcel.native
-                into.cost = (None if into.cost is None or parcel.cost is None
-                             else into.cost + parcel.cost)
+                into.absorb(parcel)
                 fifo.pop(i)
         return []
     # Paid back, the cash lowers the cost base; an adjustment carries its sign.
@@ -389,15 +637,18 @@ def _act(action: CorporateAction, fifo: list[_Parcel], inst: Instrument,
         given += part
         # A reduction with no AUD figure on either side may or may not go
         # below nil: listed unpriced, so the year names it, as a sale (#5).
-        unpriced = part < 0 and (rate is None or parcel.cost_held is None)
-        beyond = parcel.restart(parcel.remaining, part, None if rate is None else part * rate)
+        base = parcel.deemed.after.held if parcel.deemed is not None else parcel.cost_held
+        unpriced = part < 0 and (rate is None or base is None)
+        beyond = parcel.restart(parcel.remaining, part, None if rate is None else part * rate,
+                                on=action.date)
         if beyond or unpriced:
             gain = beyond.quantize(CENTS) if beyond else None
             gains.append(Disposal(
                 instrument=inst, date=action.date, quantity=parcel.remaining, proceeds=gain,
                 parcels=[ParcelUse(acquired=parcel.acquired, quantity=parcel.remaining,
                                    cost_base=None if unpriced else ZERO, proceeds=gain,
-                                   discountable=action.date > _one_year_after(parcel.acquired))],
+                                   discountable=action.date > _one_year_after(parcel.acquired),
+                                   new_rules=action.date >= NEW_RULES)],
                 event=action.kind))
     return gains
 
@@ -405,11 +656,16 @@ def _act(action: CorporateAction, fifo: list[_Parcel], inst: Instrument,
 @dataclass
 class CgtSummary:
     disposals: list[Disposal] = field(default_factory=list)
-    gains_discountable: Decimal = ZERO  # gross gains on >12m parcels
+    # Gross gains on >12m parcels, and the rest. From 1 July 2027 these are the
+    # deferred gains, to 30 June 2027, and the gains after it are apart:
+    # indexed where the parcel was held a year, and never discounted (#150).
+    gains_discountable: Decimal = ZERO
     gains_other: Decimal = ZERO
+    gains_from_july_2027: Decimal = ZERO
     losses: Decimal = ZERO  # positive number
     losses_applied_other: Decimal = ZERO
     losses_applied_discountable: Decimal = ZERO
+    losses_applied_from_july_2027: Decimal = ZERO
     discount: Decimal = ZERO
     net_capital_gain: Decimal = ZERO
     net_capital_loss: Decimal = ZERO  # >0 when the FY nets to a loss
@@ -419,13 +675,16 @@ class CgtSummary:
     losses_carried_in: Decimal = ZERO
     losses_carried_applied: Decimal = ZERO
     losses_carried_out: Decimal = ZERO
-    # Set when this year's rules are not the ones implemented here. When it is
-    # set for a whole year, every figure above is zero — the report refuses
-    # rather than guessing.
-    regime_warning: str | None = None
+    # The gains from 1 July 2027 left after the losses: what the 30% minimum
+    # tax is worked on (ITAA 1997 s 119-5). Nil before 1 July 2027.
+    minimum_tax_gain: Decimal = ZERO
     # Holdings with a sale this year that has no exchange rate behind it: the
     # sale is listed, and every figure above leaves it out (decisions.md #5).
     withheld: list[str] = field(default_factory=list)
+    # The same, for want of the CPI of a quarter not published yet, or of a
+    # close in the week before 1 July 2027 to value a parcel at (#150).
+    awaiting_cpi: list[str] = field(default_factory=list)
+    unvalued: list[str] = field(default_factory=list)
     # A sale of more than was held, which this year's gains depend on. When
     # there is one, every figure above is zero: the year's gains are refused,
     # not worked out without it, and the sale is named for somebody to fix.
@@ -448,18 +707,13 @@ def fy_cgt(session: Session, fy_end_year: int, fx_book=None,
 
     `instruments` replaces what is walked: the sale simulator passes stand-ins
     carrying a sell that is never recorded (decisions.md #148)."""
-    # A year under rules this version does not implement returns an empty
-    # summary carrying the reason, rather than numbers computed under the wrong
-    # regime — decisions.md #26.
-    warning = regime_warning(fy_end_year)
-    if warning:
-        return CgtSummary(regime_warning=warning)
     if instruments is None:
         instruments = cgt_instruments(session)
     fx_book = fx_book or queries.FxBook(session)
     sales = [t.date for inst in instruments for t in inst.trades if t.type == "sell"]
     first = min(current_fy(min(sales)), fy_end_year) if sales else fy_end_year
-    carried, left_out = ZERO, set()
+    carried = ZERO
+    left_out = {"withheld": set(), "awaiting_cpi": set(), "unvalued": set()}
     for year in range(first, fy_end_year + 1):
         out = _year_cgt(instruments, year, fx_book, carried)
         if out.oversold:
@@ -468,10 +722,12 @@ def fy_cgt(session: Session, fy_end_year: int, fx_book=None,
             return out
         carried = out.losses_carried_out
         if year < fy_end_year:
-            left_out.update(out.withheld)
+            for name, tickers in left_out.items():
+                tickers.update(getattr(out, name))
     # A sale left out of an earlier year's figures is left out of the loss it
     # carried too.
-    out.withheld = sorted(set(out.withheld) | left_out)
+    for name, tickers in left_out.items():
+        setattr(out, name, sorted(set(getattr(out, name)) | tickers))
     return out
 
 
@@ -493,43 +749,67 @@ def _year_cgt(instruments, fy_end_year: int, fx_book, carried: Decimal) -> CgtSu
                 continue
             out.disposals.append(d)
             if not d.known:
-                if inst.ticker not in out.withheld:
-                    out.withheld.append(inst.ticker)
+                missing = (out.awaiting_cpi if any(p.awaiting_cpi for p in d.parcels) else
+                           out.unvalued if any(p.held_through_2027 and p.deferred_proceeds is None
+                                               for p in d.parcels) else out.withheld)
+                if inst.ticker not in missing:
+                    missing.append(inst.ticker)
                 continue
             for p in d.parcels:
-                if p.gain >= 0:
-                    if p.discountable:
-                        out.gains_discountable += p.gain
+                for amount, bucket in _parts(p):
+                    if amount >= 0:
+                        name = f"gains_{bucket}"
+                        setattr(out, name, getattr(out, name) + amount)
                     else:
-                        out.gains_other += p.gain
-                else:
-                    out.losses += -p.gain
+                        out.losses += -amount
     if out.oversold:
-        # Refused, as a year under rules this version does not implement is:
-        # gains without the oversold holding are not the year's gains.
+        # Refused: gains without the oversold holding are not the year's gains.
         return CgtSummary(oversold=sorted(out.oversold, key=lambda sale: sale.trade.date))
-    # This year's losses offset its gains with no discount first, then the
-    # discountable ones; earlier years' losses come next, in the same order;
-    # and only then is the discount applied (s102-5(1), taxpayer-favourable).
-    out.losses_applied_other = min(out.losses, out.gains_other)
-    rest = out.losses - out.losses_applied_other
-    out.losses_applied_discountable = min(rest, out.gains_discountable)
-    unapplied = rest - out.losses_applied_discountable
-    other = out.gains_other - out.losses_applied_other
-    discountable = out.gains_discountable - out.losses_applied_discountable
-    carried_other = min(carried, other)
-    carried_discountable = min(carried - carried_other, discountable)
-    out.losses_carried_applied = carried_other + carried_discountable
-    discountable -= carried_discountable
-    out.discount = discountable / 2
+    # This year's losses reduce its gains with no discount first, then the
+    # discountable ones, then those from 1 July 2027; earlier years' losses come
+    # next, in the same order; and only then is the discount applied. Before
+    # 1 July 2027 that is the taxpayer-favourable order of s102-5(1), and from
+    # it the order the amended s102-5(1) sets, the deferred gains first (#150).
+    order = ("other", "discountable", "from_july_2027")
+    left = {b: getattr(out, f"gains_{b}") for b in order}
+    rest = out.losses
+    for b in order:
+        used = min(rest, left[b])
+        setattr(out, f"losses_applied_{b}", used)
+        left[b] -= used
+        rest -= used
+    unapplied, carry = rest, carried
+    for b in order:
+        used = min(carry, left[b])
+        left[b] -= used
+        carry -= used
+    out.losses_carried_applied = carried - carry
+    out.discount = left["discountable"] / 2
     if unapplied > 0:
         out.net_capital_loss = unapplied
     else:
-        out.net_capital_gain = (other - carried_other) + discountable - out.discount
+        out.net_capital_gain = (left["other"] + left["discountable"] - out.discount
+                                + left["from_july_2027"])
+        out.minimum_tax_gain = left["from_july_2027"]
     out.losses_carried_out = carried - out.losses_carried_applied + unapplied
     out.disposals.sort(key=lambda d: d.date)
-    out.withheld.sort()
+    for names in (out.withheld, out.awaiting_cpi, out.unvalued):
+        names.sort()
     return out
+
+
+def _parts(use: ParcelUse) -> list[tuple[Decimal, str]]:
+    """A known use's gains or losses, each with the bucket it goes in: before
+    1 July 2027 one, discountable or not; from it, the gain to 30 June 2027
+    if the parcel was held then, deferred and discountable as before, and the
+    indexed gain after (#150)."""
+    if not use.new_rules:
+        return [(use.gain, "discountable" if use.discountable else "other")]
+    parts = []
+    if use.held_through_2027:
+        parts.append((use.deferred, "discountable" if use.discountable else "other"))
+    parts.append((use.indexed_gain, "from_july_2027"))
+    return parts
 
 
 # ---------- dividend / franking income ----------
@@ -757,6 +1037,11 @@ def fy_report(session: Session, fy_end_year: int) -> dict:
         "franking_missing": sum(r.franking_missing for r in income),
         "cgt": cgt,
         "withheld": sorted(withheld),
+        # From 1 July 2027 (#150): the year's rules, and the sales its gains
+        # leave out for want of a quarter's CPI or of a June 2027 close.
+        "new_rules": start >= NEW_RULES,
+        "awaiting_cpi": cgt.awaiting_cpi,
+        "unvalued": cgt.unvalued,
         # Converted at a rate more than a week from the day: a hole in the
         # stored series, or one that does not reach back that far (#124).
         "far": sorted(fx_book.far),
@@ -797,7 +1082,7 @@ SORTABLE: dict[str, dict[str, object]] = {
         "date": lambda d: d.date,
         "ticker": lambda d: d.instrument.ticker,
         "quantity": lambda d: d.quantity,
-        "cost_base": lambda d: d.cost_base,
+        "cost_base": lambda d: d.cost,
         "proceeds": lambda d: d.proceeds,
         "gain": lambda d: d.gain,
     },

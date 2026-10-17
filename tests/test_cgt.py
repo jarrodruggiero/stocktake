@@ -724,105 +724,21 @@ def test_fy_income_converts_foreign_cash_at_the_dividend_fx_rate(pf):
 
 
 # --------------------------------------------------------------------------- #
-# The 1 July 2027 regime change. These tests pin the REFUSAL: the alternative
-# failure is the worst kind this app has — a confident, plausible number
-# computed with repealed rules, on the page somebody prepares a return from.
-# decisions.md #26.
+# Before 1 July 2027 the discount rules hold; from it, test_cgt_2027.py.
 # --------------------------------------------------------------------------- #
 
-def test_years_under_the_current_rules_are_still_calculated(pf):
-    """The guard must not swallow the years the module does understand — FY2027
-    ends 30 June 2027, the day before the change."""
-    assert fyreport.regime_warning(2027) is None
-    assert fyreport.regime_warning(2020) is None
-
-
-def test_the_first_year_under_the_new_rules_is_refused(pf):
-    """FY2028 starts exactly on 1 July 2027."""
-    warning = fyreport.regime_warning(2028)
-
-    assert warning is not None
-    assert "FY27/28" in warning
-    assert "1 July 2027" in warning
-    assert "cost-base indexation" in warning
-
-
-def test_the_notice_says_the_new_rules_are_law():
-    """It said they were announced and being settled; they passed as Act No. 49
-    of 2026, assented 26 June 2026."""
-    warning = fyreport.regime_warning(2028)
-
-    assert "Tax Reform No. 1" in warning and "Act 2026" in warning
-    assert "settled" not in warning and "announced" not in warning
-
-
-def test_a_refused_year_returns_no_figures_at_all(pf):
-    """Not "the old numbers plus a caveat" — zero, with the reason. A caveat
-    beside a wrong total is still a wrong total, and people read totals."""
-    alpha = make_instrument(pf, "ALPHA")
-    add_trade(pf, alpha, "2020-01-06", "buy", 100, "10.00")
-    add_trade(pf, alpha, "2027-09-01", "sell", 100, "30.00")   # FY2028
-
-    summary = fyreport.fy_cgt(pf, 2028)
-
-    assert summary.regime_warning is not None
-    assert summary.disposals == []
-    assert summary.net_capital_gain == 0
-    assert summary.discount == 0
-
-
-def test_the_same_disposal_a_year_earlier_is_calculated_normally(pf):
-    """The mirror, so the guard is proved to be about the DATE and not about
-    something else going wrong."""
+def test_a_sale_before_1_july_2027_is_discounted_and_not_indexed(pf):
+    """The mirror of the 2027 tests: the old rules are untouched by them."""
     alpha = make_instrument(pf, "ALPHA")
     add_trade(pf, alpha, "2020-01-06", "buy", 100, "10.00")
     add_trade(pf, alpha, "2026-09-01", "sell", 100, "30.00")   # FY2027
 
     summary = fyreport.fy_cgt(pf, 2027)
+    [use] = summary.disposals[0].parcels
 
-    assert summary.regime_warning is None
-    assert summary.net_capital_gain > 0
-    assert summary.discount > 0            # the 50% discount still applies
-
-
-def test_no_year_that_is_calculated_can_hold_a_sale_after_the_change():
-    """Why there is no warning for a parcel held across 1 July 2027. Sold after
-    that date, it is sold in FY2028 or later, and those years are refused
-    outright (decisions.md #26). Every year that IS calculated ends first, so a
-    straddling sale cannot appear in one. There used to be such a warning, and
-    no test could make it show."""
-    for fy in range(2000, 2100):
-        if fyreport.regime_warning(fy) is None:
-            assert fyreport.fy_bounds(fy)[1] < fyreport.CGT_INDEXATION_START, fy
-        else:
-            assert fyreport.fy_bounds(fy)[0] >= fyreport.CGT_INDEXATION_START, fy
-
-
-@freeze_time("2027-09-15")
-def test_the_fy_page_shows_the_refusal(client, session_factory):
-    """It has to reach a human. A guard the page does not render is a guard
-    that only protects the test suite.
-
-    Frozen past the changeover on purpose: FY2028 is not even offered until it
-    has started, so today the guard is unreachable through the UI. It becomes
-    live in July 2027 — which is the point of landing it now rather than
-    discovering the problem when somebody opens the page.
-    """
-    import factories as fac
-    from test_routes import bind_to_only_portfolio, make_login
-
-    make_login(client, session_factory)
-    with session_factory() as s:
-        bind_to_only_portfolio(s)
-        alpha = fac.make_instrument(s, "ALPHA")
-        fac.add_trade(s, alpha, "2020-01-06", "buy", 100, "10.00")
-        fac.add_trade(s, alpha, "2027-09-01", "sell", 100, "30.00")
-        s.commit()
-
-    page = client.get("/", params={"fy": 2028}, headers={"accept": "text/html"}).text
-
-    assert "not calculated for FY27/28" in page
-    assert "cost-base indexation" in page
+    assert (use.new_rules, use.factor, use.deferred) == (False, None, None)
+    assert (summary.gains_from_july_2027, summary.discount, summary.net_capital_gain) == (
+        0, Decimal("1000.00"), Decimal("1000.00"))
 
 
 # --------------------------------------------------------------------------- #
@@ -915,16 +831,15 @@ def test_a_purchase_with_no_rate_leaves_the_amount_invested_unknown(pf):
 ], ids=["rateless-purchase", "rateless-sale"])
 def test_a_year_without_a_cgt_schedule_still_names_a_rateless_trade(pf, bought, sold,
                                                                      invested, proceeds):
-    """From FY2028 the schedule is refused (decisions.md #26), so it names
-    nobody. Bought and sold inside the year, the holding has no snapshot row
-    either: the year's activity is the only figure the gap reaches."""
+    """Bought and sold inside FY2028, the holding has no snapshot row: the
+    year's activity and its gains schedule are where the gap shows."""
     inst = _usd(pf)
     add_trade(pf, inst, "2027-08-01", "buy", 10, "10.00", fx_rate=bought)
     add_trade(pf, inst, "2027-09-01", "sell", 10, "12.00", fx_rate=sold)
 
     report = fyreport.fy_report(pf, 2028)
 
-    assert report["cgt"].regime_warning and report["snapshot"] == [], "the premise"
+    assert report["snapshot"] == [], "the premise"
     assert (report["activity"].invested, report["activity"].proceeds) == (invested, proceeds)
     assert report["withheld"] == ["NOVA"]
 
