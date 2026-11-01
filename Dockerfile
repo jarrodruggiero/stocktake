@@ -26,7 +26,7 @@
 # uv, pinned the same way, and on a FROM line of its own: Dependabot reads FROM
 # lines and nothing else, so while uv was copied straight out of its image it
 # was never proposed an update, and stayed at the version of the first commit.
-FROM ghcr.io/astral-sh/uv:0.12.1@sha256:cf4eedcaa81655197f625739489effcbe71b61ceb1506f332c3facae5deceded AS uv
+FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
 
 # --------------------------------------------------------------------------- #
 # build — the virtualenv, made where git and uv are. Nothing below ships them.
