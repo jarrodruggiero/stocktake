@@ -26,14 +26,14 @@
 # uv, pinned the same way, and on a FROM line of its own: Dependabot reads FROM
 # lines and nothing else, so while uv was copied straight out of its image it
 # was never proposed an update, and stayed at the version of the first commit.
-FROM ghcr.io/astral-sh/uv:0.12.1@sha256:cf4eedcaa81655197f625739489effcbe71b61ceb1506f332c3facae5deceded AS uv
+FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
 
 # --------------------------------------------------------------------------- #
 # build — the virtualenv, made where git and uv are. Nothing below ships them.
 # --------------------------------------------------------------------------- #
 # Through Google's mirror of Docker Hub, as CI pulls everything: the same image
 # by digest, without Docker Hub's rate limit on shared CI addresses.
-FROM mirror.gcr.io/library/python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170 AS build
+FROM mirror.gcr.io/library/python:3.14-slim@sha256:cd89c30eda26ee911a4611b18680086e0ea42e6f5f8cbe653d07fa7958c9cec8 AS build
 
 # git, because appcore is a pinned git dependency and uv clones it. The full
 # image had git, which is how a "slim" pin that kept turning full went
@@ -67,7 +67,7 @@ RUN uv sync --frozen --no-install-project --no-cache
 # --------------------------------------------------------------------------- #
 # base — what ships: the interpreter, OCR, the virtualenv and the source.
 # --------------------------------------------------------------------------- #
-FROM mirror.gcr.io/library/python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170 AS base
+FROM mirror.gcr.io/library/python:3.14-slim@sha256:cd89c30eda26ee911a4611b18680086e0ea42e6f5f8cbe653d07fa7958c9cec8 AS base
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 # The unprivileged user the app runs as, which owns only what the app writes:
