@@ -353,6 +353,12 @@ def test_ci_tests_postgres_on_the_python_it_ships():
 def test_appcore_is_tested_at_the_revision_this_app_pins(tmp_path):
     """The checkout named no revision, so the job tested appcore's main, which
     says nothing about the pin; and nothing waited for it."""
+    source = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
+        "tool"]["uv"]["sources"]["appcore"]
+    if "path" in source:
+        # appcore's Consumers job runs this suite against its own checkout, so
+        # there is no pin here to test.
+        pytest.skip("appcore is a local checkout, not a pinned revision")
     jobs = _document(ROOT / ".github" / "workflows" / "ci.yml")["jobs"]
     steps = jobs["appcore"]["steps"]
     checkout = next(step["with"] for step in steps
@@ -366,10 +372,8 @@ def test_appcore_is_tested_at_the_revision_this_app_pins(tmp_path):
         env={**os.environ, "GITHUB_OUTPUT": str(output),
              "PATH": f"{Path(sys.executable).parent}:{os.environ['PATH']}"})
 
-    pinned = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert result.returncode == 0, result.stderr
-    assert output.read_text(encoding="utf-8") == (
-        f"rev={pinned['tool']['uv']['sources']['appcore']['rev']}\n")
+    assert output.read_text(encoding="utf-8") == f"rev={source['rev']}\n"
     assert checkout.get("ref") == "${{ steps.pin.outputs.rev }}"
     assert "appcore" in jobs["dev"]["needs"]
 
