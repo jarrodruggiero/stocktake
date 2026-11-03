@@ -85,9 +85,22 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
           persist-credentials: false
+      # A builder of its own, set up like publish's: the same pinned BuildKit,
+      # bumped by hand likewise, since Dependabot doesn't read images given to
+      # an action.
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          # Docker Hub's images through Google's mirror: the Dockerfile names
+          # them as Docker Hub's, for Dependabot, and this keeps the pulls off
+          # Docker Hub's rate limit. Only if the mirror fails does BuildKit fall
+          # back to Docker Hub itself.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
       - name: Run the suite inside the image
         run: |
-          docker build --target test -t stocktake:release-test .
+          docker buildx build --load --target test -t stocktake:release-test .
           docker run --rm stocktake:release-test
 
   publish:
@@ -117,6 +130,13 @@ jobs:
         with:
           # Pinned for the same reason, and bumped by hand likewise.
           driver-opts: image=mirror.gcr.io/moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          # Docker Hub's images through Google's mirror: the Dockerfile names
+          # them as Docker Hub's, for Dependabot, and this keeps the pulls off
+          # Docker Hub's rate limit. Only if the mirror fails does BuildKit fall
+          # back to Docker Hub itself.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
       - name: Log in to ghcr.io
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:

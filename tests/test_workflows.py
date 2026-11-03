@@ -328,6 +328,45 @@ def test_a_release_is_tested_on_the_python_it_ships():
     assert [str(setup.get("python-version")) for setup in setups] == [SHIPPED_PYTHON] * len(setups)
 
 
+def _pulls_docker_hub_through_the_mirror(step: dict) -> bool:
+    """Whether a setup-buildx-action step makes its builder fetch docker.io
+    images from mirror.gcr.io, and makes it the builder later steps use: with
+    `use: false` they would fall back to the daemon's own."""
+    options = step.get("with") or {}
+    config = tomllib.loads(str(options.get("buildkitd-config-inline", "")))
+    mirrors = config.get("registry", {}).get("docker.io", {}).get("mirrors")
+    return mirrors == ["mirror.gcr.io"] and options.get("use", True) is not False
+
+
+@pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda w: w.name)
+def test_every_image_build_pulls_docker_hub_through_the_mirror(workflow: Path):
+    """The Dockerfile names Docker Hub's images as docker.io/..., so that
+    Dependabot reads Docker Hub's own list of tags. Every build must still
+    pull them through mirror.gcr.io: Docker Hub rate-limits the addresses
+    GitHub's runners share, and on 2026-10-09 that failed every image job.
+
+    A buildx builder takes the mirror as configuration; the Docker daemon's
+    own `docker build` doesn't, so builds go through a mirrored builder."""
+    document = _document(workflow)
+    for job_name, job in (document.get("jobs") or {}).items():
+        steps = job.get("steps") or []
+        builders = [i for i, step in enumerate(steps)
+                    if str(step.get("uses", "")).startswith("docker/setup-buildx-action@")]
+        assert [i for i in builders if not _pulls_docker_hub_through_the_mirror(steps[i])] == [], job_name
+        for i, step in enumerate(steps):
+            run = str(step.get("run") or "")
+            uses = str(step.get("uses", ""))
+            # Every other way onto the daemon's own builder, which pulls from
+            # Docker Hub itself: `docker build` under its other names, compose
+            # and bake, and naming a builder other than the one set up above.
+            assert not re.search(r"\bdocker (?:image |builder |compose )?build\b", run), job_name
+            assert not re.search(r"\bbake\b|--builder\b", run), job_name
+            assert not uses.startswith("docker/bake-action@"), job_name
+            assert "builder" not in (step.get("with") or {}), job_name
+            if "docker buildx build" in run or uses.startswith("docker/build-push-action@"):
+                assert any(b < i for b in builders), f"{job_name}: builds before a mirrored builder exists"
+
+
 def test_a_release_runs_the_suite_inside_its_image_before_publishing():
     """CI runs the suite inside the image and a release did not, so a tag
     could ship an image whose own test stage failed."""

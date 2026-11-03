@@ -31,9 +31,14 @@ FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d
 # --------------------------------------------------------------------------- #
 # build — the virtualenv, made where git and uv are. Nothing below ships them.
 # --------------------------------------------------------------------------- #
-# Through Google's mirror of Docker Hub, as CI pulls everything: the same image
-# by digest, without Docker Hub's rate limit on shared CI addresses.
-FROM mirror.gcr.io/library/python:3.14-slim@sha256:cd89c30eda26ee911a4611b18680086e0ea42e6f5f8cbe653d07fa7958c9cec8 AS build
+# Named as Docker Hub's, because Dependabot reads an image's tags from the
+# registry its FROM line names, and Google's mirror lists only the tags someone
+# has already pulled through it: under the mirror's name, 3.15-slim was never
+# proposed. CI still pulls through the mirror, which its BuildKit builders are
+# configured to prefer, so Docker Hub's rate limit on shared CI addresses
+# doesn't apply; only if the mirror fails does BuildKit fall back to Docker Hub.
+# The digest is the same either way.
+FROM docker.io/library/python:3.14-slim@sha256:cd89c30eda26ee911a4611b18680086e0ea42e6f5f8cbe653d07fa7958c9cec8 AS build
 
 # git, because appcore is a pinned git dependency and uv clones it. The full
 # image had git, which is how a "slim" pin that kept turning full went
@@ -67,7 +72,7 @@ RUN uv sync --frozen --no-install-project --no-cache
 # --------------------------------------------------------------------------- #
 # base — what ships: the interpreter, OCR, the virtualenv and the source.
 # --------------------------------------------------------------------------- #
-FROM mirror.gcr.io/library/python:3.14-slim@sha256:cd89c30eda26ee911a4611b18680086e0ea42e6f5f8cbe653d07fa7958c9cec8 AS base
+FROM docker.io/library/python:3.14-slim@sha256:cd89c30eda26ee911a4611b18680086e0ea42e6f5f8cbe653d07fa7958c9cec8 AS base
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 # The unprivileged user the app runs as, which owns only what the app writes:

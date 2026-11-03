@@ -35,6 +35,17 @@ def test_every_pinned_image_names_the_tag_it_follows():
     assert [ref for ref in pinned if not re.search(r":[\w.-]+@sha256:", ref)] == []
 
 
+def test_docker_hub_images_are_named_as_docker_hubs():
+    """Dependabot reads an image's tags from the registry its FROM line names,
+    and mirror.gcr.io lists only the tags someone has already pulled through
+    it. On 2026-11-01 Dependabot moved python:3.14-slim's digest but proposed
+    no 3.15-slim, eleven days after 3.15.0 came out. Docker Hub's images are
+    named as Docker Hub's; CI still pulls them through the mirror (see
+    tests/test_workflows.py)."""
+    assert IMAGES
+    assert [ref for ref in IMAGES if ref.startswith("mirror.gcr.io/")] == []
+
+
 def test_every_image_is_on_a_from_line():
     """Dependabot reads FROM lines and nothing else. uv was copied straight
     out of its image, so it was never proposed an update and stayed at the
@@ -96,7 +107,7 @@ def test_every_builder_image_a_workflow_uses_is_pinned():
               for match in re.findall(r"image[:=]\s*(\S*(?:binfmt|buildkit)\S*)",
                                       path.read_text(encoding="utf-8"))]
 
-    assert len(images) == 5
+    assert len(images) == 6
     assert [ref for ref in images if not re.search(r":[\w.-]+@sha256:[0-9a-f]{64}$", ref)] == []
 
 

@@ -224,6 +224,13 @@ jobs:
         with:
           # Pinned for the same reason, and bumped by hand likewise.
           driver-opts: image=mirror.gcr.io/moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          # Docker Hub's images through Google's mirror: the Dockerfile names
+          # them as Docker Hub's, for Dependabot, and this keeps the pulls off
+          # Docker Hub's rate limit. Only if the mirror fails does BuildKit fall
+          # back to Docker Hub itself.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
       - name: Build (amd64 only — a PR does not need the full matrix)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -238,8 +245,10 @@ jobs:
       - name: Run the suite inside the image
         # Proves the shipped layers and the tests agree, which is the whole
         # point of the Dockerfile's `test` stage.
+        # Through the builder above, not the Docker daemon's own `docker build`,
+        # which would pull the base from Docker Hub itself.
         run: |
-          docker build --target test -t stocktake:ci-test .
+          docker buildx build --load --target test -t stocktake:ci-test .
           docker run --rm stocktake:ci-test
 
   # Layout, measured in a real browser. Its own job because it takes minutes
@@ -384,6 +393,13 @@ jobs:
         with:
           # Pinned for the same reason, and bumped by hand likewise.
           driver-opts: image=mirror.gcr.io/moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          # Docker Hub's images through Google's mirror: the Dockerfile names
+          # them as Docker Hub's, for Dependabot, and this keeps the pulls off
+          # Docker Hub's rate limit. Only if the mirror fails does BuildKit fall
+          # back to Docker Hub itself.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io

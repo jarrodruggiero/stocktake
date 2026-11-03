@@ -39,6 +39,27 @@ that stopped working is otherwise discovered at the moment you most want a
 release, and its `test` stage runs the suite against the layers the app actually
 ships from — including OCR, which skips on a runner without Tesseract.
 
+## Docker Hub's images, through Google's mirror
+
+GitHub's runners share addresses, and Docker Hub rate-limits anonymous pulls by
+address: on 2026-10-09 every job that pulled an image failed before a test ran.
+So CI pulls Docker Hub's images through `mirror.gcr.io`, Google's mirror of it,
+with the same digests. Two rules follow, and
+`tests/test_workflows.py::test_every_image_build_pulls_docker_hub_through_the_mirror`
+holds both:
+
+- **The Dockerfile names Docker Hub, not the mirror** (`docker.io/library/python:…`).
+  Dependabot reads an image's tags from the registry its FROM line names, and
+  the mirror lists only tags someone has pulled through it.
+- **Every build goes through a buildx builder set up with the mirror**
+  (`buildkitd-config-inline` on `setup-buildx-action`). Plain `docker build` uses
+  the Docker daemon's own builder, which pulls from Docker Hub directly. If the
+  mirror itself fails, BuildKit falls back to Docker Hub, so a rate limit can
+  still show up then, naming `registry-1.docker.io`.
+
+`services:` images and the actions' own builder images name the mirror directly:
+Dependabot never reads those.
+
 ## A merge does not re-run what its pull request passed
 
 A pull request's run tests the pull request merged into main, and once every
